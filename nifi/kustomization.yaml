@@ -3,4 +3,3 @@ resources:
   - service.yaml
   - configmap.yaml
   - secret.yaml
-  - nifi-tls-secret.yaml
