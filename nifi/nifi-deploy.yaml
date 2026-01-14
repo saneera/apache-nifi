@@ -20,9 +20,10 @@ spec:
             - sh
             - -c
             - |
-              until nc -z zookeeper 2181; do
-                echo "Waiting for Zookeeper..."
-                sleep 10
+              echo "Connecting to Zookeeper ${NIFI_ZK_CONNECT_STRING}"
+              until nc -vzw 1 zookeeper 2181 ; do
+                echo "Waiting for zookeeper to start"
+                sleep 3
               done
       containers:
         - name: nifi
@@ -50,28 +51,28 @@ spec:
               mountPath: /opt/nifi/nifi-current/state
 
           startupProbe:
-            httpGet:
-              scheme: HTTP
-              path: /nifi-api/system-diagnostics
-              port: 8080
+            tcpSocket:
+              port: 8443
             failureThreshold: 60
             periodSeconds: 10
 
           readinessProbe:
             httpGet:
-              scheme: HTTP
-              path: /nifi-api/system-diagnostics
-              port: 8080
+              scheme: HTTPS
+              path: /nifi-api/flow/status
+              port: 8443
             initialDelaySeconds: 180
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
 
           livenessProbe:
-            httpGet:
-              scheme: HTTP
-              path: /nifi-api/system-diagnostics
-              port: 8080
+            tcpSocket:
+              port: 8443
             initialDelaySeconds: 300
             periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 5
 
       volumes:
         - name: flowfile-repo
