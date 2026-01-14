@@ -4,7 +4,7 @@ metadata:
   name: nifi
 spec:
   serviceName: nifi
-  replicas: 1   # placeholder overridden by root kustomization
+  replicas: 1
   selector:
     matchLabels:
       app: nifi
@@ -14,8 +14,8 @@ spec:
         app: nifi
     spec:
       initContainers:
-        - name: wait-for-zookeeper
-          image: busybox
+        - name: busybox
+          image: busybox-image
           command:
             - sh
             - -c
@@ -26,7 +26,7 @@ spec:
               done
       containers:
         - name: nifi
-          image: apache/nifi   # placeholder
+          image: nifi-image
           ports:
             - containerPort: 8443
             - containerPort: 11443

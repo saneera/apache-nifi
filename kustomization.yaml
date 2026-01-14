@@ -2,22 +2,16 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 resources:
-  - zookeeper/base
-  - nifi/base
+  - zookeeper
+  - nifi
 
 images:
-  - name: apache/nifi
+  - name: nifi-image
     newName: apache/nifi
-    newTag: 2.7.0
-  - name: placeholder/zookeeper
+    newTag: 2.7.2
+  - name: zookeeper-image
     newName: zookeeper
     newTag: 3.9.1
+  - name: busybox-image
+    newName: busybox
 
-patchesStrategicMerge:
-  - |-
-    apiVersion: apps/v1
-    kind: StatefulSet
-    metadata:
-      name: nifi
-    spec:
-      replicas: 3

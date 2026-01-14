@@ -4,7 +4,7 @@ metadata:
   name: zookeeper
 spec:
   serviceName: zookeeper
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
       app: zookeeper
@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: zookeeper
-          image: placeholder/zookeeper   # overridden from root
+          image: zookeeper-image
           ports:
             - containerPort: 2181
       volumes:
