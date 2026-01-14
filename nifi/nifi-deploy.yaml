@@ -56,16 +56,6 @@ spec:
             failureThreshold: 60
             periodSeconds: 10
 
-          readinessProbe:
-            httpGet:
-              scheme: HTTPS
-              path: /nifi-api/flow/status
-              port: 8443
-            initialDelaySeconds: 180
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 6
-
           livenessProbe:
             tcpSocket:
               port: 8443
