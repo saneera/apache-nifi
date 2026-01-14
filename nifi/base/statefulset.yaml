@@ -4,7 +4,7 @@ metadata:
   name: nifi
 spec:
   serviceName: nifi
-  replicas: 3
+  replicas: 1   # placeholder overridden by root kustomization
   selector:
     matchLabels:
       app: nifi
@@ -13,9 +13,20 @@ spec:
       labels:
         app: nifi
     spec:
+      initContainers:
+        - name: wait-for-zookeeper
+          image: busybox
+          command:
+            - sh
+            - -c
+            - |
+              until nc -z zookeeper 2181; do
+                echo "Waiting for Zookeeper..."
+                sleep 5
+              done
       containers:
         - name: nifi
-          image: apache/nifi
+          image: apache/nifi   # placeholder
           ports:
             - containerPort: 8443
             - containerPort: 11443
@@ -24,10 +35,6 @@ spec:
                 name: nifi-config
             - secretRef:
                 name: nifi-auth
-          volumeMounts:
-            - name: tls
-              mountPath: /tls
-              readOnly: true
       volumes:
         - name: tls
           secret:

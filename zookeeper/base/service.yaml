@@ -7,4 +7,4 @@ spec:
   selector:
     app: zookeeper
   ports:
-    - port: 2281
+    - port: 2181
