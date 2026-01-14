@@ -1,0 +1,5 @@
+resources:
+  - statefulset.yaml
+  - service.yaml
+  - configmap.yaml
+  - zk-tls-secret.yaml

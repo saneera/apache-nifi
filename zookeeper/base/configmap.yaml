@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: zk-config
+data:
+  ZOO_SECURE_CLIENT_PORT: "2281"
+  ZOO_SSL_CLIENT_ENABLE: "true"

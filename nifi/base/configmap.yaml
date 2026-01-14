@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nifi-config
+data:
+  NIFI_WEB_HTTPS_PORT: "8443"
+  NIFI_CLUSTER_IS_NODE: "true"
+  NIFI_CLUSTER_NODE_PROTOCOL_PORT: "11443"
+  NIFI_ZK_CONNECT_STRING: "zookeeper:2281"
+  NIFI_ZK_CLIENT_SECURE: "true"
+  NIFI_SENSITIVE_PROPS_KEY: "changeit123"

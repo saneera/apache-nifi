@@ -1,0 +1,6 @@
+resources:
+  - statefulset.yaml
+  - service.yaml
+  - configmap.yaml
+  - secret.yaml
+  - nifi-tls-secret.yaml

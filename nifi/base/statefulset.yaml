@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: nifi
+spec:
+  serviceName: nifi
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nifi
+  template:
+    metadata:
+      labels:
+        app: nifi
+    spec:
+      containers:
+        - name: nifi
+          image: apache/nifi
+          ports:
+            - containerPort: 8443
+            - containerPort: 11443
+          envFrom:
+            - configMapRef:
+                name: nifi-config
+            - secretRef:
+                name: nifi-auth
+          volumeMounts:
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+      volumes:
+        - name: tls
+          secret:
+            secretName: nifi-tls

@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: zookeeper
+spec:
+  serviceName: zookeeper
+  replicas: 3
+  selector:
+    matchLabels:
+      app: zookeeper
+  template:
+    metadata:
+      labels:
+        app: zookeeper
+    spec:
+      containers:
+        - name: zookeeper
+          image: bitnami/zookeeper
+          envFrom:
+            - configMapRef:
+                name: zk-config
+          volumeMounts:
+            - name: tls
+              mountPath: /tls
+      volumes:
+        - name: tls
+          secret:
+            secretName: zk-tls
