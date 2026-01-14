@@ -75,6 +75,3 @@ spec:
           emptyDir: { }
         - name: state
           emptyDir: { }
-        - name: tls
-          secret:
-            secretName: nifi-tls
