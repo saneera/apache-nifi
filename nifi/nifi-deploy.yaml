@@ -22,20 +22,68 @@ spec:
             - |
               until nc -z zookeeper 2181; do
                 echo "Waiting for Zookeeper..."
-                sleep 5
+                sleep 10
               done
       containers:
         - name: nifi
           image: nifi-image
           ports:
             - containerPort: 8443
-            - containerPort: 11443
+              name: https
+            - containerPort: 8080
+              name: http
           envFrom:
             - configMapRef:
                 name: nifi-config
             - secretRef:
                 name: nifi-auth
+          volumeMounts:
+            - name: flowfile-repo
+              mountPath: /opt/nifi/nifi-current/flowfile_repository
+            - name: content-repo
+              mountPath: /opt/nifi/nifi-current/content_repository
+            - name: provenance-repo
+              mountPath: /opt/nifi/nifi-current/provenance_repository
+            - name: database-repo
+              mountPath: /opt/nifi/nifi-current/database_repository
+            - name: state
+              mountPath: /opt/nifi/nifi-current/state
+
+          startupProbe:
+            httpGet:
+              scheme: HTTP
+              path: /nifi-api/system-diagnostics
+              port: 8080
+            failureThreshold: 60
+            periodSeconds: 10
+
+          readinessProbe:
+            httpGet:
+              scheme: HTTP
+              path: /nifi-api/system-diagnostics
+              port: 8080
+            initialDelaySeconds: 180
+            periodSeconds: 10
+
+          livenessProbe:
+            httpGet:
+              scheme: HTTP
+              path: /nifi-api/system-diagnostics
+              port: 8080
+            initialDelaySeconds: 300
+            periodSeconds: 20
+
       volumes:
+        - name: flowfile-repo
+          emptyDir: { }
+        - name: content-repo
+          emptyDir: { }
+        - name: provenance-repo
+          emptyDir: { }
+        - name: database-repo
+          emptyDir: { }
+        - name: state
+          emptyDir: { }
         - name: tls
           secret:
             secretName: nifi-tls

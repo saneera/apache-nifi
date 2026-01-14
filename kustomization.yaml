@@ -14,4 +14,5 @@ images:
     newTag: 3.9.1
   - name: busybox-image
     newName: busybox
+    newTag: latest
 
