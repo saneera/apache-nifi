@@ -2,4 +2,3 @@ resources:
   - zookeeper-deploy.yaml
   - service.yaml
   - configmap.yaml
-  - zk-tls-secret.yaml
