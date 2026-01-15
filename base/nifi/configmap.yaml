@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nifi-cm
+data:
+  NIFI_WEB_HTTP_PORT: ""
+  NIFI_WEB_HTTPS_PORT: "8443"
+
+  # 👇 REQUIRED for NodePort
+  NIFI_WEB_PROXY_HOST: "localhost:30084"
+
+  # 👇 CLUSTER MODE
+  NIFI_CLUSTER_IS_NODE: "true"
+  NIFI_CLUSTER_NODE_PROTOCOL_PORT: "11443"
+
+  # 👇 ZooKeeper
+  NIFI_ZK_CONNECT_STRING: "zookeeper:2181"
+
+  NIFI_ELECTION_MAX_WAIT: "1 min"
+  NIFI_ELECTION_RETRY_WAIT: "30 sec"
+  NIFI_SENSITIVE_PROPS_KEY: "ChangeMeForProd"
+  NIFI_SECURITY_KEYSTORE: "/opt/nifi/nifi-cert/keystore.jks"
+  NIFI_SECURITY_KEYSTORE_TYPE: "JKS"
+  NIFI_SECURITY_KEYSTORE_PASSWD: "ChangeMeForProd"
+  NIFI_SECURITY_KEY_PASSWD: "ChangeMeForProd"
+  NIFI_SECURITY_TRUSTSTORE: "/opt/nifi/nifi-cert/truststore.jks"
+  NIFI_SECURITY_TRUSTSTORE_TYPE: "JKS"
+  NIFI_SECURITY_TRUSTSTORE_PASSWD: "ChangeMeForProd"

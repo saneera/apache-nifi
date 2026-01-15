@@ -1,5 +1,0 @@
-resources:
-  - nifi-deploy.yaml
-  - service.yaml
-  - configmap.yaml
-  - secret.yaml

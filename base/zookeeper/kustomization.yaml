@@ -1,4 +1,4 @@
 resources:
+  - configmap.yaml
   - zookeeper-deploy.yaml
   - service.yaml
-  - configmap.yaml
