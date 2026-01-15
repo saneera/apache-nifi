@@ -75,6 +75,8 @@ spec:
           envFrom:
             - configMapRef:
                 name: nifi-config
+            - secretRef:
+                name: nifi-auth
 
           volumeMounts:
             - name: nifi-cert
