@@ -4,4 +4,5 @@ kind: Kustomization
 namespace: nifi
 
 resources:
-  - nifi-deployment.yaml
+   - nifi-deployment.yaml
+
