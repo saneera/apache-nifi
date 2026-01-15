@@ -2,7 +2,7 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: nifi-config
+  name: nifi-cm
 data:
   NIFI_WEB_HTTP_PORT: ""
   NIFI_WEB_HTTPS_PORT: "8443"
@@ -69,12 +69,12 @@ spec:
               done
       containers:
         - name: nifi
-          image: apache/nifi:2.7.0
+          image: apache/nifi:2.7.2
           ports:
             - containerPort: 8443
           envFrom:
             - configMapRef:
-                name: nifi-config
+                name: nifi-cm
             - secretRef:
                 name: nifi-auth
 
@@ -93,9 +93,9 @@ spec:
               mountPath: /opt/nifi/nifi-current/state
 
       volumes:
-        - name: nifi-config
+        - name: nifi-cm
           configMap:
-            name: nifi-config
+            name: nifi-cm
         - name: nifi-cert
           secret:
             secretName: nifi-tls
@@ -117,6 +117,6 @@ spec:
     - name: https
       port: 8443
       targetPort: 8443
-      nodePort: 30084   # NodePort range: 30000-32767
+      nodePort: 30084
 
 
