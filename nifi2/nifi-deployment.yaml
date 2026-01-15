@@ -55,6 +55,18 @@ spec:
       labels:
         app: nifi
     spec:
+      initContainers:
+        - name: busybox
+          image: busybox:latest
+          command:
+            - sh
+            - -c
+            - |
+              echo "Connecting to Zookeeper ${NIFI_ZK_CONNECT_STRING}"
+              until nc -vzw 1 zookeeper 2181 ; do
+                echo "Waiting for zookeeper to start"
+                sleep 3
+              done
       containers:
         - name: nifi
           image: apache/nifi:2.7.0
