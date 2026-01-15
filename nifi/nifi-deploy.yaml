@@ -29,8 +29,6 @@ spec:
         - name: nifi
           image: nifi-image
           ports:
-            - containerPort: 8443
-              name: https
             - containerPort: 8080
               name: http
           envFrom:

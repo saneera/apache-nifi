@@ -40,8 +40,6 @@ spec:
               name: zk
             - containerPort: 8080
               name: http
-            - containerPort: 7070
-              name: metrics
           env:
             - name: POD_IP
               valueFrom:
