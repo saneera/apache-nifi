@@ -81,6 +81,16 @@ spec:
           volumeMounts:
             - name: nifi-cert
               mountPath: /opt/nifi/tls
+            - name: nifi-pvc
+              mountPath: /opt/nifi/nifi-current/flowfile_repository
+            - name: nifi-pvc
+              mountPath: /opt/nifi/nifi-current/content_repository
+            - name: nifi-pvc
+              mountPath: /opt/nifi/nifi-current/provenance_repository
+            - name: nifi-pvc
+              mountPath: /opt/nifi/nifi-current/database_repository
+            - name: nifi-pvc
+              mountPath: /opt/nifi/nifi-current/state
 
       volumes:
         - name: nifi-config
@@ -89,6 +99,9 @@ spec:
         - name: nifi-cert
           secret:
             secretName: nifi-tls
+        - name: nifi-pvc
+          persistentVolumeClaim:
+            claimName: nifi-pvc
 
 ---
 

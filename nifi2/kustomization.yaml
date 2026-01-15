@@ -6,6 +6,7 @@ namespace: nifi
 resources:
    - namespace.yaml
    - nifi-auth.yaml
+   - nifi-pvc.yaml
    - zookeeper.yaml
    - nifi-deployment.yaml
 
