@@ -4,5 +4,7 @@ kind: Kustomization
 namespace: nifi
 
 resources:
+   - namespace.yaml
+   - zookeeper.yaml
    - nifi-deployment.yaml
 
