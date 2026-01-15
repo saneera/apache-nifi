@@ -6,3 +6,10 @@ namespace: nifi
 resources:
    - nifi-deployment.yaml
 
+#secretGenerator:
+#  - name: nifi-tls
+#    files:
+#      - keystore.jks
+#      - truststore.jks
+#    type: Opaque
+

@@ -16,10 +16,5 @@ images:
     newName: busybox
     newTag: latest
 
-secretGenerator:
-  - name: nifi-tls
-    files:
-      - keystore.jks
-      - truststore.jks
-    type: Opaque
+
 
