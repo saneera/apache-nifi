@@ -31,7 +31,7 @@ spec:
             - containerPort: 8443
           envFrom:
             - configMapRef:
-                name: nifi-config
+                name: nifi-cm
             - secretRef:
                 name: nifi-auth
 
@@ -50,9 +50,9 @@ spec:
               mountPath: /opt/nifi/nifi-current/state
 
       volumes:
-        - name: nifi-config
+        - name: nifi-cm
           configMap:
-            name: nifi-config
+            name: nifi-cm
         - name: nifi-cert
           secret:
             secretName: nifi-tls
