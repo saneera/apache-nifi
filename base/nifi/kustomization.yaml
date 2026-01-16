@@ -1,7 +1,7 @@
 resources:
   - configmap.yaml
-  - nifi-auth.yaml
   - nifi-pvc.yaml
   - secret.yaml
-  - nifi-deploy.yaml
   - service.yaml
+  - service-cluster.yaml
+  - nifi-deploy.yaml

@@ -18,23 +18,24 @@ images:
 
 
 # Overlay environment-specific secrets
-#secretGenerator:
-#  - name: nifi-auth
-#    literals:
-#      - SINGLE_USER_CREDENTIALS_USERNAME=admin
-#      - SINGLE_USER_CREDENTIALS_PASSWORD=admin123456!
-#    type: Opaque
-#
-## Patch deployment for replicas & proxy host
-#patches:
-#  - path: patch-replicas.yaml
-#    target:
-#      kind: Deployment
-#      name: nifi
-#  - path: patch-proxy-host.yaml
-#    target:
-#      kind: ConfigMap
-#      name: nifi-cm
+secretGenerator:
+  - name: nifi-auth
+    namespace: nifi
+    literals:
+      - SINGLE_USER_CREDENTIALS_USERNAME=admin
+      - SINGLE_USER_CREDENTIALS_PASSWORD=admin123456!
+    type: Opaque
+
+# Patch deployment for replicas & proxy host
+patches:
+  - path: patch-replicas.yaml
+    target:
+      kind: StatefulSet
+      name: nifi
+  - path: patch-proxy-host.yaml
+    target:
+      kind: ConfigMap
+      name: nifi-cm
 
 
 

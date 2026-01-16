@@ -4,11 +4,12 @@ metadata:
   name: nifi
   namespace: nifi
 spec:
-  type: NodePort
   selector:
     app: nifi
+  type: NodePort
   ports:
     - name: https
       port: 8443
+      protocol: TCP
       targetPort: 8443
       nodePort: 30084
