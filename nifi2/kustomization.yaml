@@ -8,5 +8,5 @@ resources:
    - nifi-auth.yaml
    - nifi-pvc.yaml
    - zookeeper.yaml
-   - nifi-deployment.yaml
+   - nifi-deployment2.yaml
 

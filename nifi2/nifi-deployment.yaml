@@ -28,6 +28,9 @@ data:
   NIFI_SECURITY_TRUSTSTORE_TYPE: "JKS"
   NIFI_SECURITY_TRUSTSTORE_PASSWD: "ChangeMeForProd"
 
+  NIFI_CLUSTER_NODE_PROTOCOL_IS_SECURE: "false"
+  NIFI_SECURITY_NEED_CLIENT_AUTH: "false"
+
 
 ---
 
@@ -58,6 +61,7 @@ spec:
     spec:
       hostname: $(POD_NAME)
       subdomain: nifi-headless
+      setHostnameAsFQDN: true
       initContainers:
         - name: busybox
           image: busybox:latest
@@ -85,6 +89,10 @@ spec:
                 name: nifi-auth
 
           env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP # Use pod ip
             - name: POD_NAME
               valueFrom:
                 fieldRef:
@@ -100,6 +108,9 @@ spec:
 
             - name: NIFI_CLUSTER_NODE_ADDRESS
               value: "$(POD_NAME).nifi-headless.nifi.svc.cluster.local"
+
+            - name: NODE_IDENTITY
+              value: $(POD_NAME) # Use pod name as identity
 
           volumeMounts:
             - name: nifi-cert
