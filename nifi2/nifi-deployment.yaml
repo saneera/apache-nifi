@@ -42,11 +42,12 @@ data:
 
 ---
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: nifi
 spec:
-  replicas: 1
+  serviceName: nifi-headless
+  replicas: 2
   selector:
     matchLabels:
       app: nifi
@@ -55,6 +56,8 @@ spec:
       labels:
         app: nifi
     spec:
+      hostname: $(POD_NAME)
+      subdomain: nifi-headless
       initContainers:
         - name: busybox
           image: busybox:latest
@@ -72,11 +75,31 @@ spec:
           image: apache/nifi:2.7.2
           ports:
             - containerPort: 8443
+              name: https
+            - containerPort: 11443
+              name: cluster
           envFrom:
             - configMapRef:
                 name: nifi-cm
             - secretRef:
                 name: nifi-auth
+
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+
+            - name: NIFI_CLUSTER_NODE_PROTOCOL_HOST
+              value: "$(POD_NAME).nifi-headless.nifi.svc.cluster.local"
+
+            - name: NIFI_CLUSTER_NODE_ADDRESS
+              value: "$(POD_NAME).nifi-headless.nifi.svc.cluster.local"
 
           volumeMounts:
             - name: nifi-cert
@@ -118,5 +141,23 @@ spec:
       port: 8443
       targetPort: 8443
       nodePort: 30084
+
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nifi-headless
+  namespace: nifi
+spec:
+  clusterIP: None
+  selector:
+    app: nifi
+  ports:
+    - name: cluster
+      port: 11443
+      targetPort: 11443
+
+
 
 
