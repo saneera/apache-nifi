@@ -22,6 +22,15 @@ data:
     TRUSTSTORE_PASSWORD=${TRUSTSTORE_PASSWORD:-$NIFI_SENSITIVE_PROPS_KEY}
     TRUSTSTORE_PATH=${NIFI_HOME}/keytool/truststore.p12
     TRUSTSTORE_TYPE=pkcs12
+    SAN_LIST="\
+    DNS:${POD_NAME},\
+    DNS:${POD_NAME}.${NIFI_HEADLESS_SERVICE},\
+    DNS:${POD_NAME}.${NIFI_HEADLESS_SERVICE}.${POD_NAMESPACE},\
+    DNS:${POD_NAME}.${NIFI_HEADLESS_SERVICE}.${POD_NAMESPACE}.svc,\
+    DNS:${POD_NAME}.${NIFI_HEADLESS_SERVICE}.${POD_NAMESPACE}.svc.cluster.local,\
+    DNS:localhost,\
+    IP:${POD_IP},\
+    IP:127.0.0.1"
 
     if [[ ! -f "${NIFI_HOME}/keytool/keystore.p12" ]]
     then
@@ -33,7 +42,7 @@ data:
       -keysize 2048 \
       -keypass "${KEY_PASS:-$NIFI_SENSITIVE_PROPS_KEY}" \
       -keyalg RSA \
-      -ext "SAN=ip:${POD_IP},dns:localhost,dns:${NIFI_CLUSTER_NODE_ADDRESS},ip:127.0.0.1" \
+      -ext "SAN=${SAN_LIST}" \
       -storetype pkcs12
 
       echo "Exporting the self-signed certificate from the keystore==================="

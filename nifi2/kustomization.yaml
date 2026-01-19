@@ -8,6 +8,9 @@ resources:
    - nifi-auth.yaml
 #   - nifi-pvc.yaml
    - zookeeper.yaml
-   - nifi-deployment2.yaml
+   - nifi-deployment2-working.yaml
    - configmap-ssl.yml
+
+
+
 

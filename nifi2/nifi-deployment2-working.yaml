@@ -62,10 +62,6 @@ data:
   TRUSTSTORE_TYPE: "pkcs12"
   NIFI_WEB_PROXY_HOST: "localhost:30084"
 
-  NIFI_SECURITY_KEYSTORE: "/opt/nifi/certs/keystore.p12"
-  NIFI_SECURITY.KEYSTORE_TYPE: "PKCS12"
-  NIFI_SECURITY.KEYSTORE_PASSWORD: "changeit"
-  NIFI_SECURITY.KEY_PASSWORD: "changeit"
 
 ---
 apiVersion: apps/v1
@@ -116,7 +112,7 @@ spec:
             - -c
             - |
               echo "Starting NiFi"
-              
+              /scripts/security.sh
               /opt/nifi/scripts/start.sh
           ports:
             - containerPort: 8443
@@ -137,21 +133,39 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace # Use pod namespace
-#            - name: NIFI_LOAD_BALANCER
-#              value: "nifi.$(POD_NAMESPACE).svc.cluster.local" # Use nifi service fqdn
+
+
+
+
+            - name: NIFI_HEADLESS_SERVICE
+              value: nifi-headless
+
             - name: NIFI_HOME
               value: "/opt/nifi/nifi-current"
+
             - name: NIFI_UI_BANNER_TEXT
               value: $(POD_NAME) # Use pod name for banner
+
+            - name: NIFI_CLUSTER_NODE_ADDRESS
+              value: ${POD_NAME}.nifi-headless.${POD_NAMESPACE}.svc.cluster.local
+
+            - name: NIFI_CLUSTER_NODE_PROTOCOL_PORT
+              value: "11443"
+
+            - name: NIFI_WEB_HTTPS_HOST
+              value: $(POD_NAME).$(NIFI_HEADLESS_SERVICE).$(POD_NAMESPACE).svc.cluster.local
+
+            - name: NIFI_CLUSTER_NODE_PROTOCOL_ADDRESS
+              value: $(POD_NAME).$(NIFI_HEADLESS_SERVICE).$(POD_NAMESPACE).svc.cluster.local
+
+#            - name: NIFI_LOAD_BALANCER
+#              value: "nifi.$(POD_NAMESPACE).svc.cluster.local" # Use nifi service fqdn
+
 #            - name: NIFI_WEB_HTTP_HOST
 #              value: $(POD_NAME).nifi.$(POD_NAMESPACE).svc.cluster.local # Use pod fqdn as web host
 #            - name: NIFI_WEB_HTTPS_HOST
 #              value: $(POD_NAME).nifi.$(POD_NAMESPACE).svc.cluster.local # Use pod fqdn as web host
-            - name: NIFI_CLUSTER_NODE_ADDRESS
-              value: $(POD_NAME).nifi.$(POD_NAMESPACE).svc.cluster.local # Use pod fqdn as node address
 
-            - name: NIFI_CLUSTER_NODE_PROTOCOL_PORT
-              value: "11443"
 #            - name: NIFI_REMOTE_INPUT_SOCKET_HOST
 #              value: $(POD_NAME).nifi.$(POD_NAMESPACE).svc.cluster.local # Use pod fqdn as input socket address
 #            - name: NIFI_REMOTE_INPUT_HOST
@@ -166,26 +180,33 @@ spec:
 #              value: $(POD_IP) # Use pod ip as hostname
 #
 
+            - name: KEYSTORE_PATH
+              value: "$(NIFI_HOME)/keytool/keystore.p12"
+            - name: TRUSTSTORE_PATH
+              value: "$(NIFI_HOME)/keytool/truststore.p12"
+
             - name: NIFI_SECURITY_KEYSTORE
-              value: /opt/nifi/certs/keystore.p12
+              value: "$(NIFI_HOME)/keytool/keystore.p12"
 
             - name: NIFI_SECURITY_KEYSTORE_TYPE
-              value: PKCS12
+              value: "PKCS12"
 
             - name: NIFI_SECURITY_KEYSTORE_PASSWD
-              value: changeit
+              value: "th1s1s3up34e5r37"
 
             - name: NIFI_SECURITY_KEY_PASSWD
-              value: changeit
+              value: "th1s1s3up34e5r37"
 
             - name: NIFI_SECURITY_TRUSTSTORE
-              value: /opt/nifi/certs/truststore.p12
+              value: "$(NIFI_HOME)/keytool/truststore.p12"
 
             - name: NIFI_SECURITY_TRUSTSTORE_TYPE
-              value: PKCS12
+              value: "PKCS12"
 
             - name: NIFI_SECURITY_TRUSTSTORE_PASSWD
-              value: changeit
+              value: "th1s1s3up34e5r37"
+
+
 
           envFrom:
             - configMapRef:
@@ -199,18 +220,14 @@ spec:
               mountPath: /opt/nifi/nifi-current/data
               subPath: data
               readOnly: false
-#            - name: data
-#              mountPath: /opt/nifi/nifi-current/keytool
-#              subPath: keytool
-#              readOnly: false
-#            - name: scripts
-#              mountPath: /scripts/security.sh
-#              subPath: security.sh
-#              readOnly: false
-
-            - name: nifi-certs
-              mountPath: /opt/nifi/certs
-              readOnly: true
+            - name: data
+              mountPath: /opt/nifi/nifi-current/keytool
+              subPath: keytool
+              readOnly: false
+            - name: scripts
+              mountPath: /scripts/security.sh
+              subPath: security.sh
+              readOnly: false
 
           securityContext:
             allowPrivilegeEscalation: false
@@ -228,9 +245,6 @@ spec:
             name: nifi-ssl-cm
             optional: false
             defaultMode: 0755
-        - name: nifi-certs
-          secret:
-            secretName: nifi-certs
 
 ---
 apiVersion: v1
