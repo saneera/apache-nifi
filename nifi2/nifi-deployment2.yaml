@@ -1,27 +1,66 @@
 ---
 apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nifi-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+#apiVersion: v1
+#kind: PersistentVolumeClaim
+#metadata:
+#  name: nifi-truststore-pvc
+#spec:
+#  accessModes:
+#    - ReadWriteOnce
+#  resources:
+#    requests:
+#      storage: 1Gi
+
+---
+apiVersion: v1
 kind: ConfigMap
 metadata:
   name: nifi-cm
 data:
   # Web Ports
+  JAVA_OPTS: "-XX:UseAVX=0 -Djavax.net.debug=ssl,handshake,address=8000"
+  KEYSTORE_PASSWORD: "th1s1s3up34e5r37"
+  KEYSTORE_TYPE: "PKCS12"
+  NIFI_ANALYTICS_PREDICT_ENABLED: "true"
+  NIFI_CLUSTER_IS_NODE: "true"
+  # NIFI_CLUSTER_LOAD_BALANCE_HOST: "nifi"
+  NIFI_CLUSTER_NODE_CONNECTION_TIMEOUT: "5 min"
+  NIFI_CLUSTER_NODE_EVENT_HISTORY_SIZE: "25"
+  # NIFI_CLUSTER_NODE_LOAD_BALANCE_PORT: "6342"
+  NIFI_CLUSTER_NODE_PROTOCOL_MAX_THREADS: "20"
+  NIFI_CLUSTER_NODE_PROTOCOL_PORT: "11443"
+  NIFI_CLUSTER_NODE_PROTOCOL_THREADS: "10"
+  NIFI_CLUSTER_NODE_READ_TIMEOUT: "5 min"
+  NIFI_CLUSTER_PROTOCOL_CONNECTION_HANDSHAKE_TIMEOUT: "3 min"
+  NIFI_CLUSTER_PROTOCOL_HEARTBEAT_INTERVAL: "2 min"
+  NIFI_CLUSTER_PROTOCOL_IS_SECURE: "true"
+  NIFI_ELECTION_MAX_CANDIDATES: "1"
+  NIFI_ELECTION_MAX_WAIT: "2 min"
+  NIFI_JVM_HEAP_INIT: "2g"
+  NIFI_JVM_HEAP_MAX: "2g"
+  NIFI_SECURITY_AUTORELOAD_ENABLED: "true"
+  NIFI_SECURITY_AUTORELOAD_INTERVAL: "5 min"
+  NIFI_SECURITY_NEEDCLIENTAUTH: "true"
+  NIFI_SENSITIVE_PROPS_KEY_PROTECTED: "th1s1s3up34e5r37"
+  NIFI_SENSITIVE_PROPS_KEY: "th1s1s3up34e5r37"
   NIFI_WEB_HTTP_PORT: ""
   NIFI_WEB_HTTPS_PORT: "8443"
-  NIFI_WEB_PROXY_HOST: "localhost:30084"
-
-  # Cluster Mode
-  NIFI_CLUSTER_IS_NODE: "true"
-  NIFI_CLUSTER_NODE_PROTOCOL_PORT: "11443"
-  NIFI_CLUSTER_NODE_PROTOCOL_IS_SECURE: "true"
-  NIFI_SECURITY_NEED_CLIENT_AUTH: "false"
-
-  # ZooKeeper
   NIFI_ZK_CONNECT_STRING: "zookeeper:2181"
-
-  NIFI_ELECTION_MAX_WAIT: "1 min"
-  NIFI_ELECTION_RETRY_WAIT: "30 sec"
-  NIFI_SENSITIVE_PROPS_KEY: "ChangeMeForProd"
-
+  NIFI_ZOOKEEPER_CONNECT_STRING: "zookeeper:2181"
+  TRUSTSTORE_PASSWORD: "th1s1s3up34e5r37"
+  TRUSTSTORE_TYPE: "pkcs12"
+  NIFI_WEB_PROXY_HOST: "localhost:30084"
 
 ---
 apiVersion: apps/v1
@@ -39,81 +78,18 @@ spec:
       labels:
         app: nifi
     spec:
-      hostname: $(POD_NAME)
-      subdomain: nifi-headless
+      automountServiceAccountToken: false
+      enableServiceLinks: false
       setHostnameAsFQDN: true
+      dnsPolicy: ClusterFirstWithHostNet
+      restartPolicy: Always
+      securityContext:
+        runAsGroup: 1000
+        runAsUser: 1000
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       initContainers:
-        - name: nifi-init-tls
-          image: eclipse-temurin:17-jdk
-          command:
-            - /bin/sh
-            - -c
-            - |
-              set -e
-              mkdir -p /opt/nifi/conf
-              NODE_NAME=${POD_NAME}
-              echo "Generating keystore for $NODE_NAME"
-              
-              which keytool
-
-              /opt/java/openjdk/bin/keytool -genkeypair \
-              -alias "$NODE_NAME" \
-              -keyalg RSA \
-              -keysize 2048 \
-              -sigalg SHA256withRSA \
-              -validity 365 \
-              -dname "CN=$NODE_NAME, OU=NiFi, O=MyOrg, L=City, ST=State, C=AU" \
-              -storetype PKCS12 \
-              -keystore /opt/nifi/conf/"$NODE_NAME"-keystore.p12 \
-              -storepass changeit \
-              -keypass changeit \
-              -noprompt
-
-              # Export pod certificate
-              keytool -export \
-                -alias $NODE_NAME \
-                -keystore /opt/nifi/conf/$NODE_NAME-keystore.p12 \
-                -rfc \
-                -file /opt/nifi/conf/$NODE_NAME.crt \
-                -storepass changeit
-
-              # Create / update shared truststore
-              if [ ! -f /opt/nifi/conf/truststore.p12 ]; then
-                keytool -genkeypair \
-                  -alias dummy \
-                  -keystore /opt/nifi/conf/truststore.p12 \
-                  -storetype PKCS12 \
-                  -storepass changeit \
-                  -keypass changeit \
-                  -keyalg RSA \
-                  -keysize 2048 \
-                  -dname "CN=dummy"
-                  
-                keytool -delete \
-                -alias dummy \
-                -keystore /opt/nifi/conf/truststore.p12 \
-                -storepass changeit
-              fi
-
-              keytool -importcert \
-                -alias $NODE_NAME \
-                -file /opt/nifi/conf/$NODE_NAME.crt \
-                -keystore /opt/nifi/conf/truststore.p12 \
-                -storetype PKCS12 \
-                -storepass changeit \
-                -noprompt
-              
-              echo "Keystore and truststore generated successfully for $NODE_NAME"
-
-          env:
-          - name: POD_NAME
-            valueFrom:
-              fieldRef:
-                fieldPath: metadata.name
-          - name: POD_NAMESPACE
-            valueFrom:
-              fieldRef:
-                fieldPath: metadata.namespace
 
         - name: busybox
           image: busybox:latest
@@ -130,70 +106,101 @@ spec:
       containers:
         - name: nifi
           image: apache/nifi:2.7.2
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Starting NiFi"
+              /scripts/security.sh
+              /opt/nifi/scripts/start.sh
           ports:
             - containerPort: 8443
               name: https
             - containerPort: 11443
               name: cluster
-          envFrom:
-            - configMapRef:
-                name: nifi-cm
-            - secretRef:
-                name: nifi-auth
+
           env:
             - name: POD_IP
               valueFrom:
                 fieldRef:
-                  fieldPath: status.podIP
+                  fieldPath: status.podIP # Use pod ip
             - name: POD_NAME
               valueFrom:
                 fieldRef:
-                  fieldPath: metadata.name
+                  fieldPath: metadata.name # Use pod name
             - name: POD_NAMESPACE
               valueFrom:
                 fieldRef:
-                  fieldPath: metadata.namespace
-            - name: NIFI_CLUSTER_NODE_PROTOCOL_HOST
-              value: "$(POD_NAME).nifi-headless.nifi.svc.cluster.local"
+                  fieldPath: metadata.namespace # Use pod namespace
+#            - name: NIFI_LOAD_BALANCER
+#              value: "nifi.$(POD_NAMESPACE).svc.cluster.local" # Use nifi service fqdn
+            - name: NIFI_HOME
+              value: "/opt/nifi/nifi-current"
+            - name: NIFI_UI_BANNER_TEXT
+              value: $(POD_NAME) # Use pod name for banner
+#            - name: NIFI_WEB_HTTP_HOST
+#              value: $(POD_NAME).nifi.$(POD_NAMESPACE).svc.cluster.local # Use pod fqdn as web host
+#            - name: NIFI_WEB_HTTPS_HOST
+#              value: $(POD_NAME).nifi.$(POD_NAMESPACE).svc.cluster.local # Use pod fqdn as web host
             - name: NIFI_CLUSTER_NODE_ADDRESS
-              value: "$(POD_NAME).nifi-headless.nifi.svc.cluster.local"
-            - name: NODE_IDENTITY
-              value: "$(POD_NAME)"
-            - name: NIFI_SECURITY_KEYSTORE
-              value: "/opt/nifi/conf/$(POD_NAME)-keystore.p12"
-            - name: NIFI_SECURITY_KEYSTORE_TYPE
-              value: "PKCS12"
-            - name: NIFI_SECURITY_KEYSTORE_PASSWD
-              value: "changeit"
-            - name: NIFI_SECURITY_KEY_PASSWD
-              value: "changeit"
-            - name: NIFI_SECURITY_TRUSTSTORE
-              value: "/opt/nifi/conf/truststore.p12"
-            - name: NIFI_SECURITY_TRUSTSTORE_TYPE
-              value: "PKCS12"
-            - name: NIFI_SECURITY_TRUSTSTORE_PASSWD
-              value: "changeit"
+              value: $(POD_NAME).nifi.$(POD_NAMESPACE).svc.cluster.local # Use pod fqdn as node address
+
+            - name: NIFI_CLUSTER_NODE_PROTOCOL_PORT
+              value: "11443"
+#            - name: NIFI_REMOTE_INPUT_SOCKET_HOST
+#              value: $(POD_NAME).nifi.$(POD_NAMESPACE).svc.cluster.local # Use pod fqdn as input socket address
+#            - name: NIFI_REMOTE_INPUT_HOST
+#              value: $(POD_NAME).nifi.$(POD_NAMESPACE).svc.cluster.local # Use pod fqdn as input host address
+#            - name: HOSTNAME
+#              value: $(POD_IP) # Use pod ip as hostname
+#            - name: NIFI_WEB_PROXY_HOST
+#              value: $(POD_NAME).nifi.$(POD_NAMESPACE).svc.cluster.local # Use pod fqdn as input host address
+#            - name: NODE_IDENTITY
+#              value: $(POD_NAME) # Use pod name as identity
+#            - name: NIFI_CLUSTER_NODE_PROTOCOL_ADDRESS
+#              value: $(POD_IP) # Use pod ip as hostname
+            - name: KEYSTORE_PATH
+              value: "$(NIFI_HOME)/keytool/keystore.p12"
+            - name: TRUSTSTORE_PATH
+              value: "$(NIFI_HOME)/keytool/truststore.p12"
+
+          envFrom:
+            - configMapRef:
+                name: nifi-cm
+                optional: false
+            - secretRef:
+                name: nifi-auth
 
           volumeMounts:
-            - name: nifi-cert
-              mountPath: /opt/nifi/conf
-            - name: nifi-pvc
-              mountPath: /opt/nifi/nifi-current/flowfile_repository
-            - name: nifi-pvc
-              mountPath: /opt/nifi/nifi-current/content_repository
-            - name: nifi-pvc
-              mountPath: /opt/nifi/nifi-current/provenance_repository
-            - name: nifi-pvc
-              mountPath: /opt/nifi/nifi-current/database_repository
-            - name: nifi-pvc
-              mountPath: /opt/nifi/nifi-current/state
+            - name: data
+              mountPath: /opt/nifi/nifi-current/data
+              subPath: data
+              readOnly: false
+            - name: data
+              mountPath: /opt/nifi/nifi-current/keytool
+              subPath: keytool
+              readOnly: false
+            - name: scripts
+              mountPath: /scripts/security.sh
+              subPath: security.sh
+              readOnly: false
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            capabilities:
+              drop:
+                - ALL
 
       volumes:
-        - name: nifi-cert
-          emptyDir: {}
-        - name: nifi-pvc
-          persistentVolumeClaim:
-            claimName: nifi-pvc
+        - name: data
+          emptyDir:
+            sizeLimit: 3Gi
+        - name: scripts
+          configMap:
+            name: nifi-ssl-cm
+            optional: false
+            defaultMode: 0755
 
 ---
 apiVersion: v1

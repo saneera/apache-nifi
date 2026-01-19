@@ -1,9 +1,33 @@
+---
+
+#apiVersion: networking.k8s.io/v1
+#kind: NetworkPolicy
+#metadata:
+#  name: zookeeper-namespace-only
+#  namespace: nifi
+#spec:
+#  podSelector:
+#    matchLabels:
+#      app: zookeeper
+#  policyTypes:
+#    - Ingress
+#  ingress:
+#    - from:
+#        - podSelector:
+#            matchLabels:
+#              app: nifi
+#      ports:
+#        - protocol: TCP
+#          port: 2181
+
+---
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: zookeeper
   namespace: nifi
 spec:
+  serviceName: zookeeper
   replicas: 1
   selector:
     matchLabels:
