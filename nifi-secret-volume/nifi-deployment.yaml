@@ -124,8 +124,8 @@ spec:
             - name: NIFI_UI_BANNER_TEXT
               value: $(POD_NAME)
 
-            - name: NIFI_WEB_HTTPS_HOST
-              value: $(POD_NAME).$(NIFI_HEADLESS_SERVICE).$(POD_NAMESPACE).svc.cluster.local
+#            - name: NIFI_WEB_HTTPS_HOST
+#              value: $(POD_NAME).$(NIFI_HEADLESS_SERVICE).$(POD_NAMESPACE).svc.cluster.local
 
 
             - name: KEYSTORE_PATH
