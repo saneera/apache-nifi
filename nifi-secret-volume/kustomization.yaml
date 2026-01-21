@@ -9,7 +9,9 @@ resources:
 #   - nifi-conf-pvc.yaml
    - zookeeper.yaml
    - nifi-deployment.yaml
-   - configmap-ssl.yml
+   - config-map-ssl2.yaml
+#   - configmap-ssl.yml
+
 
 
 

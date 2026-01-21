@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nifi-ssl-cm
+data:
+  security.sh: |
+    #!/bin/sh
+    set -e
+
+    NIFI_HOME=/opt/nifi/nifi-current
+    TLS_DIR=${NIFI_HOME}/tls
+
+    KEYSTORE=${TLS_DIR}/keystore.p12
+    TRUSTSTORE=${TLS_DIR}/truststore.p12
+    PASSWORD=${KEYSTORE_PASSWORD:-changeit}
+    HOSTNAME=$(hostname -f)
+
+    echo "Using hostname: ${HOSTNAME}"
+    echo "TLS directory: ${TLS_DIR}"
+
+    mkdir -p ${TLS_DIR}
+
+    # ---------------------------------------------------
+    # Generate certs ONCE (shared PVC)
+    # ---------------------------------------------------
+    if [ ! -f "${KEYSTORE}" ]; then
+      echo "Generating shared TLS keystore and truststore"
+
+      keytool -genkeypair \
+        -alias nifi \
+        -keyalg RSA \
+        -keysize 2048 \
+        -storetype PKCS12 \
+        -keystore ${KEYSTORE} \
+        -storepass ${PASSWORD} \
+        -keypass ${PASSWORD} \
+        -dname "CN=${HOSTNAME}" \
+        -validity 90
+
+      keytool -exportcert \
+        -alias nifi \
+        -keystore ${KEYSTORE} \
+        -storepass ${PASSWORD} \
+        -rfc \
+        -file ${TLS_DIR}/nifi.crt
+
+      keytool -importcert \
+        -alias nifi \
+        -file ${TLS_DIR}/nifi.crt \
+        -keystore ${TRUSTSTORE} \
+        -storetype PKCS12 \
+        -storepass ${PASSWORD} \
+        -noprompt
+    else
+      echo "TLS already exists – reusing"
+    fi
+
+    # ---------------------------------------------------
+    # Configure NiFi
+    # ---------------------------------------------------
+    prop_replace() {
+      sed -i "s|^$1=.*|$1=$2|" ${NIFI_HOME}/conf/nifi.properties || \
+      echo "$1=$2" >> ${NIFI_HOME}/conf/nifi.properties
+    }
+
+    prop_replace nifi.security.keystore ${KEYSTORE}
+    prop_replace nifi.security.keystoreType PKCS12
+    prop_replace nifi.security.keystorePasswd ${PASSWORD}
+
+    prop_replace nifi.security.truststore ${TRUSTSTORE}
+    prop_replace nifi.security.truststoreType PKCS12
+    prop_replace nifi.security.truststorePasswd ${PASSWORD}
