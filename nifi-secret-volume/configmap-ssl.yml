@@ -30,7 +30,7 @@ data:
     if [ ! -f "${KEYSTORE}" ]; then
       echo "Generating shared NiFi cluster TLS material"
 
-      ${TOOL_KIT_HOME}/nifi-toolkit.sh tls standalone \
+      ${TOOL_KIT_HOME}/toolkit.sh tls standalone \
         --hostnames "${HOSTNAME}" \
         --keyStore "${KEYSTORE}" \
         --keyStorePassword "${PASSWORD}" \
