@@ -1,0 +1,156 @@
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nifi-state-management
+  namespace: nifi
+data:
+  state-management.xml: |
+    <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    <stateManagement>
+        
+        <!-- REQUIRED: Local state provider (NiFi 2.x) -->
+        <local-provider>
+            <id>local-provider</id>
+            <class>org.apache.nifi.controller.state.providers.local.WriteAheadLocalStateProvider</class>
+        </local-provider>
+        
+        <!-- REQUIRED: Cluster state provider -->
+        <cluster-provider>
+            <id>zk-provider</id>
+            <class>org.apache.nifi.framework.cluster.state.ZooKeeperStateProvider</class>
+            <property name="Connect String">zookeeper.nifi.svc.cluster.local:2181</property>
+            <property name="Root Node">/nifi</property>
+            <property name="Session Timeout">10 seconds</property>
+            <property name="Access Control">Open</property>
+        </cluster-provider>
+
+    </stateManagement>
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: nifi
+  namespace: nifi
+spec:
+  serviceName: nifi
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nifi
+  template:
+    metadata:
+      labels:
+        app: nifi
+    spec:
+      enableServiceLinks: false
+      setHostnameAsFQDN: true
+      dnsPolicy: ClusterFirstWithHostNet
+      initContainers:
+
+        - name: busybox
+          image: busybox:latest
+          command:
+            - sh
+            - -c
+            - |
+              echo "Connecting to Zookeeper"
+              until nc -vzw 1 zookeeper 2181 ; do
+                echo "Waiting for zookeeper to start"
+                sleep 3
+              done
+
+      containers:
+        - name: nifi
+          image: apache/nifi:2.7.2
+          ports:
+            - containerPort: 8443  # HTTPS UI
+            - containerPort: 11443 # Cluster protocol
+          env:
+            # Pod identity
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+
+            # --- UI HTTPS ---
+            - name: NIFI_WEB_HTTPS_PORT
+              value: "8443"
+            - name: NIFI_SECURITY_KEYSTORE
+              value: "/opt/nifi/certs/keystore.jks"
+            - name: NIFI_SECURITY_KEYSTORE_TYPE
+              value: "JKS"
+            - name: NIFI_SECURITY_KEYSTORE_PASSWD
+              valueFrom:
+                secretKeyRef:
+                  name: nifi-certs
+                  key: keystorePass
+            - name: NIFI_SECURITY_KEY_PASSWD
+              valueFrom:
+                secretKeyRef:
+                  name: nifi-certs
+                  key: keyPass
+            - name: NIFI_SECURITY_TRUSTSTORE
+              value: "/opt/nifi/certs/truststore.jks"
+            - name: NIFI_SECURITY_TRUSTSTORE_TYPE
+              value: "JKS"
+            - name: NIFI_SECURITY_TRUSTSTORE_PASSWD
+              valueFrom:
+                secretKeyRef:
+                  name: nifi-certs
+                  key: truststorePass
+
+            # --- Cluster config ---
+            - name: NIFI_CLUSTER_IS_NODE
+              value: "true"
+            - name: NIFI_CLUSTER_PROTOCOL_IS_SECURE
+              value: "true"  # node-to-node TLS
+
+
+            - name: NIFI_CLUSTER_NODE_ADDRESS
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: NIFI_CLUSTER_NODE_PROTOCOL_PORT
+              value: "11443"
+
+            # --- ZooKeeper ---
+            - name: NIFI_ZOOKEEPER_CONNECT_STRING
+              value: "zookeeper:2181"
+            - name: NIFI_ZK_CONNECT_STRING
+              value: "zookeeper:2181"
+
+            - name: NIFI_ZOOKEEPER_ROOT_NODE
+              value: "/nifi"
+
+
+            # --- Sensitive props ---
+            - name: NIFI_SENSITIVE_PROPS_KEY
+              value: "ChangeMeForProd"
+
+          volumeMounts:
+            - name: nifi-state
+              mountPath: /opt/nifi/nifi-current/state
+            - name: nifi-certs
+              mountPath: /opt/nifi/certs
+              readOnly: true
+#            - name: nifi-state-management
+#              mountPath: /opt/nifi/nifi-current/conf/state-management.xml
+#              subPath: state-management.xml
+
+      volumes:
+        - name: nifi-state
+          persistentVolumeClaim:
+            claimName: nifi-state-pvc
+        - name: nifi-certs
+          secret:
+            secretName: nifi-certs
+#        - name: nifi-state-management
+#          configMap:
+#            name: nifi-state-management

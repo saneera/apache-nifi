@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+########################################
+# Configuration
+########################################
+
+NIFI_HOME=${NIFI_HOME:-/opt/nifi/nifi-current}
+TLS_DIR="${NIFI_HOME}/keytool"
+
+CA_KEY="${TLS_DIR}/ca.key"
+CA_CERT="${TLS_DIR}/ca.crt"
+CA_PASS="${NIFI_SENSITIVE_PROPS_KEY}"
+
+KEYSTORE="${TLS_DIR}/keystore.p12"
+TRUSTSTORE="${TLS_DIR}/truststore.p12"
+
+STORE_PASS="${NIFI_SENSITIVE_PROPS_KEY}"
+KEY_PASS="${NIFI_SENSITIVE_PROPS_KEY}"
+
+NODE_DNS="${POD_NAME}.nifi.${POD_NAMESPACE}.svc.cluster.local"
+SERVICE_DNS="nifi.${POD_NAMESPACE}.svc.cluster.local"
+
+########################################
+# Create CA (ONCE)
+########################################
+
+if [[ ! -f "${CA_CERT}" ]]; then
+  echo "Creating NiFi Cluster CA"
+
+  openssl genrsa -out "${CA_KEY}" 4096
+
+  openssl req -x509 -new -nodes \
+    -key "${CA_KEY}" \
+    -sha256 \
+    -days 3650 \
+    -out "${CA_CERT}" \
+    -subj "/CN=NiFi-Cluster-CA"
+fi
+
+########################################
+# Create node keystore (per pod)
+########################################
+
+if [[ ! -f "${KEYSTORE}" ]]; then
+  echo "Creating keystore for ${NODE_DNS}"
+
+  # Generate keypair
+  keytool -genkeypair \
+    -alias nifi-node \
+    -keyalg RSA \
+    -keysize 2048 \
+    -keystore "${KEYSTORE}" \
+    -storetype PKCS12 \
+    -storepass "${STORE_PASS}" \
+    -keypass "${KEY_PASS}" \
+    -dname "CN=${NODE_DNS}" \
+    -ext "SAN=dns:${NODE_DNS},dns:${SERVICE_DNS},dns:localhost,ip:${POD_IP}"
+
+  # Create CSR
+  keytool -certreq \
+    -alias nifi-node \
+    -keystore "${KEYSTORE}" \
+    -storepass "${STORE_PASS}" \
+    -file "${TLS_DIR}/node.csr"
+
+  # Sign CSR with CA
+  openssl x509 -req \
+    -in "${TLS_DIR}/node.csr" \
+    -CA "${CA_CERT}" \
+    -CAkey "${CA_KEY}" \
+    -CAcreateserial \
+    -out "${TLS_DIR}/node.crt" \
+    -days 3650 \
+    -sha256 \
+    -extensions v3_req \
+    -extfile <(cat <<EOF
+[v3_req]
+subjectAltName=DNS:${NODE_DNS},DNS:${SERVICE_DNS},DNS:localhost,IP:${POD_IP}
+EOF
+)
+
+  # Import CA cert
+  keytool -importcert -noprompt \
+    -alias nifi-ca \
+    -file "${CA_CERT}" \
+    -keystore "${KEYSTORE}" \
+    -storepass "${STORE_PASS}"
+
+  # Import signed node cert
+  keytool -importcert \
+    -alias nifi-node \
+    -file "${TLS_DIR}/node.crt" \
+    -keystore "${KEYSTORE}" \
+    -storepass "${STORE_PASS}"
+
+  rm -f "${TLS_DIR}/node.csr" "${TLS_DIR}/node.crt"
+fi
+
+########################################
+# Create truststore (shared)
+########################################
+
+if [[ ! -f "${TRUSTSTORE}" ]]; then
+  echo "Creating truststore"
+
+  keytool -importcert -noprompt \
+    -alias nifi-ca \
+    -file "${CA_CERT}" \
+    -keystore "${TRUSTSTORE}" \
+    -storetype PKCS12 \
+    -storepass "${STORE_PASS}"
+fi
+
+########################################
+# Final permissions
+########################################
+
+chown -R nifi:nifi "${TLS_DIR}"
+chmod 600 "${KEYSTORE}" "${TRUSTSTORE}"
+
+echo "TLS material ready for ${NODE_DNS}"

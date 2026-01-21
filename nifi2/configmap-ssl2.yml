@@ -1,0 +1,97 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nifi-ssl-cm
+  namespace: nifi
+data:
+  generate-certs.sh: |
+    #!/bin/bash
+    set -e
+
+    NIFI_HOME="/opt/nifi/nifi-current"
+    CERT_DIR="$NIFI_HOME/keytool"
+    mkdir -p $CERT_DIR
+
+    KEYSTORE_PASS="th1s1s3up34e5r37"
+    TRUSTSTORE_PASS="th1s1s3up34e5r37"
+    CA_PASS="changeit"
+    DAYS_VALID=3650
+
+    POD_NAME=${HOSTNAME}
+    POD_IP=${POD_IP}
+    NAMESPACE=${POD_NAMESPACE}
+    HEADLESS_SERVICE=${NIFI_HEADLESS_SERVICE}
+
+    echo "==> Creating CA if not exists..."
+    if [ ! -f "$CERT_DIR/ca-keystore.p12" ]; then
+      keytool -genkeypair \
+        -alias nifi-ca \
+        -keyalg RSA \
+        -keysize 2048 \
+        -dname "CN=NiFi Cluster CA, OU=Dev, O=MyOrg, L=City, ST=State, C=US" \
+        -keypass $CA_PASS \
+        -storepass $CA_PASS \
+        -keystore $CERT_DIR/ca-keystore.p12 \
+        -storetype PKCS12 \
+        -validity $DAYS_VALID \
+        -ext bc:c
+
+      keytool -exportcert \
+        -alias nifi-ca \
+        -keystore $CERT_DIR/ca-keystore.p12 \
+        -storepass $CA_PASS \
+        -rfc -file $CERT_DIR/ca-cert.pem
+    fi
+
+    echo "==> Generating keystore and CSR for pod $POD_NAME..."
+    keytool -genkeypair \
+      -alias $POD_NAME \
+      -keyalg RSA \
+      -keysize 2048 \
+      -dname "CN=$POD_NAME.$HEADLESS_SERVICE.$NAMESPACE.svc.cluster.local, OU=NiFi, O=MyOrg, L=City, ST=State, C=US" \
+      -keypass $KEYSTORE_PASS \
+      -storepass $KEYSTORE_PASS \
+      -keystore $CERT_DIR/$POD_NAME-keystore.p12 \
+      -storetype PKCS12 \
+      -validity $DAYS_VALID \
+      -ext SAN="dns:$POD_NAME,dns:$POD_NAME.$HEADLESS_SERVICE,dns:$POD_NAME.$HEADLESS_SERVICE.$NAMESPACE,dns:$POD_NAME.$HEADLESS_SERVICE.$NAMESPACE.svc,dns:$POD_NAME.$HEADLESS_SERVICE.$NAMESPACE.svc.cluster.local,dns:localhost,ip:$POD_IP,ip:127.0.0.1"
+
+    keytool -certreq \
+      -alias $POD_NAME \
+      -keystore $CERT_DIR/$POD_NAME-keystore.p12 \
+      -storepass $KEYSTORE_PASS \
+      -file $CERT_DIR/$POD_NAME.csr \
+      -ext SAN="dns:$POD_NAME,dns:$POD_NAME.$HEADLESS_SERVICE,dns:$POD_NAME.$HEADLESS_SERVICE.$NAMESPACE,dns:$POD_NAME.$HEADLESS_SERVICE.$NAMESPACE.svc,dns:$POD_NAME.$HEADLESS_SERVICE.$NAMESPACE.svc.cluster.local,dns:localhost,ip:$POD_IP,ip:127.0.0.1"
+
+    echo "==> Signing certificate with CA..."
+    keytool -gencert \
+      -infile $CERT_DIR/$POD_NAME.csr \
+      -outfile $CERT_DIR/$POD_NAME-cert.pem \
+      -keystore $CERT_DIR/ca-keystore.p12 \
+      -storepass $CA_PASS \
+      -alias nifi-ca \
+      -validity $DAYS_VALID \
+      -rfc \
+      -ext SAN="dns:$POD_NAME,dns:$POD_NAME.$HEADLESS_SERVICE,dns:$POD_NAME.$HEADLESS_SERVICE.$NAMESPACE,dns:$POD_NAME.$HEADLESS_SERVICE.$NAMESPACE.svc,dns:$POD_NAME.$HEADLESS_SERVICE.$NAMESPACE.svc.cluster.local,dns:localhost,ip:$POD_IP,ip:127.0.0.1"
+
+    keytool -importcert -trustcacerts \
+      -keystore $CERT_DIR/$POD_NAME-keystore.p12 \
+      -storepass $KEYSTORE_PASS \
+      -alias nifi-ca \
+      -file $CERT_DIR/ca-cert.pem -noprompt
+
+    keytool -importcert \
+      -keystore $CERT_DIR/$POD_NAME-keystore.p12 \
+      -storepass $KEYSTORE_PASS \
+      -alias $POD_NAME \
+      -file $CERT_DIR/$POD_NAME-cert.pem -noprompt
+
+    echo "==> Creating truststore..."
+    cp $CERT_DIR/ca-keystore.p12 $CERT_DIR/truststore.p12
+    keytool -importcert -trustcacerts \
+      -keystore $CERT_DIR/truststore.p12 \
+      -storepass $TRUSTSTORE_PASS \
+      -alias nifi-ca \
+      -file $CERT_DIR/ca-cert.pem -noprompt
+
+    echo "==> Certificates generated successfully!"
