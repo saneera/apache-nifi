@@ -120,3 +120,17 @@ chown -R nifi:nifi "${TLS_DIR}"
 chmod 600 "${KEYSTORE}" "${TRUSTSTORE}"
 
 echo "TLS material ready for ${NODE_DNS}"
+
+
+
+---
+
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-path
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: rancher.io/local-path
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete
