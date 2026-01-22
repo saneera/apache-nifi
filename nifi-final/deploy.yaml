@@ -1,0 +1,310 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nifi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zookeeper
+  namespace: nifi
+spec:
+  selector:
+    app: zookeeper
+  ports:
+    - name: client
+      port: 2181
+      targetPort: 2181
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zookeeper
+  namespace: nifi
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zookeeper
+  template:
+    metadata:
+      labels:
+        app: zookeeper
+    spec:
+      containers:
+        - name: zookeeper
+          image: zookeeper:3.9
+          ports:
+            - containerPort: 2181
+          env:
+            - name: ZOO_CLIENT_PORT
+              value: "2181"
+            - name: ZOO_TICK_TIME
+              value: "2000"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nifi-headless
+  namespace: nifi
+spec:
+  clusterIP: None
+  selector:
+    app: nifi
+  ports:
+    - name: https
+      port: 8443
+      targetPort: 8443
+    - name: cluster
+      port: 11443
+      targetPort: 11443
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nifi
+  namespace: nifi
+spec:
+  type: NodePort
+  selector:
+    app: nifi
+  ports:
+    - name: https
+      port: 8443
+      targetPort: 8443
+      nodePort: 30443   # change if needed
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nifi-env
+  namespace: nifi
+data:
+  # Basic
+  NIFI_WEB_HTTPS_PORT: "8443"
+  NIFI_CLUSTER_IS_NODE: "true"
+  NIFI_CLUSTER_NODE_PROTOCOL_PORT: "11443"
+  NIFI_ZK_CONNECT_STRING: "zookeeper:2181"
+
+  # Where the TLS files will be mounted (READ ONLY)
+  NIFI_SECURITY_KEYSTORE: "/opt/nifi/certs/keystore.p12"
+  NIFI_SECURITY_KEYSTORE_TYPE: "PKCS12"
+  NIFI_SECURITY_TRUSTSTORE: "/opt/nifi/certs/truststore.p12"
+  NIFI_SECURITY_TRUSTSTORE_TYPE: "PKCS12"
+
+  # Optional but recommended in many setups
+  NIFI_SENSITIVE_PROPS_KEY: "ChangeMe_32chars_minimum_please!!"
+
+  # If you access NiFi via NodePort using node IP, you typically need proxy host set:
+  # example: "10.0.0.10:30443"
+  # You can also add multiple entries comma-separated.
+  NIFI_WEB_PROXY_HOST: "localhost:30443"
+---
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: nifi
+  namespace: nifi
+spec:
+  serviceName: nifi-headless
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nifi
+  template:
+    metadata:
+      labels:
+        app: nifi
+    spec:
+      setHostnameAsFQDN: true
+
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        fsGroup: 1000
+        fsGroupChangePolicy: "OnRootMismatch"
+
+      initContainers:
+        - name: wait-for-zk
+          image: busybox:1.36
+          command: ["sh","-c"]
+          args:
+            - |
+              echo "Waiting for Zookeeper..."
+              until nc -vzw 2 zookeeper 2181; do
+                echo "ZK not ready..."
+                sleep 2
+              done
+              echo "ZK ready."
+
+        # ✅ NEW: Copy correct keystore for this pod into writable volume
+        - name: select-keystore
+          image: busybox:1.36
+          command: ["sh","-c"]
+          args:
+            - |
+              set -e
+              POD_NAME="$(cat /etc/podinfo/name)"
+              echo "Selecting TLS files for POD=${POD_NAME}"
+
+              if [ ! -f "/tls/keystore-${POD_NAME}.p12" ]; then
+                echo "ERROR: Missing /tls/keystore-${POD_NAME}.p12 in secret nifi-tls-bundle"
+                echo "Files in /tls:"
+                ls -l /tls || true
+                exit 1
+              fi
+
+              cp "/tls/keystore-${POD_NAME}.p12" /runtime/keystore.p12
+              cp "/tls/truststore.p12" /runtime/truststore.p12
+              cp "/tls/ca.crt" /runtime/ca.crt
+
+              chmod 0400 /runtime/keystore.p12 /runtime/truststore.p12 /runtime/ca.crt || true
+              echo "Runtime certs prepared:"
+              ls -l /runtime
+
+          volumeMounts:
+            - name: nifi-tls-bundle
+              mountPath: /tls
+              readOnly: true
+            - name: runtime-certs
+              mountPath: /runtime
+            - name: podinfo
+              mountPath: /etc/podinfo
+              readOnly: true
+
+      containers:
+        - name: nifi
+          image: apache/nifi:2.7.2
+          ports:
+            - name: https
+              containerPort: 8443
+            - name: cluster
+              containerPort: 11443
+
+          envFrom:
+            - configMapRef:
+                name: nifi-env
+            - secretRef:
+                name: nifi-auth
+
+          command: ["sh","-c"]
+          args:
+            - |
+              export POD_NAME="$(cat /etc/podinfo/name)"
+              export POD_NAMESPACE="$(cat /etc/podinfo/namespace)"
+              export NIFI_NODE_FQDN="${POD_NAME}.nifi-headless.${POD_NAMESPACE}.svc.cluster.local"
+
+              # ✅ Force FQDN everywhere
+              export NIFI_CLUSTER_NODE_ADDRESS="${NIFI_NODE_FQDN}"
+              export NIFI_CLUSTER_LOAD_BALANCE_HOST="${NIFI_NODE_FQDN}"
+              export NIFI_REMOTE_INPUT_HOST="${NIFI_NODE_FQDN}"
+              export NIFI_WEB_HTTPS_HOST="${NIFI_NODE_FQDN}"
+
+              # ✅ Force NiFi to use our certs (NOT localhost self-signed)
+              export NIFI_SECURITY_KEYSTORE="/opt/nifi/runtime-certs/keystore.p12"
+              export NIFI_SECURITY_KEYSTORE_TYPE="PKCS12"
+              export NIFI_SECURITY_TRUSTSTORE="/opt/nifi/runtime-certs/truststore.p12"
+              export NIFI_SECURITY_TRUSTSTORE_TYPE="PKCS12"
+
+              echo "Starting NiFi as ${NIFI_NODE_FQDN}"
+              exec /opt/nifi/scripts/start.sh
+
+          volumeMounts:
+            # ✅ NEW: runtime-certs (writable, per pod)
+            - name: runtime-certs
+              mountPath: /opt/nifi/runtime-certs
+
+            # Pod info
+            - name: podinfo
+              mountPath: /etc/podinfo
+              readOnly: true
+
+            # ✅ Mount PVC into repo folders (DO NOT mount over /opt/nifi/nifi-current)
+            - name: nifi-data
+              mountPath: /opt/nifi/nifi-current/flowfile_repository
+              subPath: flowfile_repository
+            - name: nifi-data
+              mountPath: /opt/nifi/nifi-current/content_repository
+              subPath: content_repository
+            - name: nifi-data
+              mountPath: /opt/nifi/nifi-current/provenance_repository
+              subPath: provenance_repository
+            - name: nifi-data
+              mountPath: /opt/nifi/nifi-current/state
+              subPath: state
+            - name: nifi-data
+              mountPath: /opt/nifi/nifi-current/database_repository
+              subPath: database_repository
+            - name: nifi-data
+              mountPath: /opt/nifi/nifi-current/logs
+              subPath: logs
+
+          readinessProbe:
+            tcpSocket:
+              port: 8443
+            initialDelaySeconds: 30
+            periodSeconds: 10
+
+          livenessProbe:
+            tcpSocket:
+              port: 8443
+            initialDelaySeconds: 60
+            periodSeconds: 20
+
+      volumes:
+        # ✅ NEW: bundle secret with per-node keystores
+        - name: nifi-tls-bundle
+          secret:
+            secretName: nifi-tls-bundle
+
+        # ✅ NEW: writable runtime cert location
+        - name: runtime-certs
+          emptyDir: {}
+
+        - name: podinfo
+          downwardAPI:
+            items:
+              - path: "name"
+                fieldRef:
+                  fieldPath: metadata.name
+              - path: "namespace"
+                fieldRef:
+                  fieldPath: metadata.namespace
+
+  volumeClaimTemplates:
+    - metadata:
+        name: nifi-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+        # storageClassName: YOUR_STORAGE_CLASS
+
+
+---
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: nifi-tls
+  namespace: nifi
+type: Opaque
+data:
+  ca.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUZGVENDQXYyZ0F3SUJBZ0lVVTgzTnR6b3dDWS84RUVPcE5JR0FuOTI0UFg4d0RRWUpLb1pJaHZjTkFRRUwKQlFBd0dqRVlNQllHQTFVRUF3d1BUbWxHYVMxRGJIVnpkR1Z5TFVOQk1CNFhEVEkyTURFeU1qQTVNemMwTjFvWApEVE0yTURFeU1EQTVNemMwTjFvd0dqRVlNQllHQTFVRUF3d1BUbWxHYVMxRGJIVnpkR1Z5TFVOQk1JSUNJakFOCkJna3Foa2lHOXcwQkFRRUZBQU9DQWc4QU1JSUNDZ0tDQWdFQXNwZEc4UE1EYVpNbDMxNmQwRzk2amZsYVlSVkoKcitWYTRIZ0NMbjNucCswNnE5bHgzNWM3eEtYWXVhbVk0alVnNG05ZkdPK0hBcllpaWNHQWp1VktzblhvajYzVQpNTFpWRmQ5dHdYQUFjcUFhT1FkZ2NWR2R1OVpQNm1ta1YwNzNoOVI3VHFrMGxQUWlRWFplVzg4UEhWOFJwVGIzClMzTEc4VXR6eWgyNEdqUHp5V2xBRnlzU0xPZ2ZXeWxEM1VLenlWaE54bi9zQ0ZUeVl6Q2E2RDBweGlRVkR5NnMKZ1JBcm1aMzI5b2o3UkEwTUtoRThUZVROdFkwUUxrcndiZUlFSHNtRGx2enNCVVRkYmtuM0pURVlDUTRYdmhHNwpKOVZVY1FtR00reCtQUGdxWmlWQW91Y2dFQnZsVk5BYVZ3b1ZsMjk4WEZ6SXczVk5OeVdIU01oTVV3dFh0L2t1CnBGVDZFQ1o5TWhoOWNSNVpzUWJNc0k0VUZZU3I5WVZlVzNkQmtBVElZV28ySDE3QXRPWTJEL2NOcndWY0doTXgKdnY4T2hneUVjT2RhWHZMOVhqSCtKRm51V2hGWHBrMllRMnBpTjRxbURFL2R1T3paR1dTbWlDVitQRjc3ak4ySwpUREVwcjhJMVBLZXNYMmw2LzZSK0RTSlIyekNUeGUyYWc3RkFacngzdktIbmkvUlhCRVpzL1YzRExYcktxWUtNCk1ycVRIZzZLblRwUDVPZnlJTFZrQkFzODZCVVZ4SDhpRUNRa3Y2WnRkbVN2OTd3V0hrY2tOWnJTVy9BS1V2ajgKNW0rN2ZqTmhCcjg0NVBTMERSWDlRYUt4WThwNHVZc2ppTDRYV2tQMDNubjNVVkJaOC9kMzQ1ZzBPcjUvdUx2OQpLMG53UDFZaU8yeUxQaXNDQXdFQUFhTlRNRkV3SFFZRFZSME9CQllFRktNTGorcGFLYytJVmtjb3hLOWdxR3lrCldPN2VNQjhHQTFVZEl3UVlNQmFBRktNTGorcGFLYytJVmtjb3hLOWdxR3lrV083ZU1BOEdBMVVkRXdFQi93UUYKTUFNQkFmOHdEUVlKS29aSWh2Y05BUUVMQlFBRGdnSUJBSFR5cjRuTjR2RmdidDRqQlFjNUhtVTBtTGtvVFlSaApVZHR6eTc3NWZGcjdVWEQraTJTMFBuNUZZcjVNYWRSUnNvVmdnN2lNaDlxYWFjUnVFbWIxeXdKOUlsb2JjVFg5ClVBLy9ra0l1ODVKcmFPMnlGU1FQNWQyNmphVnoxUDltTStRaExGaUExRVVlbU9KMXBWV2h3MzNJQUJ0bEVwUFYKSkhiWGVGOW9yOHJFQ2FXbzBhOEdDcG1PRmMyV2F6bUY5clkxYjNpRit0NnZvMjc4NHlwZDM3cGVxNFZwb0tuSwp4VzFsZFEzdmI4UXp2dElpUlpHTndQeDlMNDBuWlU2eFd6b3BrSGZtdkZJQkV5SGhoQ0hjbUQyVSt0SlpYbEE0Ck02cExnNVByUFBJaE1YOWNjeUttcEEvTTM0a0lYUS9LOTBrekYxNGMySGFVT0J1MVE5ejhqaHViQ051T25GcEIKd3JHTzhJWWpqVVB5TE9wSk1iSzIxQVV0L1Vjd2NpbDN4aWpaUmNkeG83bWNTdUdhdnFValdVQTZSVG9rZU1FcQphNEFuZCtiN2M1ZnR4c1FXZTQ1b3U3ZHFSaHZpSFh3bENwSzlKdkpXZHZ5UFlNdnVFNmt5dTZsZG9CMElSeXBvCk9ub3cvMWNBNlVjQjNVeUpnOEpDdXlXQVJ4L1QrV21Kb3F3Q1E4bEpRQjRvTnhVSzBDRnUwSGY3OStYa3hCNWQKR3UzSEtDZU83WTVDOFRmWDVZSC9UV3o3TWFQNXVRTFdGWEphRGFTaGNnWXNzUmFmY08vaXd4VTlSYzZrZXlHcApISHpWcFhrQjI1a2VhWXo3QUtaUHgwcUZWTHhwS0lwR0NEWThJZXpNVHA1SjRxRnhTZGJnR3lMYUhSRnc5eVFhClBtdmVHQmNvbzlLRgotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCg==
+  truststore.p12: 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
+
+
+---
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: nifi-auth
+  namespace: nifi
+type: Opaque
+stringData:
+  KEYSTORE_PASSWORD: changeit
+  TRUSTSTORE_PASSWORD: changeit

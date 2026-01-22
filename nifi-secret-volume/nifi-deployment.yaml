@@ -157,12 +157,12 @@ spec:
               mountPath: /scripts/security.sh
               subPath: security.sh
               readOnly: false
-            - name: ca
-              mountPath: /opt/nifi/nifi-current/keytool/ca.crt
-              subPath: ca.crt
-            - name: ca
-              mountPath: /opt/nifi/nifi-current/keytool/truststore.p12
-              subPath: truststore.p12
+#            - name: ca
+#              mountPath: /opt/nifi/nifi-current/keytool/ca.crt
+#              subPath: ca.crt
+#            - name: ca
+#              mountPath: /opt/nifi/nifi-current/keytool/truststore.p12
+#              subPath: truststore.p12
             - name: nifi-conf
               mountPath: /opt/nifi/nifi-current/tls
       volumes:
@@ -174,9 +174,9 @@ spec:
             name: nifi-ssl-cm
             defaultMode: 0755
 
-        - name: ca
-          secret:
-            secretName: nifi-ca
+#        - name: ca
+#          secret:
+#            secretName: nifi-ca
         - name: nifi-conf
           persistentVolumeClaim:
             claimName: nifi-tls-pvc

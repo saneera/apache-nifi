@@ -134,3 +134,24 @@ metadata:
 provisioner: rancher.io/local-path
 volumeBindingMode: WaitForFirstConsumer
 reclaimPolicy: Delete
+
+
+
+
+mkdir nifi-ca && cd nifi-ca
+
+openssl genrsa -out ca.key 4096
+
+openssl req -x509 -new -nodes \
+  -key ca.key \
+  -sha256 \
+  -days 3650 \
+  -out ca.crt \
+  -subj "/CN=NiFi-Cluster-CA"
+
+keytool -importcert -noprompt \
+  -alias nifi-ca \
+  -file ca.crt \
+  -keystore truststore.p12 \
+  -storetype PKCS12 \
+  -storepass changeit
