@@ -163,3 +163,10 @@ keytool -importcert -noprompt \
     --from-file=truststore.p12=truststore.p12 \
     -n nifi \
     --dry-run=client -o yaml > nifi-truststore-secret.yaml
+
+
+# Ensure TLS dir is writable for the NiFi user (UID/GID 1000)
+# (matches your pod securityContext runAsUser/runAsGroup/fsGroup)
+echo "Fixing permissions on ${TLS_DIR}"
+chown -R 1000:1000 "${TLS_DIR}" 2>/dev/null || true
+chmod -R 770 "${TLS_DIR}" 2>/dev/null || true
