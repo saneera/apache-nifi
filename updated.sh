@@ -155,3 +155,11 @@ keytool -importcert -noprompt \
   -keystore truststore.p12 \
   -storetype PKCS12 \
   -storepass changeit
+
+
+
+  kubectl create secret generic nifi-truststore-secret \
+    --from-file=ca.crt=ca.crt \
+    --from-file=truststore.p12=truststore.p12 \
+    -n nifi \
+    --dry-run=client -o yaml > nifi-truststore-secret.yaml
