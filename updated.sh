@@ -170,3 +170,18 @@ keytool -importcert -noprompt \
 echo "Fixing permissions on ${TLS_DIR}"
 chown -R 1000:1000 "${TLS_DIR}" 2>/dev/null || true
 chmod -R 770 "${TLS_DIR}" 2>/dev/null || true
+
+
+initContainers:
+  - name: init-tls
+    image: nifi-image
+    securityContext:
+      runAsUser: 0
+      runAsGroup: 0
+    command: ["/bin/sh","-c","/scripts/security.sh"]
+    volumeMounts:
+      - name: scripts
+        mountPath: /scripts/security.sh
+        subPath: security.sh
+      - name: nifi-conf
+        mountPath: /opt/nifi/nifi-current/tls
