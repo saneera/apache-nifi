@@ -185,3 +185,7 @@ initContainers:
         subPath: security.sh
       - name: nifi-conf
         mountPath: /opt/nifi/nifi-current/tls
+
+
+kubectl exec -n dev-1 nifi-0 -c nifi -- sh -c 'ls -l /opt/nifi/tls; sha256sum /opt/nifi/tls/keystore.p12 /opt/nifi/tls/truststore.p12 2>/dev/null || true'
+kubectl exec -n dev-1 nifi-1 -c nifi -- sh -c 'ls -l /opt/nifi/tls; sha256sum /opt/nifi/tls/keystore.p12 /opt/nifi/tls/truststore.p12 2>/dev/null || true'
