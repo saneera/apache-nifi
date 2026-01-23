@@ -189,3 +189,16 @@ initContainers:
 
 kubectl exec -n dev-1 nifi-0 -c nifi -- sh -c 'ls -l /opt/nifi/tls; sha256sum /opt/nifi/tls/keystore.p12 /opt/nifi/tls/truststore.p12 2>/dev/null || true'
 kubectl exec -n dev-1 nifi-1 -c nifi -- sh -c 'ls -l /opt/nifi/tls; sha256sum /opt/nifi/tls/keystore.p12 /opt/nifi/tls/truststore.p12 2>/dev/null || true'
+
+
+
+kubectl exec -n dev-1 nifi-0 -c nifi -- sh -c 'grep -E "nifi.security.(keystore|truststore)" -n /opt/nifi/nifi-current/conf/nifi.properties'
+kubectl exec -n dev-1 nifi-1 -c nifi -- sh -c 'grep -E "nifi.security.(keystore|truststore)" -n /opt/nifi/nifi-current/conf/nifi.properties'
+
+kubectl exec -n dev-1 nifi-0 -c nifi -- sh -c 'grep -E "nifi.cluster.protocol.is.secure|nifi.cluster.node.protocol.port" -n /opt/nifi/nifi-current/conf/nifi.properties'
+kubectl exec -n dev-1 nifi-1 -c nifi -- sh -c 'grep -E "nifi.cluster.protocol.is.secure|nifi.cluster.node.protocol.port" -n /opt/nifi/nifi-current/conf/nifi.properties'
+
+
+kubectl exec -n dev-1 nifi-0 -c nifi -- sh -c '
+keytool -list -v -keystore /opt/nifi/tls/keystore.p12 -storetype PKCS12 -storepass "${KEYSTORE_PASSWORD:-changeit}" | grep -E "Owner:|SubjectAlternativeName" -A2
+'
