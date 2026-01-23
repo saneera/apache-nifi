@@ -202,3 +202,7 @@ kubectl exec -n dev-1 nifi-1 -c nifi -- sh -c 'grep -E "nifi.cluster.protocol.is
 kubectl exec -n dev-1 nifi-0 -c nifi -- sh -c '
 keytool -list -v -keystore /opt/nifi/tls/keystore.p12 -storetype PKCS12 -storepass "${KEYSTORE_PASSWORD:-changeit}" | grep -E "Owner:|SubjectAlternativeName" -A2
 '
+
+
+
+grep -E "nifi.web.proxy" /opt/nifi/nifi-current/conf/nifi.properties
