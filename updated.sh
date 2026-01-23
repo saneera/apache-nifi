@@ -211,3 +211,13 @@ keytool -list -v \
   -keystore /opt/nifi/tls/keystore.p12 \
   -storetype PKCS12 \
   -storepass changeit | grep -A2 "SubjectAlternativeName"
+
+
+  SAN="dns:${POD_NAME}.${HEADLESS_SERVICE}.${NAMESPACE}.svc.cluster.local"
+  SAN="${SAN},dns:${POD_NAME}"
+
+  # Explicitly add both nodes (StatefulSet)
+  SAN="${SAN},dns:nifi-0.${HEADLESS_SERVICE}.${NAMESPACE}.svc.cluster.local"
+  SAN="${SAN},dns:nifi-1.${HEADLESS_SERVICE}.${NAMESPACE}.svc.cluster.local"
+  SAN="${SAN},dns:nifi-0"
+  SAN="${SAN},dns:nifi-1"

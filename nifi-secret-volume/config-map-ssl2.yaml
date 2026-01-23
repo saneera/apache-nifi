@@ -7,41 +7,57 @@ data:
     #!/bin/sh
     set -eu
 
-    NIFI_HOME=/opt/nifi/nifi-current
-    TLS_DIR="${TLS_DIR:-/opt/nifi/tls}"
+    NIFI_HOME="${NIFI_HOME:-/opt/nifi/nifi-current}"
 
-    KEYSTORE="${TLS_DIR}/keystore.p12"
-    TRUSTSTORE="${TLS_DIR}/truststore.p12"
-    NIFI_CRT="${TLS_DIR}/nifi.crt"
+    # You mount the PVC here:
+    TLS_BASE_DIR="${TLS_BASE_DIR:-${NIFI_HOME}/tls}"
+
+    # Per-pod keystore dir
+    POD_NAME="${POD_NAME:-$(hostname)}"
+    POD_FQDN="${POD_FQDN:-$(hostname -f)}"
+
+    NODE_TLS_DIR="${TLS_BASE_DIR}/${POD_NAME}"
+    KEYSTORE="${NODE_TLS_DIR}/keystore.p12"
+    NODE_CRT="${NODE_TLS_DIR}/nifi-${POD_NAME}.crt"
+
+    # Shared truststore across pods
+    TRUSTSTORE="${TLS_BASE_DIR}/truststore.p12"
 
     PASSWORD="${KEYSTORE_PASSWORD:-changeit}"
 
-    POD_NAME="$(hostname)"
-    HOSTNAME_FQDN="$(hostname -f)"
-
-    NAMESPACE="${NAMESPACE:-default}"
-    HEADLESS_SERVICE="${HEADLESS_SERVICE:-nifi-headless}"
+    # cluster dns inputs
+    NAMESPACE="${POD_NAMESPACE:-${NAMESPACE:-default}}"
+    HEADLESS_SERVICE="${NIFI_HEADLESS_SERVICE:-${HEADLESS_SERVICE:-nifi-headless}}"
     REPLICAS="${REPLICAS:-2}"
 
+    # NodePort inputs
     NODEPORT_HOST="${NIFI_NODEPORT_HOST:-}"
     NODEPORT_PORT="${NIFI_NODEPORT_PORT:-}"
 
-    echo "Pod: ${POD_NAME}"
-    echo "FQDN: ${HOSTNAME_FQDN}"
-    echo "TLS dir: ${TLS_DIR}"
+    echo "== security.sh =="
+    echo "POD_NAME=${POD_NAME}"
+    echo "POD_FQDN=${POD_FQDN}"
+    echo "TLS_BASE_DIR=${TLS_BASE_DIR}"
+    echo "NODE_TLS_DIR=${NODE_TLS_DIR}"
+    echo "TRUSTSTORE=${TRUSTSTORE}"
 
-    mkdir -p "${TLS_DIR}"
-    chmod 0770 "${TLS_DIR}" 2>/dev/null || true
+    mkdir -p "${TLS_BASE_DIR}" "${NODE_TLS_DIR}" 2>/dev/null || true
+    chmod 0770 "${TLS_BASE_DIR}" "${NODE_TLS_DIR}" 2>/dev/null || true
 
     # -----------------------------
-    # Build SAN list
+    # Build SAN list for THIS pod cert
+    # Must include:
+    # - this pod's FQDN
+    # - this pod short name
+    # - all headless DNS names (so UI replication & inter-node calls validate)
+    # - optional NodePort host (IP/DNS) for browser SNI
     # -----------------------------
-    SAN="dns:${HOSTNAME_FQDN},dns:${POD_NAME}"
+    SAN="dns:${POD_FQDN},dns:${POD_NAME}"
 
     i=0
     while [ "$i" -lt "$REPLICAS" ]; do
       SAN="${SAN},dns:nifi-${i}.${HEADLESS_SERVICE}.${NAMESPACE}.svc.cluster.local"
-      i=`expr $i + 1`
+      i=`expr "$i" + 1`
     done
 
     if [ -n "${NODEPORT_HOST}" ]; then
@@ -54,12 +70,12 @@ data:
     echo "SAN=${SAN}"
 
     # -----------------------------
-    # Generate TLS once
+    # Generate per-pod keystore (unique identity per node)
     # -----------------------------
-    if [ ! -f "${KEYSTORE}" ] || [ ! -f "${TRUSTSTORE}" ]; then
-      echo "Generating TLS material"
+    if [ ! -f "${KEYSTORE}" ]; then
+      echo "Generating keystore for ${POD_NAME}"
 
-      rm -f "${KEYSTORE}" "${TRUSTSTORE}" "${NIFI_CRT}" 2>/dev/null || true
+      rm -f "${KEYSTORE}" "${NODE_CRT}" 2>/dev/null || true
 
       keytool -genkeypair \
         -alias nifi \
@@ -69,7 +85,7 @@ data:
         -keystore "${KEYSTORE}" \
         -storepass "${PASSWORD}" \
         -keypass "${PASSWORD}" \
-        -dname "CN=${HOSTNAME_FQDN}" \
+        -dname "CN=${POD_FQDN}" \
         -ext "SAN=${SAN}" \
         -validity 3650
 
@@ -78,19 +94,43 @@ data:
         -keystore "${KEYSTORE}" \
         -storepass "${PASSWORD}" \
         -rfc \
-        -file "${NIFI_CRT}"
+        -file "${NODE_CRT}"
 
+      chmod 0640 "${KEYSTORE}" "${NODE_CRT}" 2>/dev/null || true
+    else
+      echo "Keystore exists for ${POD_NAME} – reusing ${KEYSTORE}"
+    fi
+
+    # -----------------------------
+    # Ensure shared truststore exists and trusts BOTH nodes.
+    # We import each node cert under a unique alias.
+    # -----------------------------
+    if [ ! -f "${TRUSTSTORE}" ]; then
+      echo "Creating shared truststore ${TRUSTSTORE}"
+      # create empty truststore by importing this node's cert first
       keytool -importcert \
-        -alias nifi \
-        -file "${NIFI_CRT}" \
+        -alias "nifi-${POD_NAME}" \
+        -file "${NODE_CRT}" \
         -keystore "${TRUSTSTORE}" \
         -storetype PKCS12 \
         -storepass "${PASSWORD}" \
         -noprompt
-
-      chmod 0640 "${KEYSTORE}" "${TRUSTSTORE}" "${NIFI_CRT}" || true
+      chmod 0640 "${TRUSTSTORE}" 2>/dev/null || true
     else
-      echo "TLS already exists – reusing"
+      # add/replace this node cert into truststore
+      keytool -delete \
+        -alias "nifi-${POD_NAME}" \
+        -keystore "${TRUSTSTORE}" \
+        -storetype PKCS12 \
+        -storepass "${PASSWORD}" 2>/dev/null || true
+
+      keytool -importcert \
+        -alias "nifi-${POD_NAME}" \
+        -file "${NODE_CRT}" \
+        -keystore "${TRUSTSTORE}" \
+        -storetype PKCS12 \
+        -storepass "${PASSWORD}" \
+        -noprompt
     fi
 
     # -----------------------------
@@ -109,7 +149,7 @@ data:
     }
 
     # -----------------------------
-    # TLS config
+    # Point NiFi to per-pod keystore + shared truststore
     # -----------------------------
     prop_replace nifi.security.keystore "${KEYSTORE}"
     prop_replace nifi.security.keystoreType PKCS12
@@ -121,7 +161,8 @@ data:
     prop_replace nifi.security.truststorePasswd "${PASSWORD}"
 
     # -----------------------------
-    # Proxy config (CRITICAL)
+    # Proxy config: allow NodePort + internal hosts
+    # Must include whatever host:port the browser uses AND internal node hostnames
     # -----------------------------
     PROXY_HOSTS=""
 
@@ -137,11 +178,11 @@ data:
       else
         PROXY_HOSTS="${PROXY_HOSTS},${INTERNAL}"
       fi
-      i=`expr $i + 1`
+      i=`expr "$i" + 1`
     done
 
-    prop_replace nifi.web.proxy.context.path /nifi
+    prop_replace nifi.web.proxy.context.path "${NIFI_WEB_PROXY_CONTEXT_PATH:-/nifi}"
     prop_replace nifi.web.proxy.host "${PROXY_HOSTS}"
 
     echo "Proxy hosts: ${PROXY_HOSTS}"
-    echo "TLS + proxy setup complete"
+    echo "TLS setup complete."

@@ -91,28 +91,6 @@ spec:
                 echo "Zookeeper not ready yet..."
                 sleep 3
               done
-
-        - name: wait-for-nifi-coordinator
-          image: busybox:latest
-          command:
-            - sh
-            - -c
-            - |
-              # Only wait on non-0 pods
-              if echo "$(hostname)" | grep -q -- "-0$"; then
-                echo "This is nifi-0, skipping coordinator wait"
-                exit 0
-              fi
-
-              COORDINATOR="nifi-0.nifi-headless.$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace).svc.cluster.local"
-              echo "Waiting for NiFi coordinator at ${COORDINATOR}:11443"
-
-              until nc -vzw 1 ${COORDINATOR} 11443; do
-                echo "Coordinator not ready yet..."
-                sleep 5
-              done
-
-              echo "Coordinator is ready"
       containers:
         - name: nifi
           image: apache/nifi:2.7.2
@@ -157,7 +135,8 @@ spec:
 #              value: $(POD_NAME).$(NIFI_HEADLESS_SERVICE).$(POD_NAMESPACE).svc.cluster.local
 
 
-
+            - name: KEYSTORE_PATH
+              value: "$(NIFI_HOME)/tls/keystore.p12"
             - name: TRUSTSTORE_PATH
               value: "$(NIFI_HOME)/tls/truststore.p12"
 

@@ -1,0 +1,73 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nifi-ssl-cm
+data:
+  security.sh: |
+    #!/bin/bash
+    set -euo pipefail
+
+    NIFI_HOME=/opt/nifi/nifi-current
+    TOOL_KIT_HOME=/opt/nifi/scripts
+    TLS_DIR=${NIFI_HOME}/tls
+
+    KEYSTORE=${TLS_DIR}/keystore.p12
+    TRUSTSTORE=${TLS_DIR}/truststore.p12
+    KEYSTORE_TYPE=PKCS12
+    TRUSTSTORE_TYPE=PKCS12
+    PASSWORD=${KEYSTORE_PASSWORD:-changeit}
+
+    HOSTNAME=$(hostname -f)
+
+    mkdir -p "${TLS_DIR}"
+
+    echo "Using hostname: ${HOSTNAME}"
+    echo "TLS directory: ${TLS_DIR}"
+
+    # ---------------------------------------------------
+    # Generate TLS ONLY ONCE (shared PVC)
+    # ---------------------------------------------------
+    if [ ! -f "${KEYSTORE}" ]; then
+      echo "Generating shared NiFi cluster TLS material"
+
+      ${TOOL_KIT_HOME}/toolkit.sh tls standalone \
+        --hostnames "${HOSTNAME}" \
+        --keyStore "${KEYSTORE}" \
+        --keyStorePassword "${PASSWORD}" \
+        --keyStoreType "${KEYSTORE_TYPE}" \
+        --trustStore "${TRUSTSTORE}" \
+        --trustStorePassword "${PASSWORD}" \
+        --trustStoreType "${TRUSTSTORE_TYPE}" \
+        --days 90
+
+      echo "TLS generation completed"
+    else
+      echo "TLS material already exists – reusing"
+    fi
+
+    # ---------------------------------------------------
+    # Configure NiFi security properties
+    # ---------------------------------------------------
+    prop_replace () {
+      local key=$1
+      local value=$2
+      if grep -q "^${key}=" "${NIFI_HOME}/conf/nifi.properties"; then
+        sed -i "s|^${key}=.*|${key}=${value}|" "${NIFI_HOME}/conf/nifi.properties"
+      else
+        echo "${key}=${value}" >> "${NIFI_HOME}/conf/nifi.properties"
+      fi
+    }
+
+    prop_replace nifi.security.keystore "${KEYSTORE}"
+    prop_replace nifi.security.keystoreType "${KEYSTORE_TYPE}"
+    prop_replace nifi.security.keystorePasswd "${PASSWORD}"
+
+    prop_replace nifi.security.truststore "${TRUSTSTORE}"
+    prop_replace nifi.security.truststoreType "${TRUSTSTORE_TYPE}"
+    prop_replace nifi.security.truststorePasswd "${PASSWORD}"
+
+    # Required for secure cluster communication
+    prop_replace nifi.security.needClientAuth "true"
+    prop_replace nifi.cluster.protocol.is.secure "true"
+
+    echo "NiFi TLS configuration completed"
