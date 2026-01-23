@@ -206,3 +206,8 @@ keytool -list -v -keystore /opt/nifi/tls/keystore.p12 -storetype PKCS12 -storepa
 
 
 grep -E "nifi.web.proxy" /opt/nifi/nifi-current/conf/nifi.properties
+
+keytool -list -v \
+  -keystore /opt/nifi/tls/keystore.p12 \
+  -storetype PKCS12 \
+  -storepass changeit | grep -A2 "SubjectAlternativeName"
