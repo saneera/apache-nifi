@@ -37,7 +37,7 @@ data:
   NIFI_JVM_HEAP_INIT: "2g"
   NIFI_JVM_HEAP_MAX: "2g"
 
-  NIFI_WEB_PROXY_HOST: "localhost:30084,192.168.65.3:30084"
+  NIFI_WEB_PROXY_HOST: "localhost:30084"
   NIFI_WEB_PROXY_CONTEXT_PATH: "/nifi"
 
   NIFI_SECURITY_AUTORELOAD_ENABLED: "true"
@@ -118,6 +118,12 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+
+            - name: NIFI_NODEPORT_HOST
+              value: "localhost"
+            - name: NIFI_NODEPORT_PORT
+              value: "30084"
+
             - name: NIFI_HEADLESS_SERVICE
               value: nifi-headless
             - name: NIFI_HOME

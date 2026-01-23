@@ -5,68 +5,121 @@ metadata:
 data:
   security.sh: |
     #!/bin/sh
-    set -e
+    set -eu
 
-    NIFI_HOME=/opt/nifi/nifi-current
-    TLS_DIR=${NIFI_HOME}/tls
+    NIFI_HOME="/opt/nifi/nifi-current"
+    TLS_DIR="${TLS_DIR:-/opt/nifi/tls}"
 
-    KEYSTORE=${TLS_DIR}/keystore.p12
-    TRUSTSTORE=${TLS_DIR}/truststore.p12
-    PASSWORD=${KEYSTORE_PASSWORD:-changeit}
-    HOSTNAME=$(hostname -f)
+    KEYSTORE="${TLS_DIR}/keystore.p12"
+    TRUSTSTORE="${TLS_DIR}/truststore.p12"
+    NIFI_CRT="${TLS_DIR}/nifi.crt"
 
-    echo "Using hostname: ${HOSTNAME}"
+    PASSWORD="${KEYSTORE_PASSWORD:-changeit}"
+
+    POD_NAME="${POD_NAME:-$(hostname)}"
+    HOSTNAME_FQDN="${HOSTNAME_FQDN:-$(hostname -f)}"
+
+    NODEPORT_HOST="${NIFI_NODEPORT_HOST:-}"
+    NODEPORT_PORT="${NIFI_NODEPORT_PORT:-}"
+
+    NAMESPACE="${NAMESPACE:-default}"
+    HEADLESS_SERVICE="${HEADLESS_SERVICE:-nifi-headless}"
+    REPLICAS="${REPLICAS:-2}"
+
+    echo "Using pod: ${POD_NAME}"
+    echo "Using hostname -f: ${HOSTNAME_FQDN}"
     echo "TLS directory: ${TLS_DIR}"
 
-    mkdir -p ${TLS_DIR}
+    mkdir -p "${TLS_DIR}"
+    chmod 0770 "${TLS_DIR}" 2>/dev/null || true
 
-    # ---------------------------------------------------
+    # ----------------------------
+    # Build SAN list (POSIX sh)
+    # ----------------------------
+    SAN="dns:${HOSTNAME_FQDN},dns:${POD_NAME}"
+
+    i=0
+    while [ "$i" -lt "$REPLICAS" ]; do
+      SAN="${SAN},dns:nifi-${i}.${HEADLESS_SERVICE}.${NAMESPACE}.svc.cluster.local"
+      i=`expr "$i" + 1`
+    done
+
+    if [ -n "${NODEPORT_HOST}" ]; then
+      if echo "${NODEPORT_HOST}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+        SAN="${SAN},ip:${NODEPORT_HOST}"
+      else
+        SAN="${SAN},dns:${NODEPORT_HOST}"
+      fi
+    fi
+
+    echo "SAN=${SAN}"
+
+    # ----------------------------
     # Generate certs ONCE (shared PVC)
-    # ---------------------------------------------------
-    if [ ! -f "${KEYSTORE}" ]; then
-      echo "Generating shared TLS keystore and truststore"
+    # ----------------------------
+    if [ ! -f "${KEYSTORE}" ] || [ ! -f "${TRUSTSTORE}" ]; then
+      echo "Generating shared TLS keystore and truststore (PKCS12)"
+
+      rm -f "${KEYSTORE}" "${TRUSTSTORE}" "${NIFI_CRT}" 2>/dev/null || true
 
       keytool -genkeypair \
         -alias nifi \
         -keyalg RSA \
         -keysize 2048 \
         -storetype PKCS12 \
-        -keystore ${KEYSTORE} \
-        -storepass ${PASSWORD} \
-        -keypass ${PASSWORD} \
-        -dname "CN=${HOSTNAME}" \
-        -validity 90
+        -keystore "${KEYSTORE}" \
+        -storepass "${PASSWORD}" \
+        -keypass "${PASSWORD}" \
+        -dname "CN=${HOSTNAME_FQDN}" \
+        -ext "SAN=${SAN}" \
+        -validity 3650
 
       keytool -exportcert \
         -alias nifi \
-        -keystore ${KEYSTORE} \
-        -storepass ${PASSWORD} \
+        -keystore "${KEYSTORE}" \
+        -storepass "${PASSWORD}" \
         -rfc \
-        -file ${TLS_DIR}/nifi.crt
+        -file "${NIFI_CRT}"
 
       keytool -importcert \
         -alias nifi \
-        -file ${TLS_DIR}/nifi.crt \
-        -keystore ${TRUSTSTORE} \
+        -file "${NIFI_CRT}" \
+        -keystore "${TRUSTSTORE}" \
         -storetype PKCS12 \
-        -storepass ${PASSWORD} \
+        -storepass "${PASSWORD}" \
         -noprompt
+
+      chmod 0640 "${KEYSTORE}" "${TRUSTSTORE}" "${NIFI_CRT}" 2>/dev/null || true
     else
-      echo "TLS already exists – reusing"
+      echo "TLS already exists – reusing ${KEYSTORE} and ${TRUSTSTORE}"
     fi
 
-    # ---------------------------------------------------
-    # Configure NiFi
-    # ---------------------------------------------------
+    # ----------------------------
+    # Configure NiFi properties
+    # ----------------------------
+    FILE="${NIFI_HOME}/conf/nifi.properties"
+
     prop_replace() {
-      sed -i "s|^$1=.*|$1=$2|" ${NIFI_HOME}/conf/nifi.properties || \
-      echo "$1=$2" >> ${NIFI_HOME}/conf/nifi.properties
+      k="$1"
+      v="$2"
+      if grep -q "^${k}=" "${FILE}"; then
+        sed -i "s|^${k}=.*|${k}=${v}|" "${FILE}"
+      else
+        echo "${k}=${v}" >> "${FILE}"
+      fi
     }
 
-    prop_replace nifi.security.keystore ${KEYSTORE}
-    prop_replace nifi.security.keystoreType PKCS12
-    prop_replace nifi.security.keystorePasswd ${PASSWORD}
+    prop_replace "nifi.security.keystore" "${KEYSTORE}"
+    prop_replace "nifi.security.keystoreType" "PKCS12"
+    prop_replace "nifi.security.keystorePasswd" "${PASSWORD}"
+    prop_replace "nifi.security.keyPasswd" "${PASSWORD}"
 
-    prop_replace nifi.security.truststore ${TRUSTSTORE}
-    prop_replace nifi.security.truststoreType PKCS12
-    prop_replace nifi.security.truststorePasswd ${PASSWORD}
+    prop_replace "nifi.security.truststore" "${TRUSTSTORE}"
+    prop_replace "nifi.security.truststoreType" "PKCS12"
+    prop_replace "nifi.security.truststorePasswd" "${PASSWORD}"
+
+    if [ -n "${NODEPORT_HOST}" ] && [ -n "${NODEPORT_PORT}" ]; then
+      prop_replace "nifi.web.proxy.host" "${NODEPORT_HOST}:${NODEPORT_PORT}"
+    fi
+
+    echo "TLS setup done."
