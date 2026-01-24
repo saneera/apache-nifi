@@ -6,13 +6,14 @@ namespace: nifi
 resources:
    - nifi-auth.yaml
    - nifi-pvc.yaml
-#   - nifi-conf-pvc.yaml
    - zookeeper.yaml
    - nifi-deployment.yaml
    - config-map-ssl2.yaml
-#   - configmap-ssl.yml
 
 
 
 
 
+#patches:
+#  - path: patch-statefulset-pvc.yaml
+#  - path: patch-statefulset-mount.yaml

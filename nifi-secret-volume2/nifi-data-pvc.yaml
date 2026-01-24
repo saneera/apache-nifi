@@ -1,12 +1,10 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: nifi-conf-pvc
-  namespace: nifi
+  name: nifi-data-pvc
 spec:
   accessModes:
-    - ReadWriteOnce
-  storageClassName: nifi-storage-conf
+    - ReadWriteMany
   resources:
     requests:
       storage: 2Gi

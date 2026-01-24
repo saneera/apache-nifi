@@ -1,17 +1,5 @@
 ---
 apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: nifi-data-pvc
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 10Gi
-
----
-apiVersion: v1
 kind: ConfigMap
 metadata:
   name: nifi-cm
@@ -60,7 +48,7 @@ metadata:
 spec:
   serviceName: nifi-headless
   podManagementPolicy: OrderedReady
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: nifi
@@ -92,46 +80,6 @@ spec:
                 echo "Zookeeper not ready yet..."
                 sleep 3
               done
-              
-
-#        - name: nifi-security-init
-#          image: apache/nifi:2.7.2
-#
-#          command:
-#            - /bin/sh
-#            - -c
-#            - |
-#              echo "Running NiFi TLS/security init..."
-#              /scripts/security.sh
-#          env:
-#            - name: POD_NAME
-#              valueFrom:
-#                fieldRef:
-#                  fieldPath: metadata.name
-#            - name: POD_NAMESPACE
-#              valueFrom:
-#                fieldRef:
-#                  fieldPath: metadata.namespace
-#            - name: NIFI_NODEPORT_HOST
-#              value: "localhost"
-#            - name: NIFI_NODEPORT_PORT
-#              value: "30084"
-#            - name: NIFI_HEADLESS_SERVICE
-#              value: "nifi-headless"
-#
-#            - name: REPLICAS
-#              value: "3"
-#          envFrom:
-#            - configMapRef:
-#                name: nifi-cm
-#            - secretRef:
-#                name: nifi-auth
-#          volumeMounts:
-#            - name: scripts
-#              mountPath: /scripts/security.sh
-#              subPath: security.sh
-#            - name: nifi-conf
-#              mountPath: /opt/nifi/tls
       containers:
         - name: nifi
           image: apache/nifi:2.7.2
@@ -161,6 +109,9 @@ spec:
                 fieldRef:
                   fieldPath: metadata.namespace
 
+            - name: REPLICAS
+              value: "1"
+
             - name: NIFI_NODEPORT_HOST
               value: "localhost"
             - name: NIFI_NODEPORT_PORT
@@ -168,19 +119,21 @@ spec:
 
             - name: NIFI_HEADLESS_SERVICE
               value: nifi-headless
+
             - name: NIFI_HOME
               value: "/opt/nifi/nifi-current"
+
             - name: NIFI_UI_BANNER_TEXT
               value: $(POD_NAME)
 
-#            - name: NIFI_WEB_HTTPS_HOST
-#              value: $(POD_NAME).$(NIFI_HEADLESS_SERVICE).$(POD_NAMESPACE).svc.cluster.local
+            - name: NIFI_WEB_HTTPS_HOST
+              value: $(POD_NAME).$(NIFI_HEADLESS_SERVICE).$(POD_NAMESPACE).svc.cluster.local
 
 
             - name: NIFI_CLUSTER_NODE_PROTOCOL_ADDRESS
-              value: $(POD_NAME).nifi-headless.$(POD_NAMESPACE).svc.cluster.local
+              value: $(POD_NAME).$(NIFI_HEADLESS_SERVICE).$(POD_NAMESPACE).svc.cluster.local
             - name: NIFI_CLUSTER_NODE_ADDRESS
-              value: $(POD_NAME).nifi-headless.$(POD_NAMESPACE).svc.cluster.local
+              value: $(POD_NAME).$(NIFI_HEADLESS_SERVICE).$(POD_NAMESPACE).svc.cluster.local
 
 
 
@@ -191,9 +144,6 @@ spec:
             - secretRef:
                 name: nifi-auth
           volumeMounts:
-            - name: data
-              mountPath: /opt/nifi/nifi-current/data
-
 
             - name: scripts
               mountPath: /scripts/security.sh
@@ -205,11 +155,28 @@ spec:
             - name: nifi-conf
               mountPath: /opt/nifi/tls
 
+            - name: nifi-pvc
+              mountPath: /opt/nifi/nifi-current/flowfile_repository
+              subPath: flowfile_repository
+
+            - name: nifi-pvc
+              mountPath: /opt/nifi/nifi-current/content_repository
+              subPath: content_repository
+
+            - name: nifi-pvc
+              mountPath: /opt/nifi/nifi-current/provenance_repository
+              subPath: provenance_repository
+
+            - name: nifi-pvc
+              mountPath: /opt/nifi/nifi-current/database_repository
+              subPath: database_repository
+
+            - name: nifi-pvc
+              mountPath: /opt/nifi/nifi-current/state
+              subPath: state
+
 
       volumes:
-        - name: data
-          emptyDir:
-            sizeLimit: 3Gi
         - name: scripts
           configMap:
             name: nifi-ssl-cm
@@ -218,9 +185,20 @@ spec:
         - name: nifi-tls
           secret:
             secretName: nifi-tls
+
         - name: nifi-conf
           persistentVolumeClaim:
             claimName: nifi-tls-pvc
+
+  volumeClaimTemplates:
+    - metadata:
+        name: nifi-pvc
+      spec:
+        storageClassName: hostpath
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 5Gi
 
 ---
 apiVersion: v1

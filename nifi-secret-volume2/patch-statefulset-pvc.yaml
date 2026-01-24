@@ -1,0 +1,14 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: nifi
+spec:
+  volumeClaimTemplates:
+    - metadata:
+        name: nifi-data
+      spec:
+        storageClassName: "hostpath"
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi            # <-- size you want
