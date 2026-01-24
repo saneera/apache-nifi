@@ -77,6 +77,7 @@ spec:
         runAsUser: 1000
         runAsGroup: 1000
         runAsNonRoot: true
+        fsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
       initContainers:
@@ -91,6 +92,46 @@ spec:
                 echo "Zookeeper not ready yet..."
                 sleep 3
               done
+              
+
+#        - name: nifi-security-init
+#          image: apache/nifi:2.7.2
+#
+#          command:
+#            - /bin/sh
+#            - -c
+#            - |
+#              echo "Running NiFi TLS/security init..."
+#              /scripts/security.sh
+#          env:
+#            - name: POD_NAME
+#              valueFrom:
+#                fieldRef:
+#                  fieldPath: metadata.name
+#            - name: POD_NAMESPACE
+#              valueFrom:
+#                fieldRef:
+#                  fieldPath: metadata.namespace
+#            - name: NIFI_NODEPORT_HOST
+#              value: "localhost"
+#            - name: NIFI_NODEPORT_PORT
+#              value: "30084"
+#            - name: NIFI_HEADLESS_SERVICE
+#              value: "nifi-headless"
+#
+#            - name: REPLICAS
+#              value: "3"
+#          envFrom:
+#            - configMapRef:
+#                name: nifi-cm
+#            - secretRef:
+#                name: nifi-auth
+#          volumeMounts:
+#            - name: scripts
+#              mountPath: /scripts/security.sh
+#              subPath: security.sh
+#            - name: nifi-conf
+#              mountPath: /opt/nifi/tls
       containers:
         - name: nifi
           image: apache/nifi:2.7.2
@@ -98,6 +139,7 @@ spec:
             - /bin/sh
             - -c
             - |
+              echo "Running NiFi TLS/security init..."
               /scripts/security.sh
               /opt/nifi/scripts/start.sh
           ports:
@@ -135,11 +177,6 @@ spec:
 #              value: $(POD_NAME).$(NIFI_HEADLESS_SERVICE).$(POD_NAMESPACE).svc.cluster.local
 
 
-            - name: KEYSTORE_PATH
-              value: "$(NIFI_HOME)/tls/keystore.p12"
-            - name: TRUSTSTORE_PATH
-              value: "$(NIFI_HOME)/tls/truststore.p12"
-
             - name: NIFI_CLUSTER_NODE_PROTOCOL_ADDRESS
               value: $(POD_NAME).nifi-headless.$(POD_NAMESPACE).svc.cluster.local
             - name: NIFI_CLUSTER_NODE_ADDRESS
@@ -156,21 +193,19 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /opt/nifi/nifi-current/data
-            - name: data
-              mountPath: /opt/nifi/nifi-current/keytool
-              readOnly: false
+
+
             - name: scripts
               mountPath: /scripts/security.sh
               subPath: security.sh
-              readOnly: false
-#            - name: ca
-#              mountPath: /opt/nifi/nifi-current/keytool/ca.crt
-#              subPath: ca.crt
-#            - name: ca
-#              mountPath: /opt/nifi/nifi-current/keytool/truststore.p12
-#              subPath: truststore.p12
+
+
+            - name: nifi-tls
+              mountPath: /opt/nifi/certs
             - name: nifi-conf
-              mountPath: /opt/nifi/nifi-current/tls
+              mountPath: /opt/nifi/tls
+
+
       volumes:
         - name: data
           emptyDir:
@@ -180,9 +215,9 @@ spec:
             name: nifi-ssl-cm
             defaultMode: 0755
 
-#        - name: ca
-#          secret:
-#            secretName: nifi-ca
+        - name: nifi-tls
+          secret:
+            secretName: nifi-tls
         - name: nifi-conf
           persistentVolumeClaim:
             claimName: nifi-tls-pvc

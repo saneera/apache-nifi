@@ -6,142 +6,113 @@ data:
   security.sh: |
     #!/bin/sh
     set -eu
-
+    
     NIFI_HOME=/opt/nifi/nifi-current
-    TLS_DIR="${TLS_DIR:-/opt/nifi/tls}"
-
-    KEYSTORE="${TLS_DIR}/keystore.p12"
-    TRUSTSTORE="${TLS_DIR}/truststore.p12"
-    NIFI_CRT="${TLS_DIR}/nifi.crt"
-
+    TLS_BASE_DIR="/opt/nifi/tls"
+    
+    POD_NAME="$(hostname | cut -d. -f1)"
+    
+    KEYSTORE="${TLS_BASE_DIR}/keystore.p12"
+    NIFI_CRT="${TLS_BASE_DIR}/nifi.crt"
+    TRUSTSTORE="${TLS_BASE_DIR}/truststore.p12"
+    
     PASSWORD="${KEYSTORE_PASSWORD:-changeit}"
-
-    POD_NAME="$(hostname)"
+    
     HOSTNAME_FQDN="$(hostname -f)"
-
-    NAMESPACE="${NAMESPACE:-default}"
+    NAMESPACE="${POD_NAMESPACE:-default}"
     HEADLESS_SERVICE="${HEADLESS_SERVICE:-nifi-headless}"
     REPLICAS="${REPLICAS:-2}"
-
+    
     NODEPORT_HOST="${NIFI_NODEPORT_HOST:-}"
     NODEPORT_PORT="${NIFI_NODEPORT_PORT:-}"
-
+    
     echo "Pod: ${POD_NAME}"
-    echo "FQDN: ${HOSTNAME_FQDN}"
-    echo "TLS dir: ${TLS_DIR}"
-
-    mkdir -p "${TLS_DIR}"
-    chmod 0770 "${TLS_DIR}" 2>/dev/null || true
-
+    echo "TLS base dir: ${TLS_BASE_DIR}"
+    
+    # chmod 0770 "${TLS_BASE_DIR}" "${POD_TLS_DIR}" || true
+    
     # -----------------------------
-    # Build SAN list
+    # SAN list
     # -----------------------------
-    SAN="dns:${HOSTNAME_FQDN},dns:${POD_NAME}"
-
+    SAN="dns:${POD_NAME},dns:${HOSTNAME_FQDN}"
+    
     i=0
     while [ "$i" -lt "$REPLICAS" ]; do
-      SAN="${SAN},dns:nifi-${i}.${HEADLESS_SERVICE}.${NAMESPACE}.svc.cluster.local"
-      i=`expr $i + 1`
+    SAN="${SAN},dns:nifi-${i}.${HEADLESS_SERVICE}.${NAMESPACE}.svc.cluster.local"
+    i=$((i+1))
     done
-
-    if [ -n "${NODEPORT_HOST}" ]; then
-      case "${NODEPORT_HOST}" in
-        *.*.*.*) SAN="${SAN},ip:${NODEPORT_HOST}" ;;
-        *)       SAN="${SAN},dns:${NODEPORT_HOST}" ;;
-      esac
-    fi
-
+    
+    [ -n "${NODEPORT_HOST}" ] && SAN="${SAN},dns:${NODEPORT_HOST}"
+    
     echo "SAN=${SAN}"
-
+    
     # -----------------------------
-    # Generate TLS once
+    # Per-pod keystore
     # -----------------------------
-    if [ ! -f "${KEYSTORE}" ] || [ ! -f "${TRUSTSTORE}" ]; then
-      echo "Generating TLS material"
-
-      rm -f "${KEYSTORE}" "${TRUSTSTORE}" "${NIFI_CRT}" 2>/dev/null || true
-
-      keytool -genkeypair \
-        -alias nifi \
-        -keyalg RSA \
-        -keysize 2048 \
-        -storetype PKCS12 \
-        -keystore "${KEYSTORE}" \
-        -storepass "${PASSWORD}" \
-        -keypass "${PASSWORD}" \
-        -dname "CN=${HOSTNAME_FQDN}" \
-        -ext "SAN=${SAN}" \
-        -validity 3650
-
-      keytool -exportcert \
-        -alias nifi \
-        -keystore "${KEYSTORE}" \
-        -storepass "${PASSWORD}" \
-        -rfc \
-        -file "${NIFI_CRT}"
-
-      keytool -importcert \
-        -alias nifi \
-        -file "${NIFI_CRT}" \
-        -keystore "${TRUSTSTORE}" \
-        -storetype PKCS12 \
-        -storepass "${PASSWORD}" \
-        -noprompt
-
-      chmod 0640 "${KEYSTORE}" "${TRUSTSTORE}" "${NIFI_CRT}" || true
+    if [ ! -f "${KEYSTORE}" ]; then
+    echo "Generating keystore for ${POD_NAME}"
+    
+    keytool -genkeypair \
+    -alias nifi \
+    -keyalg RSA \
+    -keysize 2048 \
+    -storetype PKCS12 \
+    -keystore "${KEYSTORE}" \
+    -storepass "${PASSWORD}" \
+    -keypass "${PASSWORD}" \
+    -dname "CN=${HOSTNAME_FQDN}" \
+    -ext "SAN=${SAN}" \
+    -validity 3650
+    
+    keytool -exportcert \
+    -alias nifi \
+    -keystore "${KEYSTORE}" \
+    -storepass "${PASSWORD}" \
+    -rfc \
+    -file "${NIFI_CRT}"
     else
-      echo "TLS already exists – reusing"
+    echo "Keystore already exists for ${POD_NAME} – reusing"
     fi
-
+    
     # -----------------------------
-    # Helper to update nifi.properties
+    # Shared truststore
+    # -----------------------------
+    if [ ! -f "${TRUSTSTORE}" ]; then
+    echo "Creating shared truststore"
+    keytool -genkeypair \
+    -alias init \
+    -keystore "${TRUSTSTORE}" \
+    -storetype PKCS12 \
+    -storepass "${PASSWORD}" \
+    -dname "CN=init" >/dev/null 2>&1
+    keytool -delete -alias init -keystore "${TRUSTSTORE}" -storepass "${PASSWORD}" >/dev/null 2>&1
+    fi
+    
+    TRUST_ALIAS="nifi-${POD_NAME}"
+    keytool -delete -alias "${TRUST_ALIAS}" -keystore "${TRUSTSTORE}" -storepass "${PASSWORD}" >/dev/null 2>&1 || true
+    keytool -importcert \
+    -alias "${TRUST_ALIAS}" \
+    -file "${NIFI_CRT}" \
+    -keystore "${TRUSTSTORE}" \
+    -storepass "${PASSWORD}" \
+    -noprompt
+    
+    # -----------------------------
+    # nifi.properties
     # -----------------------------
     prop_replace() {
-      KEY="$1"
-      VAL="$2"
-      FILE="${NIFI_HOME}/conf/nifi.properties"
-
-      if grep -q "^${KEY}=" "${FILE}"; then
-        sed -i "s|^${KEY}=.*|${KEY}=${VAL}|" "${FILE}"
-      else
-        echo "${KEY}=${VAL}" >> "${FILE}"
-      fi
+    grep -q "^$1=" "$NIFI_HOME/conf/nifi.properties" \
+    && sed -i "s|^$1=.*|$1=$2|" "$NIFI_HOME/conf/nifi.properties" \
+      || echo "$1=$2" >> "$NIFI_HOME/conf/nifi.properties"
     }
-
-    # -----------------------------
-    # TLS config
-    # -----------------------------
+    
     prop_replace nifi.security.keystore "${KEYSTORE}"
     prop_replace nifi.security.keystoreType PKCS12
     prop_replace nifi.security.keystorePasswd "${PASSWORD}"
     prop_replace nifi.security.keyPasswd "${PASSWORD}"
-
+    
     prop_replace nifi.security.truststore "${TRUSTSTORE}"
     prop_replace nifi.security.truststoreType PKCS12
     prop_replace nifi.security.truststorePasswd "${PASSWORD}"
-
-    # -----------------------------
-    # Proxy config (CRITICAL)
-    # -----------------------------
-    PROXY_HOSTS=""
-
-    if [ -n "${NODEPORT_HOST}" ] && [ -n "${NODEPORT_PORT}" ]; then
-      PROXY_HOSTS="${NODEPORT_HOST}:${NODEPORT_PORT}"
-    fi
-
-    i=0
-    while [ "$i" -lt "$REPLICAS" ]; do
-      INTERNAL="nifi-${i}.${HEADLESS_SERVICE}.${NAMESPACE}.svc.cluster.local:8443"
-      if [ -z "${PROXY_HOSTS}" ]; then
-        PROXY_HOSTS="${INTERNAL}"
-      else
-        PROXY_HOSTS="${PROXY_HOSTS},${INTERNAL}"
-      fi
-      i=`expr $i + 1`
-    done
-
-    prop_replace nifi.web.proxy.context.path /nifi
-    prop_replace nifi.web.proxy.host "${PROXY_HOSTS}"
-
-    echo "Proxy hosts: ${PROXY_HOSTS}"
-    echo "TLS + proxy setup complete"
+    
+    echo "TLS setup complete for ${POD_NAME}"
