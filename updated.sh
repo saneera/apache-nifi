@@ -221,3 +221,18 @@ keytool -list -v \
   SAN="${SAN},dns:nifi-1.${HEADLESS_SERVICE}.${NAMESPACE}.svc.cluster.local"
   SAN="${SAN},dns:nifi-0"
   SAN="${SAN},dns:nifi-1"
+
+
+- name: nifi-data
+  mountPath: /opt/nifi/nifi-current/flowfile_repository
+- name: nifi-data
+  mountPath: /opt/nifi/nifi-current/content_repository
+- name: nifi-data
+  mountPath: /opt/nifi/nifi-current/provenance_repository
+- name: nifi-data
+  mountPath: /opt/nifi/nifi-current/database_repository
+- name: nifi-data
+  mountPath: /opt/nifi/nifi-current/state
+- name: nifi-data
+  mountPath: /opt/nifi/nifi-current/conf
+
