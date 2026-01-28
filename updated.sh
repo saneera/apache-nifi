@@ -418,3 +418,7 @@ keytool -list -v \
 
           chmod +x make-secret-yaml.sh
 
+
+./make-secret-yaml.sh nifi-black-0-tls nifi-black out/nifi-black-0/keystore.p12 truststore.p12 ca.crt > nifi-black-0-tls-secret.yaml]]
+
+./make-secret-yaml.sh nifi-red-0-tls nifi-red out/nifi-red-0/keystore.p12 truststore.p12 ca.crt > nifi-red-0-tls-secret.yaml
