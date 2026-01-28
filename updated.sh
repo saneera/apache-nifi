@@ -422,3 +422,17 @@ keytool -list -v \
 ./make-secret-yaml.sh nifi-black-0-tls nifi-black out/nifi-black-0/keystore.p12 truststore.p12 ca.crt > nifi-black-0-tls-secret.yaml]]
 
 ./make-secret-yaml.sh nifi-red-0-tls nifi-red out/nifi-red-0/keystore.p12 truststore.p12 ca.crt > nifi-red-0-tls-secret.yaml
+
+
+#!/bin/sh
+set -e
+
+TLS_DIR=/opt/nifi/certs
+
+echo "Using existing TLS material"
+echo "TLS dir: $TLS_DIR"
+
+[ -f "$TLS_DIR/keystore.p12" ] || { echo "Missing keystore"; exit 1; }
+[ -f "$TLS_DIR/truststore.p12" ] || { echo "Missing truststore"; exit 1; }
+
+chmod 600 $TLS_DIR/*.p12 || true
