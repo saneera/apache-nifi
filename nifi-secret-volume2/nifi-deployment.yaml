@@ -8,7 +8,7 @@ data:
   KEYSTORE_PASSWORD: "th1s1s3up34e5r37"
   KEYSTORE_TYPE: "PKCS12"
   NIFI_ANALYTICS_PREDICT_ENABLED: "true"
-  NIFI_CLUSTER_IS_NODE: "true"
+  NIFI_CLUSTER_IS_NODE: "false"
   # NIFI_CLUSTER_LOAD_BALANCE_HOST: "nifi"
   NIFI_CLUSTER_NODE_CONNECTION_TIMEOUT: "5 min"
   NIFI_CLUSTER_NODE_EVENT_HISTORY_SIZE: "25"
@@ -39,6 +39,9 @@ data:
   NIFI_ZOOKEEPER_CONNECT_STRING: "zookeeper:2181"
   TRUSTSTORE_PASSWORD: "th1s1s3up34e5r37"
   TRUSTSTORE_TYPE: "pkcs12"
+  NIFI_FLOW_CONFIGURATION_FILE: "/opt/nifi/nifi-current/data/flow.json.gz"
+  NIFI_FLOW_CONFIGURATION_ARCHIVE_DIR: "/opt/nifi/nifi-current/data/archive"
+
 
 ---
 apiVersion: apps/v1
@@ -68,6 +71,7 @@ spec:
         fsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
+
       initContainers:
         - name: wait-for-zk
           image: busybox:latest
@@ -83,6 +87,7 @@ spec:
       containers:
         - name: nifi
           image: apache/nifi:2.7.2
+
           command:
             - /bin/sh
             - -c
@@ -135,11 +140,7 @@ spec:
             - name: NIFI_CLUSTER_NODE_ADDRESS
               value: $(POD_NAME).$(NIFI_HEADLESS_SERVICE).$(POD_NAMESPACE).svc.cluster.local
 
-#            - name: NIFI_FLOW_CONFIGURATION_FILE
-#              value: "./data/flow.json.gz"
-#
-#            - name: NIFI_FLOW_CONFIGURATION_ARCHIVE_DIR
-#              value: "./data/archive"
+
 
 
           envFrom:
@@ -179,7 +180,13 @@ spec:
             - name: nifi-pvc
               mountPath: /opt/nifi/nifi-current/conf/archive
 
-
+          readinessProbe:
+            tcpSocket:
+              port: 8443
+            initialDelaySeconds: 90
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 30
       volumes:
         - name: scripts
           configMap:
@@ -193,6 +200,8 @@ spec:
         - name: nifi-conf
           persistentVolumeClaim:
             claimName: nifi-tls-pvc
+
+
 
   volumeClaimTemplates:
     - metadata:
