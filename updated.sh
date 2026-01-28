@@ -242,3 +242,46 @@ keytool -list -v \
     -H "Content-Type: application/json" \
     -d '{"test":"service1"}'
 
+
+
+    # Generate keypair
+    keytool -genkeypair \
+      -alias nifi \
+      -keystore keystore.p12 \
+      -storetype PKCS12 \
+      -storepass "$PASSWORD" \
+      -keypass "$PASSWORD" \
+      -dname "CN=${HOSTNAME_FQDN}" \
+      -ext "SAN=${SAN}"
+
+    # Create CSR
+    keytool -certreq \
+      -alias nifi \
+      -keystore keystore.p12 \
+      -storepass "$PASSWORD" \
+      -file nifi.csr
+
+    # Sign CSR using CA
+    openssl x509 -req \
+      -in nifi.csr \
+      -CA ca.crt \
+      -CAkey ca.key \
+      -CAcreateserial \
+      -out nifi.crt \
+      -days 3650 -sha256
+
+    # Import CA into truststore
+    keytool -importcert -noprompt \
+      -alias nifi-ca \
+      -file ca.crt \
+      -keystore truststore.p12 \
+      -storetype PKCS12 \
+      -storepass "$PASSWORD"
+
+    # Import signed cert back
+    keytool -importcert -noprompt \
+      -alias nifi \
+      -file nifi.crt \
+      -keystore keystore.p12 \
+      -storepass "$PASSWORD"
+
