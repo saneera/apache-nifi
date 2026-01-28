@@ -135,6 +135,11 @@ spec:
             - name: NIFI_CLUSTER_NODE_ADDRESS
               value: $(POD_NAME).$(NIFI_HEADLESS_SERVICE).$(POD_NAMESPACE).svc.cluster.local
 
+#            - name: NIFI_FLOW_CONFIGURATION_FILE
+#              value: "./data/flow.json.gz"
+#
+#            - name: NIFI_FLOW_CONFIGURATION_ARCHIVE_DIR
+#              value: "./data/archive"
 
 
           envFrom:
@@ -152,31 +157,27 @@ spec:
 
             - name: nifi-tls
               mountPath: /opt/nifi/certs
+
             - name: nifi-conf
               mountPath: /opt/nifi/tls
 
             - name: nifi-pvc
               mountPath: /opt/nifi/nifi-current/flowfile_repository
-              subPath: flowfile_repository
 
             - name: nifi-pvc
               mountPath: /opt/nifi/nifi-current/content_repository
-              subPath: content_repository
 
             - name: nifi-pvc
               mountPath: /opt/nifi/nifi-current/provenance_repository
-              subPath: provenance_repository
 
             - name: nifi-pvc
               mountPath: /opt/nifi/nifi-current/database_repository
-              subPath: database_repository
 
             - name: nifi-pvc
               mountPath: /opt/nifi/nifi-current/state
-              subPath: state
 
-
-
+            - name: nifi-pvc
+              mountPath: /opt/nifi/nifi-current/conf/archive
 
 
       volumes:

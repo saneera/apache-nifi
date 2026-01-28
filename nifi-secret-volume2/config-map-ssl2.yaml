@@ -115,4 +115,5 @@ data:
     prop_replace nifi.security.truststoreType PKCS12
     prop_replace nifi.security.truststorePasswd "${PASSWORD}"
     
+    
     echo "TLS setup complete for ${POD_NAME}"
