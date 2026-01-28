@@ -236,3 +236,9 @@ keytool -list -v \
 - name: nifi-data
   mountPath: /opt/nifi/nifi-current/conf
 
+
+
+  curl -i -X POST "http://NODE_IP:30075/bom/service1" \
+    -H "Content-Type: application/json" \
+    -d '{"test":"service1"}'
+
