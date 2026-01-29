@@ -82,3 +82,8 @@ keytool -importcert -noprompt \
         -CAfile /opt/nifi/tls/ca.crt \
         -verify_return_error \
         -servername nifi-black.nifi-black.svc.cluster.local
+
+
+        curl -vk \
+          --cacert /opt/nifi/tls/ca.crt \
+          https://nifi-black.nifi-black.svc.cluster.local:8443/nifi-api/site-to-site
