@@ -464,3 +464,11 @@ kubectl exec -n nifi-black -it nifi-black-0 -c nifi-black -- \
 
 kubectl exec -n nifi-black -it nifi-black-0 -- bash -lc \
 'keytool -list -keystore /opt/nifi/tls/keystore.p12 -storetype PKCS12 -storepass th1s1s3up34e5r3?7 >/dev/null && echo OK'
+
+
+kubectl exec -n nifi-black -it nifi-black-0 -c nifi-black -- bash -lc '
+echo "== TLS files ==";
+ls -l /opt/nifi/tls;
+echo "== nifi.properties security lines ==";
+grep -nE "^nifi.security.(key|trust)store" /opt/nifi/nifi-current/conf/nifi.properties;
+'
