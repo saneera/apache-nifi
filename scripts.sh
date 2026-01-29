@@ -83,7 +83,17 @@ keytool -importcert -noprompt \
         -verify_return_error \
         -servername nifi-black.nifi-black.svc.cluster.local
 
+        Verify return code: 0 (ok)
+
 
         curl -vk \
           --cacert /opt/nifi/tls/ca.crt \
           https://nifi-black.nifi-black.svc.cluster.local:8443/nifi-api/site-to-site
+
+
+          {
+            "controller": {
+              "remoteSiteListeningPort": 10000,
+              "siteToSiteSecure": true
+            }
+          }
