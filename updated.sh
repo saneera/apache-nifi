@@ -460,3 +460,7 @@ kubectl exec -n nifi-black -it nifi-black-0 -c nifi-black -- \
     kubectl describe pod -n nifi-black nifi-black-0 | sed -n '/Events:/,$p'
 
 
+
+
+kubectl exec -n nifi-black -it nifi-black-0 -- bash -lc \
+'keytool -list -keystore /opt/nifi/tls/keystore.p12 -storetype PKCS12 -storepass th1s1s3up34e5r3?7 >/dev/null && echo OK'
