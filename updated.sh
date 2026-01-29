@@ -490,3 +490,6 @@ keytool -list -v -keystore /opt/nifi/tls/keystore.p12 -storetype PKCS12 -storepa
 kubectl exec -n nifi-black -it nifi-black-0 -c nifi-black -- bash -lc '
 id && ls -l /opt/nifi/tls && stat -c "%U %G %a %n" /opt/nifi/tls/* || true
 '
+
+
+keytool -list -v -keystore out/nifi-black-0/keystore.p12 -storetype PKCS12 -storepass "th1s1s3up34e5r37" | grep -A3 -i "Subject Alternative"
