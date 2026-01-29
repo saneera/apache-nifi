@@ -583,3 +583,15 @@ keytool -list -v \
   -storetype PKCS12 \
   -storepass "th1s1s3up34e5r37" \
   -alias nifi | sed -n '/SubjectAlternativeName/,+8p'
+
+
+
+
+keytool -list -v -keystore out/nifi-black-0/keystore.p12" -storetype PKCS12 -storepass "th1s1s3up34e5r37" -alias nifi \
+  | grep -i -A 20 "subject alternative name" || true
+
+# also show actual DNS/IP lines (extra)
+keytool -list -v -keystore out/nifi-black-0/keystore.p12 -storetype PKCS12 -storepass "th1s1s3up34e5r37" -alias nifi \
+  | egrep -i "DNSName:|IP Address:|Subject Alternative Name" || true
+
+  keytool -list -v -keystore out/nifi-black-0/keystore.p12 -storetype PKCS12 -storepass "th1s1s3up34e5r37" -alias nifi
