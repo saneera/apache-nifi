@@ -97,3 +97,62 @@ keytool -importcert -noprompt \
               "siteToSiteSecure": true
             }
           }
+
+
+
+
+================google
+
+
+Saneera Yapa <saneera@gmail.com>
+10:12 PM (1 hour ago)
+to me
+
+#!/bin/bash
+
+# Configuration
+PASS="changeit"
+NS_A="namespace-a"
+NS_B="namespace-b"
+FQDN_A="nifi-a.$NS_A.svc.cluster.local"
+FQDN_B="nifi-b.$NS_B.svc.cluster.local"
+
+echo "Creating PKCS12 Keystore for NiFi A..."
+keytool -genkeypair -alias nifi-a -keyalg RSA -keysize 2048 -validity 365 \
+-keystore keystore-a.p12 -storetype PKCS12 -storepass $PASS -keypass $PASS \
+-dname "CN=$FQDN_A, OU=NIFI" \
+-ext san=dns:$FQDN_A,dns:nifi-a
+
+echo "Creating PKCS12 Keystore for NiFi B..."
+keytool -genkeypair -alias nifi-b -keyalg RSA -keysize 2048 -validity 365 \
+-keystore keystore-b.p12 -storetype PKCS12 -storepass $PASS -keypass $PASS \
+-dname "CN=$FQDN_B, OU=NIFI" \
+-ext san=dns:$FQDN_B,dns:nifi-b
+
+echo "Exporting Public Certificates..."
+keytool -exportcert -alias nifi-a -file nifi-a.cer -keystore keystore-a.p12 -storepass $PASS
+keytool -exportcert -alias nifi-b -file nifi-b.cer -keystore keystore-b.p12 -storepass $PASS
+
+echo "Building PKCS12 Truststores..."
+# Truststore A (imports B's public cert)
+keytool -importcert -trustcacerts -noprompt -alias nifi-b -file nifi-b.cer \
+-keystore truststore-a.p12 -storetype PKCS12 -storepass $PASS
+# Truststore B (imports A's public cert)
+keytool -importcert -trustcacerts -noprompt -alias nifi-a -file nifi-a.cer \
+-keystore truststore-b.p12 -storetype PKCS12 -storepass $PASS
+
+echo "Done! PKCS12 stores ready for K8s deployment."
+
+
+Important NiFi Property Changes
+When using PKCS12, you must update your nifi.properties to specify the different store type:
+nifi.security.keystoreType=PKCS12
+nifi.security.truststoreType=PKCS12
+nifi.security.keystore=./conf/keystore-a.p12
+nifi.security.truststore=./conf/truststore-a.p12
+Verification
+You can verify the content of these PKCS12 files using the DigiCert Certificate Inspector or simply run keytool -list -keystore keystore-a.p12 -storetype PKCS12.
+Does your NiFi Helm Chart or Deployment YAML currently expect files ending in .jks, or can I provide the volumeMount configuration for these .p12files?
+
+
+
