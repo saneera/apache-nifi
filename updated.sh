@@ -436,3 +436,27 @@ echo "TLS dir: $TLS_DIR"
 [ -f "$TLS_DIR/truststore.p12" ] || { echo "Missing truststore"; exit 1; }
 
 chmod 600 $TLS_DIR/*.p12 || true
+
+
+===========
+
+kubectl get pod -n nifi-black nifi-black-0 -o jsonpath='{.status.containerStatuses[*].name}{"\n"}{.status.containerStatuses[*].restartCount}{"\n"}
+kubectl logs -n nifi-black nifi-black-0 -c nifi-black --previous --tail=200
+
+kubectl logs -n nifi-black nifi-black-0 -c nifi-init-tls --tail=200
+
+kubectl exec -n nifi-black -it nifi-black-0 -c nifi-black -- ls -l /opt/nifi/tls
+
+kubectl exec -n nifi-black -it nifi-black-0 -c nifi-black -- \
+  sh -c 'tail -200 /opt/nifi/nifi-current/logs/nifi-app.log; echo "----"; tail -200 /opt/nifi/nifi-current/logs/bootstrap.log'
+
+  kubectl exec -n nifi-black -it nifi-black-0 -c nifi-black -- \
+    grep -E "keystore|truststore" /opt/nifi/nifi-current/conf/nifi.properties
+
+
+
+    kubectl logs -n nifi-black nifi-black-0 -c nifi-black --previous --tail=50
+
+    kubectl describe pod -n nifi-black nifi-black-0 | sed -n '/Events:/,$p'
+
+
