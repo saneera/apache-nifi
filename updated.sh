@@ -694,3 +694,33 @@ keytool -list -v \
   -storepass "${PASSWORD}" \
   -alias nifi \
   | grep -Ei "Subject Alternative Name|SubjectAlternativeName|DNSName|IP Address" -A4 || true
+
+
+
+================
+
+# Generate CA private key
+openssl genrsa -out ca.key 4096
+
+# Generate CA certificate (10 years)
+openssl req -x509 -new -nodes \
+  -key ca.key \
+  -sha256 \
+  -days 3650 \
+  -out ca.crt \
+  -subj "/CN=NiFi-Cluster-CA"
+
+
+  keytool -importcert \
+    -alias nifi-ca \
+    -file ca.crt \
+    -keystore truststore.p12 \
+    -storetype PKCS12 \
+    -storepass changeit \
+    -noprompt
+
+
+    keytool -list -v \
+      -keystore truststore.p12 \
+      -storetype PKCS12 \
+      -storepass changeit
