@@ -472,3 +472,16 @@ ls -l /opt/nifi/tls;
 echo "== nifi.properties security lines ==";
 grep -nE "^nifi.security.(key|trust)store" /opt/nifi/nifi-current/conf/nifi.properties;
 '
+
+
+kubectl exec -n nifi-black -it nifi-black-0 -c nifi-black -- bash -lc '
+keytool -list -keystore /opt/nifi/tls/truststore.p12 -storetype PKCS12 -storepass "th1s1s3up34e5r37"
+'
+
+kubectl exec -n nifi-black -it nifi-black-0 -c nifi-black -- bash -lc '
+keytool -list -v -keystore /opt/nifi/tls/keystore.p12 -storetype PKCS12 -storepass "th1s1s3up34e5r37" | sed -n "/SubjectAlternativeName/,+8p"
+'
+
+kubectl exec -n nifi-black -it nifi-black-0 -c nifi-black -- bash -lc '
+id && ls -l /opt/nifi/tls && stat -c "%U %G %a %n" /opt/nifi/tls/* || true
+'
