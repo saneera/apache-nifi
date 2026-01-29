@@ -576,3 +576,10 @@ keytool -list -v \
   -storepass "${PASSWORD}" \
   -alias nifi \
 | grep -Ei "Subject Alternative|DNSName|IP Address" -A2 || true
+
+
+keytool -list -v \
+  -keystore out/nifi-black-0/keystore.p12 \
+  -storetype PKCS12 \
+  -storepass "th1s1s3up34e5r37" \
+  -alias nifi | sed -n '/SubjectAlternativeName/,+8p'
