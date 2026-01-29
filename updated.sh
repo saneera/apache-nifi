@@ -493,3 +493,86 @@ id && ls -l /opt/nifi/tls && stat -c "%U %G %a %n" /opt/nifi/tls/* || true
 
 
 keytool -list -v -keystore out/nifi-black-0/keystore.p12 -storetype PKCS12 -storepass "th1s1s3up34e5r37" | grep -A3 -i "Subject Alternative"
+
+
+=======
+
+
+#!/usr/bin/env bash
+set -euo pipefail
+
+POD_FQDN="${1:?pod fqdn required}"
+POD_SHORT="${2:?pod short name required}"
+SERVICE_FQDN="${3:?service fqdn required}"
+PASSWORD="${4:?password required}"
+CA_CRT="${5:-ca.crt}"
+CA_KEY="${6:-ca.key}"
+
+OUT_DIR="out/${POD_SHORT}"
+mkdir -p "${OUT_DIR}"
+
+KEYSTORE="${OUT_DIR}/keystore.p12"
+CSR="${OUT_DIR}/nifi.csr"
+CRT="${OUT_DIR}/nifi.crt"
+
+SAN="DNS:${POD_SHORT},DNS:${POD_FQDN},DNS:${SERVICE_FQDN}"
+
+echo "==> Generating keystore for ${POD_SHORT}"
+echo "    CN  : ${POD_FQDN}"
+echo "    SAN : ${SAN}"
+
+# 1) Generate keypair WITH SAN
+keytool -genkeypair \
+  -alias nifi \
+  -keyalg RSA \
+  -keysize 2048 \
+  -storetype PKCS12 \
+  -keystore "${KEYSTORE}" \
+  -storepass "${PASSWORD}" \
+  -keypass "${PASSWORD}" \
+  -dname "CN=${POD_FQDN}" \
+  -ext "SAN=${SAN}" \
+  -validity 3650
+
+# 2) Create CSR (SAN included)
+keytool -certreq \
+  -alias nifi \
+  -keystore "${KEYSTORE}" \
+  -storepass "${PASSWORD}" \
+  -file "${CSR}"
+
+# 3) Sign CSR WITH EXTENSIONS COPIED (keeps SAN)
+openssl x509 -req \
+  -in "${CSR}" \
+  -CA "${CA_CRT}" \
+  -CAkey "${CA_KEY}" \
+  -CAcreateserial \
+  -out "${CRT}" \
+  -days 3650 \
+  -sha256 \
+  -copy_extensions copy
+
+# 4) Import CA into keystore (chain)
+keytool -importcert -noprompt \
+  -alias nifi-ca \
+  -file "${CA_CRT}" \
+  -keystore "${KEYSTORE}" \
+  -storetype PKCS12 \
+  -storepass "${PASSWORD}"
+
+# 5) Import signed cert back into keystore
+keytool -importcert -noprompt \
+  -alias nifi \
+  -file "${CRT}" \
+  -keystore "${KEYSTORE}" \
+  -storetype PKCS12 \
+  -storepass "${PASSWORD}"
+
+echo "==> Done: ${KEYSTORE}"
+echo "==> Verify SAN (look for DNSName):"
+keytool -list -v \
+  -keystore "${KEYSTORE}" \
+  -storetype PKCS12 \
+  -storepass "${PASSWORD}" \
+  -alias nifi \
+| grep -Ei "Subject Alternative|DNSName|IP Address" -A2 || true
