@@ -156,3 +156,6 @@ Does your NiFi Helm Chart or Deployment YAML currently expect files ending in .j
 
 
 
+
+mkdir -p /home/Developer/data/nifi-red/data/nifi-0/{state,flowfile_repository,content_repository,provenance_repository,database_repository,archive}
+chown -R 1000:1000 /home/Developer/data/nifi-red/data/nifi-0
