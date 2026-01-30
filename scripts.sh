@@ -206,3 +206,35 @@ initContainers:
             volumeMounts:
               - name: nifi-data
                 mountPath: /opt/nifi/data
+
+
+
+initContainers:
+  - name: init-nifi-data
+    image: busybox:1.36
+    securityContext:
+      runAsUser: 0
+      runAsGroup: 0
+    command: ["sh","-c"]
+    args:
+      - |
+        set -eux
+
+        # create required folders (NO brace expansion)
+        mkdir -p /opt/nifi/data/conf \
+                 /opt/nifi/data/state \
+                 /opt/nifi/data/flowfile_repository \
+                 /opt/nifi/data/content_repository \
+                 /opt/nifi/data/provenance_repository \
+                 /opt/nifi/data/database_repository
+
+        # if flow.json.gz accidentally became a directory earlier, remove it
+        if [ -d /opt/nifi/data/conf/flow.json.gz ]; then
+          rm -rf /opt/nifi/data/conf/flow.json.gz
+        fi
+
+        # ensure NiFi user can write
+        chown -R 1000:1000 /opt/nifi/data
+    volumeMounts:
+      - name: nifi-data
+        mountPath: /opt/nifi/data
