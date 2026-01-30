@@ -177,3 +177,32 @@ initContainers:
     volumeMounts:
       - name: nifi-red-pvc
         mountPath: /opt/nifi/data
+
+
+
+
+        nifi.flow.configuration.file=/opt/nifi/data/conf/flow.json.gz
+
+        nifi.state.management.configuration.file=./conf/state-management.xml
+        nifi.state.management.provider.local=local-provider
+        nifi.state.management.provider.local.directory=/opt/nifi/data/state/local
+
+        nifi.flowfile.repository.directory=/opt/nifi/data/flowfile_repository
+        nifi.content.repository.directory.default=/opt/nifi/data/content_repository
+        nifi.provenance.repository.directory.default=/opt/nifi/data/provenance_repository
+        nifi.database.directory=/opt/nifi/data/database_repository
+
+        initContainers:
+          - name: init-nifi-dirs
+            image: busybox:1.36
+            command: ["sh","-c"]
+            args:
+              - |
+                set -eux
+                mkdir -p /opt/nifi/data/{conf,state,flowfile_repository,content_repository,provenance_repository,database_repository}
+                # remove old bad directory if it exists
+                if [ -d /opt/nifi/data/conf/flow.json.gz ]; then rm -rf /opt/nifi/data/conf/flow.json.gz; fi
+                chown -R 1000:1000 /opt/nifi/data
+            volumeMounts:
+              - name: nifi-data
+                mountPath: /opt/nifi/data
