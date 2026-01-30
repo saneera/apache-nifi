@@ -159,3 +159,21 @@ Does your NiFi Helm Chart or Deployment YAML currently expect files ending in .j
 
 mkdir -p /home/Developer/data/nifi-red/data/nifi-0/{state,flowfile_repository,content_repository,provenance_repository,database_repository,archive}
 chown -R 1000:1000 /home/Developer/data/nifi-red/data/nifi-0
+
+
+initContainers:
+  - name: init-flow-file
+    image: busybox:1.36
+    command: ["sh","-c"]
+    args:
+      - |
+        set -eux
+        mkdir -p /opt/nifi/data/conf
+        # If flow.json.gz is a directory from an old bad mount, remove it
+        if [ -d /opt/nifi/data/conf/flow.json.gz ]; then
+          rm -rf /opt/nifi/data/conf/flow.json.gz
+        fi
+        chown -R 1000:1000 /opt/nifi/data/conf
+    volumeMounts:
+      - name: nifi-red-pvc
+        mountPath: /opt/nifi/data
