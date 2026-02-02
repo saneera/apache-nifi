@@ -91,3 +91,11 @@ Import ABCD Version 2
 A second identical PG is now added:
 
 Two ABCD Flow on Canvas
+
+
+NIFI_FLOW_CONFIGURATION_FILE: "/opt/nifi/data/conf/flow.json.gz"
+
+NIFI_FLOWFILE_REPOSITORY_DIRECTORY: "/opt/nifi/data/flowfile_repository"
+NIFI_CONTENT_REPOSITORY_DIRECTORY_DEFAULT: "/opt/nifi/data/content_repository"
+NIFI_PROVENANCE_REPOSITORY_DIRECTORY_DEFAULT: "/opt/nifi/data/provenance_repository"
+NIFI_DATABASE_DIRECTORY: "/opt/nifi/data/database_repository"
