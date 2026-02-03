@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: nifi-red
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6380
+          args:
+            - "--port"
+            - "6380"
+            - "--appendonly"
+            - "yes"
+
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: nifi-red
+spec:
+  type: ClusterIP
+  selector:
+    app: redis
+  ports:
+    - name: redis
+      port: 6380
+      targetPort: 6380
