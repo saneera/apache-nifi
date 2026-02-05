@@ -259,3 +259,8 @@ grep -nE "nifi\.remote\.input\.http\.port|nifi\.remote\.input\.host|nifi\.web\.p
 
 
 
+  openssl s_client -connect 172.27.3.23:30074 -servername 172.27.3.23 -showcerts </dev/null
+
+
+
+
