@@ -238,3 +238,24 @@ initContainers:
     volumeMounts:
       - name: nifi-data
         mountPath: /opt/nifi/data
+
+
+
+        curl -sk https://172.27.3.23:30074/nifi-api/site-to-site/peers
+
+        curl -sk --cert-type P12 --cert /opt/nifi/certs/keystore.p12:PASS \
+          https://172.27.3.23:30074/nifi-api/site-to-site/peers
+
+
+grep -nE "nifi\.remote\.input\.http\.port|nifi\.remote\.input\.host|nifi\.web\.proxy\.host|nifi\.web\.proxy\.context\.path" \
+  /opt/nifi/nifi-current/conf/nifi.properties
+
+
+  printenv | grep -iE "NIFI_.*REMOTE_INPUT|NIFI_.*WEB_PROXY|SINGLE_USER"
+
+
+
+  grep -nE "nifi\.remote\.input\.http\.port|nifi\.remote\.input\.host|nifi\.web\.proxy\.host|nifi\.web\.proxy\.context\.path" /opt/nifi/nifi-current/conf/nifi.properties
+
+
+
