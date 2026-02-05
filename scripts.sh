@@ -262,5 +262,11 @@ grep -nE "nifi\.remote\.input\.http\.port|nifi\.remote\.input\.host|nifi\.web\.p
   openssl s_client -connect 172.27.3.23:30074 -servername 172.27.3.23 -showcerts </dev/null
 
 
+  openssl s_client -connect 172.27.3.23:30074 -servername 172.27.3.23 -CAfile /opt/c/to/ca.crt </dev/null
+
+
+    curl -sk --cert-type P12 --cert /opt/nifi/certs/keystore.p12:PASS  https://172.27.3.23:30074/nifi-api/site-to-site/peers?protocolVersion=1
+
+
 
 
