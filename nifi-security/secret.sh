@@ -13,7 +13,7 @@ rm -rf nifi-certs-out/*
 # 2. Generate JKS with SAN
 # The -n flag sets the Common Name (CN).
 # The --subjectAlternativeNames flag adds the IPs to the SAN field.
-tls-toolkit.sh standalone \
+./nifi-toolkit-1.28.1/bin/tls-toolkit.sh standalone \
   -n "$NIFI_A_IP, $NIFI_B_IP" \
   --subjectAlternativeNames "$NIFI_A_IP, $NIFI_B_IP, localhost" \
   -C "$ADMIN_DN" \
