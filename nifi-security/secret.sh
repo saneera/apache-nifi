@@ -44,40 +44,11 @@ keytool -importkeystore -srckeystore "./nifi-certs-out/$NIFI_B_IP/truststore.jks
 echo "DONE! Check ./nifi-certs-out"
 
 
-openssl s_client -connect 172.27.3.12:30074 -servername 172.27.3.12
+keytool -list -v \
+  -keystore /opt/nifi/nifi-current/conf/keystore.p12 \
+  -storetype PKCS12 \
+  -storepass <keystore-password> | grep -A10 "SubjectAlternativeName"
 
 
-apiVersion: v1
-kind: Service
-metadata:
-  name: nifi-black-s2s
-  namespace: nifi-black
-spec:
-  type: NodePort
-  selector:
-    app: nifi-black
-  ports:
-    - name: s2s-raw
-      port: 10000
-      targetPort: 10000
-      nodePort: 31000   # pick a free nodeport
-      protocol: TCP
+  openssl s_client -connect 172.27.3.12:9443 -servername 172.27.3.12
 
-
-
-apiVersion: networking.istio.io/v1beta1
-kind: VirtualService
-metadata:
-  name: nifi-black-9443
-  namespace: nifi-black
-spec:
-  gateways:
-  - istio-system/public-gateway
-  tcp:
-  - match:
-    - port: 9443
-    route:
-    - destination:
-        host: nifi-black.nifi-black.svc.cluster.local
-        port:
-          number: 9443
