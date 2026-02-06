@@ -45,3 +45,20 @@ echo "DONE! Check ./nifi-certs-out"
 
 
 openssl s_client -connect 172.27.3.12:30074 -servername 172.27.3.12
+
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: nifi-black-s2s
+  namespace: nifi-black
+spec:
+  type: NodePort
+  selector:
+    app: nifi-black
+  ports:
+    - name: s2s-raw
+      port: 10000
+      targetPort: 10000
+      nodePort: 31000   # pick a free nodeport
+      protocol: TCP
