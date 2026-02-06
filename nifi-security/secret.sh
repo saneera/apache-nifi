@@ -62,3 +62,22 @@ spec:
       targetPort: 10000
       nodePort: 31000   # pick a free nodeport
       protocol: TCP
+
+
+
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: nifi-black-9443
+  namespace: nifi-black
+spec:
+  gateways:
+  - istio-system/public-gateway
+  tcp:
+  - match:
+    - port: 9443
+    route:
+    - destination:
+        host: nifi-black.nifi-black.svc.cluster.local
+        port:
+          number: 9443
