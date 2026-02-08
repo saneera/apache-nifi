@@ -52,3 +52,34 @@ keytool -list -v \
 
   openssl s_client -connect 172.27.3.12:9443 -servername 172.27.3.12
 
+
+apiVersion: networking.istio.io/v1beta1
+kind: ServiceEntry
+metadata:
+  name: nifi-black-nodeport
+  namespace: <red-nifi-namespace>
+spec:
+  hosts:
+  - nifi-black.external
+  location: MESH_EXTERNAL
+  resolution: STATIC
+  ports:
+  - number: 30074
+    name: tls-nifi
+    protocol: TLS
+  endpoints:
+  - address: 172.27.3.12
+
+
+  ----
+
+  apiVersion: networking.istio.io/v1beta1
+  kind: DestinationRule
+  metadata:
+    name: nifi-black-nodeport-dr
+    namespace: <red-nifi-namespace>
+  spec:
+    host: nifi-black.external
+    trafficPolicy:
+      tls:
+        mode: DISABLE
