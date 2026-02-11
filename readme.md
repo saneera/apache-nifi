@@ -99,3 +99,22 @@ NIFI_FLOWFILE_REPOSITORY_DIRECTORY: "/opt/nifi/data/flowfile_repository"
 NIFI_CONTENT_REPOSITORY_DIRECTORY_DEFAULT: "/opt/nifi/data/content_repository"
 NIFI_PROVENANCE_REPOSITORY_DIRECTORY_DEFAULT: "/opt/nifi/data/provenance_repository"
 NIFI_DATABASE_DIRECTORY: "/opt/nifi/data/database_repository"
+
+
+sequenceDiagram
+participant Client
+participant RED
+participant BLACK
+participant API
+
+Client->>RED: HTTP Request
+RED->>RED: HandleHttpRequest
+RED->>RED: UpdateAttribute
+RED->>BLACK: Site-to-Site
+BLACK->>BLACK: InvokeHTTP
+BLACK->>API: REST Call
+API-->>BLACK: Response
+BLACK->>BLACK: UpdateAttribute
+BLACK->>RED: Site-to-Site
+RED->>RED: HandleHttpResponse
+RED-->>Client: HTTP Response
