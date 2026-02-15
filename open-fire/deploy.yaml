@@ -1,0 +1,71 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openfire-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+
+
+---
+
+# deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openfire
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openfire
+  template:
+    metadata:
+      labels:
+        app: openfire
+    spec:
+      containers:
+        - name: openfire
+          image: openfire:custom-5.0.3
+          ports:
+            - containerPort: 9090
+            - containerPort: 5222
+            - containerPort: 7777
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/openfire
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: openfire-data
+
+
+---
+
+# service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: openfire-service
+spec:
+  type: LoadBalancer
+  selector:
+    app: openfire
+  ports:
+    - name: admin-http
+      port: 9090
+      targetPort: 9090
+    - name: xmpp-client
+      port: 5222
+      targetPort: 5222
+    - name: file-transfer
+      port: 7777
+      targetPort: 7777
+
+---
+
+

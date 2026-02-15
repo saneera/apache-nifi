@@ -1,120 +1,495 @@
-Registry - a subproject of Apache NiFi - is a complementary application that provides a central location for storage and management of shared resources across one or more instances of NiFi or MiNiFi.
+Ticket 1 – Implement HTTP Method Handling in Apache NiFi
 
-Apache NiFi Registry provides the following features:
+Description:
+Design and implement support for handling HTTP methods (GET, POST, DELETE) within Apache NiFi flows. The flow should correctly route and process requests based on the incoming HTTP method.
 
-Implementation of a Flow Registry for storing and managing versioned flows
-Integration with NiFi to allow storing, retrieving, and upgrading versioned flows from a Flow Registry
-Administration of the Registry for defining users, groups, and policies
+Acceptance Criteria:
+•	NiFi flow distinguishes between GET, POST, DELETE requests
+•	Requests are routed to appropriate processors
+•	Unsupported methods return proper error response
+•	Unit/integration testing completed
 
+⸻
 
-I Started NiFi Registry. Now What?
-Now that NiFi Registry has been started, we can bring up the User Interface (UI). To get started, open a web browser and navigate to http://localhost:18080/nifi-registry. The port can be changed by editing the nifi-registry.properties file in the NiFi Registry conf directory, but the default port is 18080.
+Ticket 2 – Implement Circuit CRUD Operations via Apache NiFi
 
-This will bring up the Registry UI, which at this point is empty as there are no flow resources available to share yet:
+Description:
+Create NiFi flows to support Create, Update, Retrieve (GET), and Delete operations for circuit management. The flows should integrate with downstream services/databases.
 
-Empty Registry
+Acceptance Criteria:
+•	Circuit creation supported
+•	Circuit update supported
+•	Circuit retrieval supported
+•	Circuit deletion supported
+•	Proper validation & error handling implemented
 
-Create a Bucket
-A bucket is needed in our registry to store and organize NiFi dataflows. To create one, select the Settings icon (Settings Icon)in the top right corner of the screen. In the Buckets window, select the "New Bucket" button.
+⸻
 
-New Bucket
-Enter the bucket name "Test" and select the "Create" button.
+Ticket 3 – Enable HTTPS Communication Between Microservices and Apache NiFi
 
-Test Bucket Dialog
-The "Test" bucket is created:
+Description:
+Configure Apache NiFi to accept secure HTTPS requests from microservices. SSL context, truststore, and keystore configurations must be properly implemented.
 
-Test Bucket
+Acceptance Criteria:
+•	HTTPS enabled on NiFi endpoint
+•	SSL context configured correctly
+•	Microservices successfully connect via HTTPS
+•	Certificate validation working
+•	Security testing completed
 
-There are no permissions configured by default, so anyone is able to view, create and modify buckets in this instance. For information on securing the system, see the System Administrator’s Guide.
+⸻
 
-Connect NiFi to the Registry
-Now it is time to tell NiFi about the local registry instance.
+Ticket 4 – Implement Uni-Directional Properties Synchronization
 
-Start a NiFi instance if one isn’t already running and bring up the UI. Go to controller settings from the top-right menu:
+Description:
+Develop a mechanism to synchronize properties in a uni-directional flow. Changes from the source system should propagate reliably to the target.
 
-Global Menu - Controller Settings
-Select the Registry Clients tab and add a new Registry Client giving it a name and selecting a type:
+Acceptance Criteria:
+•	Properties sync works in one direction only
+•	No unintended reverse updates
+•	Conflict handling defined
+•	Logging & monitoring included
 
-Add Registry Client Dialog
-Click "Add".
+⸻
 
-Registry Client Added
-Once a Registry Client has been added, configure it by clicking the "Edit" button (Edit Button) in the far-right column. In the Edit Registry Client window, select the Properties tab and enter a URL of http://localhost:18080:
+Ticket 5 – Investigate & Implement Streaming Capability
 
-Configure Registry Client Properties
-Click "Update" to save the configuration and close the window:
+Description:
+Evaluate the feasibility of implementing streaming data processing within NiFi flows. Determine performance impact and appropriate processors.
 
-Local Registry Client
-Start Version Control on a Process Group
-With NiFi connected to a NiFi Registry, dataflows can be version controlled on the process group level.
+Acceptance Criteria:
+•	Streaming approach defined
+•	Performance considerations documented
+•	Prototype flow implemented
+•	Backpressure & memory handling validated
 
-Right-click on a process group and select "Version→Start version control" from the context menu:
+⸻
 
-ABCD Process Group Menu
-The local registry instance and "Test" bucket are chosen by default to store your flow since they are the only registry connected and bucket available. Enter a flow name, flow description, comments and select "Save":
+Ticket 6 – Store Apache NiFi Flows in Git Repository
 
-Initial Save of ABCD Flow
-As indicated by the Version State icon (Up To Date Icon) in the top left corner of the component, the process group is now saved as a versioned flow in the registry.
+Description:
+Establish a Git-based version control strategy for Apache NiFi flows. Ensure flows can be exported, tracked, and restored.
 
-ABCD Flow Saved
-Go back to the Registry UI and return to the main page to see the versioned flow you just saved (a refresh may be required):
+Acceptance Criteria:
+•	Flows exported to Git repository
+•	Versioning strategy defined
+•	Rollback process documented
+•	Team workflow established
 
-ABCD Flow in Test Bucket
-Save Changes to a Versioned Flow
-Changes made to the versioned process group can be reviewed, reverted or saved.
+⸻
 
-For example, if changes are made to the ABCD flow, the Version State changes to "Locally modified" (Locally Modified Icon). The right-click menu will now show the options "Commit local changes", "Show local changes" or "Revert local changes":
+Ticket 7 – Implement Apache NiFi Logging & Monitoring Strategy
 
-Changed Flow Options
-Select "Show local changes" to see the details of the changes made:
+Description:
+Define and implement a comprehensive logging and monitoring approach for Apache NiFi to improve observability and troubleshooting.
 
-Show ABCD Flow Changes
-Select "Commit local changes", enter comments and select "Save" to save the changes:
-
-Save ABCD Version 2
-Version 2 of the flow is saved:
-
-ABCD Version 2
-Import a Versioned Flow
-With a flow existing in the registry, we can use it to illustrate how to import a versioned process group.
-
-In NiFi, select Process Group from the Components toolbar and drag it onto the canvas:
-
-Drag Process Group
-Instead of entering a name, click the Import link:
-
-Import Flow From Registry
-Choose the version of the flow you want imported and select "Import":
-
-Import ABCD Version 2
-
-A second identical PG is now added:
-
-Two ABCD Flow on Canvas
+Acceptance Criteria:
+•	Key events logged
+•	Error scenarios captured
+•	Log levels properly configured
+•	Monitoring/alerting integrated
+•	Documentation completed
 
 
-NIFI_FLOW_CONFIGURATION_FILE: "/opt/nifi/data/conf/flow.json.gz"
-
-NIFI_FLOWFILE_REPOSITORY_DIRECTORY: "/opt/nifi/data/flowfile_repository"
-NIFI_CONTENT_REPOSITORY_DIRECTORY_DEFAULT: "/opt/nifi/data/content_repository"
-NIFI_PROVENANCE_REPOSITORY_DIRECTORY_DEFAULT: "/opt/nifi/data/provenance_repository"
-NIFI_DATABASE_DIRECTORY: "/opt/nifi/data/database_repository"
 
 
-sequenceDiagram
-participant Client
-participant RED
-participant BLACK
-participant API
 
-Client->>RED: HTTP Request
-RED->>RED: HandleHttpRequest
-RED->>RED: UpdateAttribute
-RED->>BLACK: Site-to-Site
-BLACK->>BLACK: InvokeHTTP
-BLACK->>API: REST Call
-API-->>BLACK: Response
-BLACK->>BLACK: UpdateAttribute
-BLACK->>RED: Site-to-Site
-RED->>RED: HandleHttpResponse
-RED-->>Client: HTTP Response
+-------------
+
+es — AzureDevOpsFlowRegistryClient is exactly the “no NiFi Registry” solution. It lets NiFi talk directly to Azure DevOps Git and store versioned flows there via Azure DevOps REST API.  ￼
+
+Below is the clean configuration path.
+
+⸻
+
+1) Azure DevOps setup (one-time)
+
+A. Create Repo + Branch
+•	Create an Azure Repos Git repo (e.g., nifi-flows)
+•	Ensure the branch you want exists (e.g., main)  ￼
+
+B. Create Service Principal (Entra ID)
+
+NiFi’s Azure DevOps client authenticates using Service Principal (OAuth2 client credentials).  ￼
+Steps (summary):
+•	Entra ID → App registrations → New registration
+•	Create Client Secret
+•	Note:
+•	Tenant ID
+•	Client ID
+•	Client Secret value  ￼
+
+C. Add the Service Principal into Azure DevOps Org
+
+Azure DevOps Org Settings → Users → Add users
+•	Paste Application (client) ID
+•	Set access: Basic
+•	Add to project/repo permissions (Contributors is typical)  ￼
+
+⸻
+
+2) NiFi controller services (required)
+
+In NiFi UI → Controller Settings → Management Controller Services create and enable:
+
+A. StandardWebClientServiceProvider
+•	Usually defaults are fine (proxy/SSL only if required)  ￼
+
+B. StandardOauth2AccessTokenProvider
+
+Set:
+•	Token Endpoint: https://login.microsoftonline.com/{tenant-id}/oauth2/v2.0/token
+•	Grant Type: Client Credentials
+•	Client ID: (app reg client id)
+•	Client Secret: (secret value)
+•	Scope: https://app.vssps.visualstudio.com/.default
+•	Enable and (optionally) Verify  ￼
+
+⸻
+
+3) Configure the Flow Registry Client (Azure DevOps)
+
+NiFi UI → Controller Settings → Registry Clients → Add
+
+Choose type: AzureDevOpsFlowRegistryClient  ￼
+
+Fill properties:
+•	Azure DevOps API URL: https://dev.azure.com  ￼
+•	Organization: <your-org>
+•	Project: <your-project>
+•	Repository Name: <your-repo>
+•	Default Branch: main (must exist)  ￼
+•	Repository Path: optional folder like nifi/flows (no leading/trailing /)  ￼
+•	Authentication Strategy: Service Principal  ￼
+•	OAuth2 Access Token Provider: select the one you created  ￼
+•	Web Client Service: select the StandardWebClientServiceProvider  ￼
+•	Click Verify, then Enable  ￼
+
+⸻
+
+4) Start version control on a Process Group
+
+On the canvas:
+•	Right-click Process Group → Version → Start Version Control
+•	Select your Azure DevOps Registry Client
+•	Choose bucket/path settings
+•	Commit message → Save
+
+Now every “commit” from NiFi creates a new version stored in your Azure DevOps Git repo via the client.  ￼
+
+⸻
+
+Notes for your Jira ticket
+•	This is the modern NiFi approach: Git-based Flow Registry Clients (NiFi Registry is deprecated and NiFi encourages migration to these clients).  ￼
+
+⸻
+
+If you tell me your Azure DevOps details format (just placeholders are fine):
+•	org = ?
+•	project = ?
+•	repo = ?
+•	branch = main/master?
+•	repo path desired?
+
+…I’ll give you the exact final values + a recommended repo folder structure for dev/qa/prod flows.
+
+---------------'
+
+Yes — you can absolutely use an Azure DevOps pipeline to deploy a specific flow version to a NiFi production cluster.
+
+With AzureDevOpsFlowRegistryClient, your “source of truth” is the versioned flow in Azure Repos. The pipeline’s job becomes:
+1.	pick a version (tag/commit/version number),
+2.	tell NiFi Prod to import / update the process group to that version,
+3.	(optionally) stop/start the process group and run a smoke test.
+
+There are two solid deployment patterns:
+
+⸻
+
+Option 1 (Recommended): Pipeline calls NiFi REST API to update the Process Group version
+
+How it works
+•	Your flow is already under version control in NiFi (connected to the Azure DevOps registry client)
+•	In production, the process group exists and is “versioned”
+•	Pipeline calls NiFi API to change version to the desired version
+
+Typical pipeline steps
+1.	Authenticate to NiFi (OIDC token / basic / client cert)
+2.	Get process group id in prod (or store it as a variable)
+3.	Stop the process group (optional but safer)
+4.	Update version (promote) to target version
+5.	Start the process group
+6.	Verify health (controller services enabled, processors running, etc.)
+
+Pros
+
+✅ True CI/CD promotion
+✅ Repeatable, fast rollback
+✅ No manual import/export
+✅ Works well with Git tags/releases
+
+Cons
+
+❌ You need stable IDs or lookup logic
+❌ Need a secure auth method from pipeline → NiFi
+
+⸻
+
+Option 2: Pipeline “recreates” the flow by importing JSON (not ideal)
+•	Pipeline downloads the flow definition JSON from repo
+•	Calls NiFi API to upload/import process group
+•	More fragile (IDs change, parameter context mapping, controller service references)
+
+Use this only if you’re not using NiFi version control in prod.
+
+⸻
+
+What you need to make Option 1 work
+
+A) Network access
+
+Azure pipeline agent must reach:
+•	https://nifi-prod.<domain>:8443/nifi-api/...
+
+B) Authentication method
+
+Choose one:
+•	OIDC / SSO token (best in enterprises)
+•	basic auth (only if internally protected)
+•	mTLS client cert (very secure)
+
+C) Parameter Context strategy (important)
+
+Prod values must not be hardcoded in flow.
+Use:
+•	Parameter Contexts per environment
+•	Keep same parameter names across envs (only values differ)
+
+This avoids “dev URL accidentally deployed to prod”.
+
+⸻
+
+Example Azure DevOps pipeline (pseudo YAML)
+
+This shows the structure (you’ll need to plug your auth + exact endpoints):
+
+
+trigger: none
+
+parameters:
+- name: targetVersion
+  displayName: "NiFi Flow Version"
+  type: string
+  default: "25"
+
+variables:
+NIFI_API: "https://nifi-prod.example.com:8443/nifi-api"
+PG_ID: "PUT_PROD_PROCESS_GROUP_ID_HERE"
+
+stages:
+- stage: Deploy
+  jobs:
+    - job: DeployToProd
+      pool:
+      vmImage: ubuntu-latest
+      steps:
+        - script: |
+          echo "Deploying NiFi flow version ${{ parameters.targetVersion }}"
+          displayName: "Info"
+
+        - script: |
+          # 1) Get access token (example placeholder)
+          # export TOKEN=$(...)
+
+          # 2) Stop process group (optional)
+          curl -k -H "Authorization: Bearer $TOKEN" \
+          -X PUT "$(NIFI_API)/flow/process-groups/$(PG_ID)" \
+          -H "Content-Type: application/json" \
+          -d '{"id":"'"$(PG_ID)"'","state":"STOPPED"}'
+
+          displayName: "Stop Process Group"
+
+        - script: |
+          # 3) Change version (promote)
+          # You first query current version control info:
+          curl -k -H "Authorization: Bearer $TOKEN" \
+          "$(NIFI_API)/versions/process-groups/$(PG_ID)"
+
+          # Then PUT updated version info (depends on returned payload)
+          displayName: "Promote Version"
+
+        - script: |
+          # 4) Start process group
+          curl -k -H "Authorization: Bearer $TOKEN" \
+          -X PUT "$(NIFI_API)/flow/process-groups/$(PG_ID)" \
+          -H "Content-Type: application/json" \
+          -d '{"id":"'"$(PG_ID)"'","state":"RUNNING"}'
+          displayName: "Start Process Group"
+- Note: The exact payload for “promote version” depends on what the /versions/process-groups/{id} endpoint returns (it includes a versionControlInformation object you update with the desired version). I can generate the exact curl commands once I know your NiFi auth style + whether your prod PG is already under version control.
+
+⸻
+
+Recommended Release Workflow
+
+In Azure DevOps
+•	Merge to main
+•	Create a tag like release/flow-circuits/v1.4
+•	Pipeline deploys that tag’s version to prod
+•	Rollback = redeploy previous tag
+
+In NiFi
+•	Parameter contexts for envs: PC-DEV, PC-QA, PC-PROD
+•	Versioned process group exists in each env
+
+⸻
+
+Quick questions (so I can give you the exact working pipeline + curl)
+1.	How does NiFi prod authenticate?
+OIDC/SSO, basic, or mTLS client cert?
+2.	Is the prod process group already under version control (connected to AzureDevOpsFlowRegistryClient)?
+3.	Is prod NiFi single node or cluster?
+
+
+------
+
+
+Pipeline will:
+
+1️⃣ Authenticate to NiFi
+2️⃣ Stop Process Group (safe deployment)
+3️⃣ Promote to target version
+4️⃣ Start Process Group
+5️⃣ Fail fast on errors
+
+⸻
+
+✅ Pipeline YAML (Ready to Use)
+
+
+trigger: none
+
+parameters:
+- name: flowVersion
+  displayName: "Target Flow Version"
+  type: string
+  default: "1"
+
+variables:
+NIFI_API: "https://<NODE-IP>:<NODE-PORT>/nifi-api"
+PG_ID: "<PROD_PROCESS_GROUP_ID>"
+
+stages:
+- stage: Deploy_NiFi_Flow
+  displayName: "Deploy NiFi Flow to Production"
+
+  jobs:
+    - job: PromoteFlow
+      displayName: "Promote NiFi Flow Version"
+      pool:
+      vmImage: ubuntu-latest
+
+      steps:
+
+      # ✅ Install jq (needed for JSON parsing)
+        - script: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+          displayName: "Install jq"
+
+      # ✅ Stop Process Group
+        - script: |
+          echo "Stopping Process Group..."
+
+          REVISION=$(curl -sk -u $(NIFI_USERNAME):$(NIFI_PASSWORD) \
+          "$(NIFI_API)/process-groups/$(PG_ID)" \
+          | jq '.revision.version')
+
+          curl -sk -u $(NIFI_USERNAME):$(NIFI_PASSWORD) \
+          -X PUT "$(NIFI_API)/flow/process-groups/$(PG_ID)" \
+          -H "Content-Type: application/json" \
+          -d "{
+          \"id\": \"$(PG_ID)\",
+          \"state\": \"STOPPED\",
+          \"revision\": { \"version\": $REVISION }
+          }"
+
+          echo "Process Group stopped."
+          displayName: "Stop Process Group"
+
+      # ✅ Promote Version
+        - script: |
+          echo "Promoting Flow to Version ${{ parameters.flowVersion }}"
+
+          VERSION_INFO=$(curl -sk -u $(NIFI_USERNAME):$(NIFI_PASSWORD) \
+          "$(NIFI_API)/versions/process-groups/$(PG_ID)")
+
+          REVISION=$(echo "$VERSION_INFO" | jq '.processGroupRevision.version')
+
+          CLIENT_ID=$(echo "$VERSION_INFO" | jq -r '.versionControlInformation.registryId')
+          BUCKET_ID=$(echo "$VERSION_INFO" | jq -r '.versionControlInformation.bucketId')
+          FLOW_ID=$(echo "$VERSION_INFO" | jq -r '.versionControlInformation.flowId')
+
+          curl -sk -u $(NIFI_USERNAME):$(NIFI_PASSWORD) \
+          -X PUT "$(NIFI_API)/versions/process-groups/$(PG_ID)" \
+          -H "Content-Type: application/json" \
+          -d "{
+          \"processGroupRevision\": { \"version\": $REVISION },
+          \"versionControlInformation\": {
+          \"registryId\": \"$CLIENT_ID\",
+          \"bucketId\": \"$BUCKET_ID\",
+          \"flowId\": \"$FLOW_ID\",
+          \"version\": ${{ parameters.flowVersion }}
+          }
+          }"
+
+          echo "Flow promoted successfully."
+          displayName: "Promote Flow Version"
+
+      # ✅ Start Process Group
+        - script: |
+          echo "Starting Process Group..."
+
+          REVISION=$(curl -sk -u $(NIFI_USERNAME):$(NIFI_PASSWORD) \
+          "$(NIFI_API)/process-groups/$(PG_ID)" \
+          | jq '.revision.version')
+
+          curl -sk -u $(NIFI_USERNAME):$(NIFI_PASSWORD) \
+          -X PUT "$(NIFI_API)/flow/process-groups/$(PG_ID)" \
+          -H "Content-Type: application/json" \
+          -d "{
+          \"id\": \"$(PG_ID)\",
+          \"state\": \"RUNNING\",
+          \"revision\": { \"version\": $REVISION }
+          }"
+
+          echo "Process Group started."
+          displayName: "Start Process Group"
+----
+
+In Azure DevOps → Pipeline → Variables → Secrets:
+
+Add:
+
+NIFI_USERNAME → your-nifi-username
+NIFI_PASSWORD → your-nifi-password (secret)
+
+Replace These Values
+
+Update:
+
+NIFI_API: "https://10.0.0.15:30077/nifi-api"
+PG_ID: "abcd-1234-efgh-5678"
+
+How To Find Process Group ID
+
+In NiFi UI:
+
+Right Click Process Group → View Configuration → Copy ID
+
+⸻
+
+✅ Rollback Strategy (Super Easy)
+
+Just rerun pipeline with older version:
+
+flowVersion = previous number
