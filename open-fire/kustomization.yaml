@@ -122,11 +122,11 @@ volumeMounts:
 
 ---
 
-volumeMounts:
+volumes:
   - name: nifi-users
-    mountPath: /opt/nifi/nifi-current/conf/users.xml
-    subPath: users.xml
+    configMap:
+      name: nifi-users
 
   - name: nifi-authorizations
-    mountPath: /opt/nifi/nifi-current/conf/authorizations.xml
-    subPath: authorizations.xml
+    configMap:
+      name: nifi-authorizations
