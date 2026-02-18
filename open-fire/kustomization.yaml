@@ -1,7 +1,8 @@
 # base/kustomization.yaml
 resources:
   - deploy.yaml
-
+  -
+---
     apiVersion: v1
     kind: ConfigMap
     metadata:
@@ -42,3 +43,68 @@ resources:
           </root>
 
         </configuration>
+
+
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nifi-users
+data:
+  users.xml: |
+    <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    <tenants>
+        <users>
+            <user identifier="admin-user-uuid" identity="admin"/>
+        </users>
+        <groups/>
+    </tenants>
+      
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nifi-authorizations
+data:
+  authorizations.xml: |
+    <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    <authorizations>
+
+        <policies>
+
+            <!-- Full admin access -->
+            <policy identifier="admin-policy-uuid" resource="/flow" action="R">
+                <user identifier="admin-user-uuid"/>
+            </policy>
+
+            <policy identifier="admin-policy-write-uuid" resource="/flow" action="W">
+                <user identifier="admin-user-uuid"/>
+            </policy>
+
+            <policy identifier="admin-policy-operate-uuid" resource="/flow" action="O">
+                <user identifier="admin-user-uuid"/>
+            </policy>
+
+            <!-- Access to policies UI -->
+            <policy identifier="policy-read-uuid" resource="/policies" action="R">
+                <user identifier="admin-user-uuid"/>
+            </policy>
+
+            <policy identifier="policy-write-uuid" resource="/policies" action="W">
+                <user identifier="admin-user-uuid"/>
+            </policy>
+
+            <!-- Access to tenants UI -->
+            <policy identifier="tenants-read-uuid" resource="/tenants" action="R">
+                <user identifier="admin-user-uuid"/>
+            </policy>
+
+            <policy identifier="tenants-write-uuid" resource="/tenants" action="W">
+                <user identifier="admin-user-uuid"/>
+            </policy>
+
+        </policies>
+
+    </authorizations>
