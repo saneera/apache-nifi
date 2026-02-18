@@ -1,3 +1,54 @@
 # base/kustomization.yaml
 resources:
   - deploy.yaml
+    
+    
+    flowchart LR
+
+    %% -------------------- SERVICES --------------------
+    subgraph SERVICES
+    SA[Service A]
+    SB[Service B]
+    end
+
+    %% -------------------- RED INSTANCE --------------------
+    subgraph RED[Red Instance – API Gateway]
+    R1[HandleHttpRequest]
+    R2[Prepare Attributes]
+    R3[Send to Black]
+    R4[Receive Response]
+    R5[HandleHttpResponse]
+    
+    R1 --> R2 --> R3
+    R4 --> R5
+    end
+
+    %% -------------------- BLACK INSTANCE --------------------
+    subgraph BLACK[Black Instance – Processing]
+    B1[Receive Request]
+    B2[InvokeHttp]
+    B3[Prepare Response]
+    B4[Send to Red]
+    
+    B1 --> B2 --> B3 --> B4
+    end
+
+    %% -------------------- CROSS INSTANCE --------------------
+    R3 --> B1
+    B4 --> R4
+
+    %% -------------------- CLIENT FLOW --------------------
+    SA --> R1
+    SB --> R1
+
+    R5 --> SA
+    R5 --> SB
+
+    %% -------------------- STYLING --------------------
+    classDef gateway fill:#c62828,stroke:#ef5350,stroke-width:2px,color:white
+    classDef processing fill:#263238,stroke:#90a4ae,stroke-width:2px,color:white
+    classDef services fill:#2e7d32,stroke:#66bb6a,stroke-width:2px,color:white
+
+    class R1,R2,R3,R4,R5 gateway
+    class B1,B2,B3,B4 processing
+    class SA,SB services
