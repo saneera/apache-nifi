@@ -55,10 +55,10 @@ data:
   users.xml: |
     <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <tenants>
+        <groups></groups>
         <users>
-            <user identifier="admin-user-uuid" identity="admin"/>
+            <user identifier="9f3c2b77-6e45-4f7b-9c8d-6b0d9a7d8e55" identity="admin"/>
         </users>
-        <groups/>
     </tenants>
       
 
@@ -71,44 +71,71 @@ data:
   authorizations.xml: |
     <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <authorizations>
-
         <policies>
-
-            <!-- Full admin access -->
-            <policy identifier="admin-policy-uuid" resource="/flow" action="R">
-                <user identifier="admin-user-uuid"/>
+            
+            <policy identifier="c1a7a2f1-2d8c-4c1a-8f5a-8b5e3d9e1a01" resource="/flow" action="R">
+                <user identifier="9f3c2b77-6e45-4f7b-9c8d-6b0d9a7d8e55"/>
             </policy>
-
-            <policy identifier="admin-policy-write-uuid" resource="/flow" action="W">
-                <user identifier="admin-user-uuid"/>
+            <policy identifier="c1a7a2f1-2d8c-4c1a-8f5a-8b5e3d9e1a02" resource="/flow" action="W">
+                <user identifier="9f3c2b77-6e45-4f7b-9c8d-6b0d9a7d8e55"/>
             </policy>
-
-            <policy identifier="admin-policy-operate-uuid" resource="/flow" action="O">
-                <user identifier="admin-user-uuid"/>
+            <policy identifier="c1a7a2f1-2d8c-4c1a-8f5a-8b5e3d9e1a03" resource="/flow" action="O">
+                <user identifier="9f3c2b77-6e45-4f7b-9c8d-6b0d9a7d8e55"/>
             </policy>
-
-            <!-- Access to policies UI -->
-            <policy identifier="policy-read-uuid" resource="/policies" action="R">
-                <user identifier="admin-user-uuid"/>
+            
+            <policy identifier="c1a7a2f1-2d8c-4c1a-8f5a-8b5e3d9e1a11" resource="/tenants" action="R">
+                <user identifier="9f3c2b77-6e45-4f7b-9c8d-6b0d9a7d8e55"/>
             </policy>
-
-            <policy identifier="policy-write-uuid" resource="/policies" action="W">
-                <user identifier="admin-user-uuid"/>
+            <policy identifier="c1a7a2f1-2d8c-4c1a-8f5a-8b5e3d9e1a12" resource="/tenants" action="W">
+                <user identifier="9f3c2b77-6e45-4f7b-9c8d-6b0d9a7d8e55"/>
             </policy>
-
-            <!-- Access to tenants UI -->
-            <policy identifier="tenants-read-uuid" resource="/tenants" action="R">
-                <user identifier="admin-user-uuid"/>
+            
+            <policy identifier="c1a7a2f1-2d8c-4c1a-8f5a-8b5e3d9e1a21" resource="/policies" action="R">
+                <user identifier="9f3c2b77-6e45-4f7b-9c8d-6b0d9a7d8e55"/>
             </policy>
-
-            <policy identifier="tenants-write-uuid" resource="/tenants" action="W">
-                <user identifier="admin-user-uuid"/>
+            <policy identifier="c1a7a2f1-2d8c-4c1a-8f5a-8b5e3d9e1a22" resource="/policies" action="W">
+                <user identifier="9f3c2b77-6e45-4f7b-9c8d-6b0d9a7d8e55"/>
             </policy>
-
+        
         </policies>
-
     </authorizations>
+      
 
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nifi-authorizers
+data:
+  authorizers.xml: |
+    <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    <authorizers>
+
+        <userGroupProvider>
+            <identifier>file-user-group-provider</identifier>
+            <class>org.apache.nifi.authorization.FileUserGroupProvider</class>
+            <property name="Users File">./conf/users.xml</property>
+            <property name="Legacy Authorized Users File"></property>
+        </userGroupProvider>
+
+        <accessPolicyProvider>
+            <identifier>file-access-policy-provider</identifier>
+            <class>org.apache.nifi.authorization.FileAccessPolicyProvider</class>
+            <property name="User Group Provider">file-user-group-provider</property>
+            <property name="Authorizations File">./conf/authorizations.xml</property>
+
+            <!-- MUST MATCH LOGIN USERNAME -->
+            <property name="Initial Admin Identity">admin</property>
+        </accessPolicyProvider>
+
+        <authorizer>
+            <identifier>managed-authorizer</identifier>
+            <class>org.apache.nifi.authorization.StandardManagedAuthorizer</class>
+            <property name="Access Policy Provider">file-access-policy-provider</property>
+        </authorizer>
+
+    </authorizers>
   ---
 
 volumeMounts:
@@ -130,3 +157,17 @@ volumes:
   - name: nifi-authorizations
     configMap:
       name: nifi-authorizations
+
+
+
+
+volumes:
+  - name: nifi-authorizers
+    configMap:
+      name: nifi-authorizers
+
+
+volumeMounts:
+  - name: nifi-authorizers
+    mountPath: /opt/nifi/nifi-current/conf/authorizers.xml
+    subPath: authorizers.xml
