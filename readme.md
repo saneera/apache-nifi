@@ -1,4 +1,4 @@
-Ticket 1 – Implement HTTP Method Handling in Apache NiFi
+[deploy.sh](../../nifi-2.8.0/deploy.sh)Ticket 1 – Implement HTTP Method Handling in Apache NiFi
 
 Description:
 Design and implement support for handling HTTP methods (GET, POST, DELETE) within Apache NiFi flows. The flow should correctly route and process requests based on the incoming HTTP method.

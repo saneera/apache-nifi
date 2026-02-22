@@ -11,7 +11,7 @@ data:
   NIFI_WEB_PROXY_HOST: "localhost:30084"
 
   # 👇 CLUSTER MODE
-  NIFI_CLUSTER_IS_NODE: "true"
+  NIFI_CLUSTER_IS_NODE: "false"
   NIFI_CLUSTER_NODE_PROTOCOL_PORT: "11443"
   NIFI_CLUSTER_NODE_PROTOCOL_HOST: "$(POD_NAME).nifi-headless.nifi.svc.cluster.local"
   NIFI_CLUSTER_NODE_PROTOCOL_ADDRESS: "$(POD_NAME).nifi-headless.nifi.svc.cluster.local"
