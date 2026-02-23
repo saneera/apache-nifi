@@ -454,3 +454,86 @@ env:
       configMapKeyRef:
         name: nifi-flow-config
         key: FLOW_VERSION
+
+---
+resources:
+  - ../../base
+
+configMapGenerator:
+  - name: nifi-flows-config
+    files:
+      - flows/payments-flow.json
+      - flows/reporting-flow.json
+      - flows/audit-flow.json
+    literals:
+      - FLOW_VERSION=2.0.0
+
+generatorOptions:
+  disableNameSuffixHash: false
+
+---
+env:
+  - name: FLOW_MAPPING
+    value: |
+      payments-flow.json:1111-aaaa
+      reporting-flow.json:2222-bbbb
+      audit-flow.json:3333-cccc
+---
+
+  deploy_all_flows() {
+
+  echo "$FLOW_MAPPING" | while IFS=":" read FILE PG_ID
+  do
+  FILE=$(echo $FILE | xargs)
+  PG_ID=$(echo $PG_ID | xargs)
+  
+  log "----------------------------------"
+  log "Deploying $FILE to PG $PG_ID"
+  
+  CURRENT_HASH=$(curl -k -s \
+  $NIFI_URL/nifi-api/process-groups/$PG_ID \
+-H "Authorization: Bearer $TOKEN" | sha256sum | awk '{print $1}')
+  
+  NEW_HASH=$(sha256sum /flows/$FILE | awk '{print $1}')
+  
+  if [ "$CURRENT_HASH" = "$NEW_HASH" ]; then
+  log "No changes for $FILE. Skipping."
+  continue
+  fi
+  
+  log "Changes detected. Replacing flow..."
+  
+  RESPONSE=$(curl -k -s -X POST \
+  $NIFI_URL/nifi-api/process-groups/$PG_ID/replace-requests \
+-H "Authorization: Bearer $TOKEN" \
+-H "Content-Type: application/json" \
+  --data-binary @/flows/$FILE)
+  
+  REQUEST_ID=$(echo "$RESPONSE" | grep -o '"requestId":"[^"]*"' | cut -d'"' -f4)
+  
+  if [ -z "$REQUEST_ID" ]; then
+  log "Replace failed for $FILE"
+  exit 1
+  fi
+
+log "Replace request submitted: $REQUEST_ID"
+  done
+}
+
+---
+
+data:
+  flows.yaml: |
+    - name: payments
+      file: payments-flow.json
+      pgId: 1111-aaaa
+    - name: reporting
+      file: reporting-flow.json
+      pgId: 2222-bbbb
+
+---
+
+
+
+
+
