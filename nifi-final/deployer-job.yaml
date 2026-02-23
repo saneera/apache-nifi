@@ -1,0 +1,36 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nifi-flow-deployer
+  namespace: nifi
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: deployer
+          image: apache/nifi-toolkit:2.7.2
+          command:
+            - /bin/sh
+            - /script/deploy.sh
+          env:
+            - name: NIFI_URL
+              value: "https://nifi-0.nifi-headless.nifi.svc.cluster.local:8443"
+            - name: USERNAME
+              value: "admin"
+            - name: PASSWORD
+              value: "admin123456!"
+          volumeMounts:
+            - name: flows
+              mountPath: /flows
+            - name: script
+              mountPath: /script
+      volumes:
+        - name: flows
+          configMap:
+            name: nifi-flow-config
+        - name: script
+          configMap:
+            name: nifi-deploy-script
+            defaultMode: 0755
