@@ -420,3 +420,37 @@ log "New Flow Hash:     $NEW_HASH"
   
   log "Process completed."
   sleep infinity
+
+
+---
+
+resources:
+  - ../../base
+
+configMapGenerator:
+  - name: nifi-flow-config
+    files:
+      - flow.json
+    literals:
+      - FLOW_VERSION=1.2.3
+
+generatorOptions:
+  disableNameSuffixHash: false
+
+---
+patches:
+  - target:
+      kind: Deployment
+      name: nifi
+    patch: |
+      - op: add
+        path: /metadata/labels/flow-version
+        value: "1.2.3"
+
+---
+env:
+  - name: FLOW_VERSION
+    valueFrom:
+      configMapKeyRef:
+        name: nifi-flow-config
+        key: FLOW_VERSION
