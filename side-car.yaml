@@ -1,0 +1,422 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nifi
+spec:
+  replicas: 1
+  template:
+    spec:
+      volumes:
+        - name: flow-volume
+          configMap:
+            name: nifi-flow-config
+
+      containers:
+
+        # -------------------
+        # 1️⃣ NiFi Container
+        # -------------------
+        - name: nifi
+          image: apache/nifi:latest
+          ports:
+            - containerPort: 8443
+
+        # -------------------
+        # 2️⃣ Hardened Sidecar
+        # -------------------
+        - name: flow-deployer
+          image: curlimages/curl:8.5.0
+          volumeMounts:
+            - name: flow-volume
+              mountPath: /flow
+          env:
+            - name: NIFI_URL
+              value: "https://localhost:8443"
+            - name: NIFI_USERNAME
+              value: "admin"
+            - name: NIFI_PASSWORD
+              value: "YOUR_PASSWORD"
+            - name: PROCESS_GROUP_ID
+              value: "<PG_ID>"
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+
+              log() {
+                echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"
+              }
+
+              wait_for_nifi() {
+                log "Waiting for NiFi to be ready..."
+                for i in $(seq 1 60); do
+                  STATUS=$(curl -k -s -o /dev/null -w "%{http_code}" \
+                    $NIFI_URL/nifi-api/system-diagnostics)
+
+                  if [ "$STATUS" = "200" ]; then
+                    log "NiFi is ready."
+                    return 0
+                  fi
+
+                  log "NiFi not ready yet... retry $i"
+                  sleep 5
+                done
+
+                log "NiFi did not become ready in time."
+                exit 1
+              }
+
+              get_token() {
+                log "Requesting authentication token..."
+                TOKEN=$(curl -k -s -X POST \
+                  $NIFI_URL/nifi-api/access/token \
+                  -H "Content-Type: application/x-www-form-urlencoded" \
+                  -d "username=$NIFI_USERNAME&password=$NIFI_PASSWORD")
+
+                if [ -z "$TOKEN" ]; then
+                  log "Failed to obtain token."
+                  exit 1
+                fi
+
+                log "Token acquired."
+              }
+
+              deploy_flow() {
+                log "Submitting replace request..."
+
+                RESPONSE=$(curl -k -s -X POST \
+                  $NIFI_URL/nifi-api/process-groups/$PROCESS_GROUP_ID/replace-requests \
+                  -H "Authorization: Bearer $TOKEN" \
+                  -H "Content-Type: application/json" \
+                  --data-binary @/flow/flow.json)
+
+                REQUEST_ID=$(echo "$RESPONSE" | grep -o '"requestId":"[^"]*"' | cut -d'"' -f4)
+
+                if [ -z "$REQUEST_ID" ]; then
+                  log "Failed to create replace request."
+                  echo "$RESPONSE"
+                  exit 1
+                fi
+
+                log "Replace request submitted: $REQUEST_ID"
+                poll_replace_status $REQUEST_ID
+              }
+
+              poll_replace_status() {
+                REQUEST_ID=$1
+                log "Polling replace request status..."
+
+                for i in $(seq 1 60); do
+                  STATUS_RESPONSE=$(curl -k -s \
+                    $NIFI_URL/nifi-api/process-groups/$PROCESS_GROUP_ID/replace-requests/$REQUEST_ID \
+                    -H "Authorization: Bearer $TOKEN")
+
+                  COMPLETE=$(echo "$STATUS_RESPONSE" | grep -o '"complete":[^,]*' | cut -d':' -f2)
+
+                  if [ "$COMPLETE" = "true" ]; then
+                    log "Flow replacement completed successfully."
+                    return 0
+                  fi
+
+                  log "Replace in progress... retry $i"
+                  sleep 5
+                done
+
+                log "Replace request did not complete in time."
+                exit 1
+              }
+
+              # Execution Flow
+              wait_for_nifi
+              get_token
+              deploy_flow
+
+              log "Deployment finished successfully."
+
+              # Keep sidecar alive (optional)
+              sleep infinity
+---
+
+
+env:
+  - name: NIFI_USERNAME
+    valueFrom:
+      secretKeyRef:
+        name: nifi-credentials
+        key: username
+  - name: NIFI_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: nifi-credentials
+        key: password
+
+
+
+
+
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nifi-deployer-script
+data:
+  deploy.sh: |
+    #!/bin/sh
+    set -e
+
+    log() {
+      echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"
+    }
+
+    wait_for_nifi() {
+      log "Waiting for NiFi..."
+      for i in $(seq 1 60); do
+        STATUS=$(curl -k -s -o /dev/null -w "%{http_code}" \
+          $NIFI_URL/nifi-api/system-diagnostics)
+
+        if [ "$STATUS" = "200" ]; then
+          log "NiFi is ready."
+          return 0
+        fi
+
+        log "Not ready yet... retry $i"
+        sleep 5
+      done
+
+      log "NiFi did not start in time."
+      exit 1
+    }
+
+    get_token() {
+      log "Getting token..."
+      TOKEN=$(curl -k -s -X POST \
+        $NIFI_URL/nifi-api/access/token \
+        -H "Content-Type: application/x-www-form-urlencoded" \
+        -d "username=$NIFI_USERNAME&password=$NIFI_PASSWORD")
+
+      if [ -z "$TOKEN" ]; then
+        log "Failed to get token."
+        exit 1
+      fi
+    }
+
+    deploy_flow() {
+      log "Submitting replace request..."
+
+      RESPONSE=$(curl -k -s -X POST \
+        $NIFI_URL/nifi-api/process-groups/$PROCESS_GROUP_ID/replace-requests \
+        -H "Authorization: Bearer $TOKEN" \
+        -H "Content-Type: application/json" \
+        --data-binary @/flow/flow.json)
+
+      REQUEST_ID=$(echo "$RESPONSE" | grep -o '"requestId":"[^"]*"' | cut -d'"' -f4)
+
+      if [ -z "$REQUEST_ID" ]; then
+        log "Replace request failed."
+        echo "$RESPONSE"
+        exit 1
+      fi
+
+      log "Replace request ID: $REQUEST_ID"
+      poll_status $REQUEST_ID
+    }
+
+    poll_status() {
+      ID=$1
+      for i in $(seq 1 60); do
+        STATUS=$(curl -k -s \
+          $NIFI_URL/nifi-api/process-groups/$PROCESS_GROUP_ID/replace-requests/$ID \
+          -H "Authorization: Bearer $TOKEN" | grep -o '"complete":[^,]*' | cut -d':' -f2)
+
+        if [ "$STATUS" = "true" ]; then
+          log "Flow deployment completed successfully."
+          return 0
+        fi
+
+        log "Replace in progress... retry $i"
+        sleep 5
+      done
+
+      log "Replace did not complete in time."
+      exit 1
+    }
+
+    # ---- Execution ----
+    wait_for_nifi
+    get_token
+    deploy_flow
+
+    log "Deployment finished."
+    sleep infinity
+---
+
+
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nifi
+spec:
+  replicas: 1
+  template:
+    spec:
+      volumes:
+        - name: flow-volume
+          configMap:
+            name: nifi-flow-config
+
+        - name: script-volume
+          configMap:
+            name: nifi-deployer-script
+            defaultMode: 0755
+
+      containers:
+
+        # Main NiFi container
+        - name: nifi
+          image: apache/nifi:latest
+          ports:
+            - containerPort: 8443
+
+        # Clean Sidecar
+        - name: flow-deployer
+          image: curlimages/curl:8.5.0
+          volumeMounts:
+            - name: flow-volume
+              mountPath: /flow
+            - name: script-volume
+              mountPath: /scripts
+          env:
+            - name: NIFI_URL
+              value: "https://localhost:8443"
+            - name: NIFI_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: nifi-credentials
+                  key: username
+            - name: NIFI_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: nifi-credentials
+                  key: password
+            - name: PROCESS_GROUP_ID
+              value: "<PG_ID>"
+          command: ["/scripts/deploy.sh"]
+
+---
+
+#!/bin/sh
+  set -e
+  
+  log() {
+  echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"
+}
+
+  wait_for_nifi() {
+  log "Waiting for NiFi..."
+  for i in $(seq 1 60); do
+  STATUS=$(curl -k -s -o /dev/null -w "%{http_code}" \
+  $NIFI_URL/nifi-api/system-diagnostics)
+  
+  if [ "$STATUS" = "200" ]; then
+  log "NiFi is ready."
+  return 0
+  fi
+  
+  sleep 5
+  done
+
+  log "NiFi did not start in time."
+  exit 1
+}
+
+  get_token() {
+  log "Getting token..."
+  TOKEN=$(curl -k -s -X POST \
+  $NIFI_URL/nifi-api/access/token \
+-H "Content-Type: application/x-www-form-urlencoded" \
+  -d "username=$NIFI_USERNAME&password=$NIFI_PASSWORD")
+
+  if [ -z "$TOKEN" ]; then
+  log "Failed to get token."
+  exit 1
+  fi
+}
+
+  get_current_hash() {
+  log "Fetching current process group flow..."
+
+  curl -k -s \
+  $NIFI_URL/nifi-api/process-groups/$PROCESS_GROUP_ID \
+-H "Authorization: Bearer $TOKEN" \
+  | sha256sum | awk '{print $1}'
+}
+
+  get_new_hash() {
+  log "Calculating incoming flow hash..."
+  sha256sum /flow/flow.json | awk '{print $1}'
+}
+
+  deploy_flow() {
+  log "Submitting replace request..."
+
+  RESPONSE=$(curl -k -s -X POST \
+  $NIFI_URL/nifi-api/process-groups/$PROCESS_GROUP_ID/replace-requests \
+-H "Authorization: Bearer $TOKEN" \
+-H "Content-Type: application/json" \
+  --data-binary @/flow/flow.json)
+
+  REQUEST_ID=$(echo "$RESPONSE" | grep -o '"requestId":"[^"]*"' | cut -d'"' -f4)
+
+  if [ -z "$REQUEST_ID" ]; then
+  log "Replace request failed."
+  echo "$RESPONSE"
+  exit 1
+  fi
+
+log "Replace request ID: $REQUEST_ID"
+  poll_status $REQUEST_ID
+}
+
+  poll_status() {
+  ID=$1
+  for i in $(seq 1 60); do
+  COMPLETE=$(curl -k -s \
+  $NIFI_URL/nifi-api/process-groups/$PROCESS_GROUP_ID/replace-requests/$ID \
+-H "Authorization: Bearer $TOKEN" \
+  | grep -o '"complete":[^,]*' | cut -d':' -f2)
+  
+  if [ "$COMPLETE" = "true" ]; then
+  log "Flow replacement completed."
+  return 0
+  fi
+  
+  sleep 5
+  done
+
+  log "Replace did not complete in time."
+  exit 1
+}
+
+  # -------- Execution Flow --------
+
+  wait_for_nifi
+  get_token
+  
+  CURRENT_HASH=$(get_current_hash)
+  NEW_HASH=$(get_new_hash)
+
+log "Current Flow Hash: $CURRENT_HASH"
+log "New Flow Hash:     $NEW_HASH"
+  
+  if [ "$CURRENT_HASH" = "$NEW_HASH" ]; then
+  log "No changes detected. Skipping deployment."
+  else
+  log "Changes detected. Deploying flow..."
+  deploy_flow
+  fi
+  
+  log "Process completed."
+  sleep infinity

@@ -67,7 +67,9 @@ echo "$RESP" | jq . 2>/dev/null || echo "$RESP"
 echo "Deploy complete."
 
 
------
+
+
+==========
 
 trigger:
   branches:
@@ -78,9 +80,9 @@ pool:
   vmImage: ubuntu-latest
 
 variables:
-  NIFI_API: 'https://<prod-nifi-host>:8443/nifi-api'
-  PROD_PG_ID: '<your-prod-process-group-id>'
-  FLOW_JSON: 'flows/prod-flow.json'
+  NIFI_API: 'https://localhost:8443/nifi-api'
+  PROD_PG_ID: '78e9a564-019c-1000-43d7-4a94b42231e5'
+  FLOW_JSON: 'default/Test-flow-in-azure.json'
 
 steps:
   - checkout: self
