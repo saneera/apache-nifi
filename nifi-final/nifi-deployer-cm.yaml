@@ -1,0 +1,97 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nifi-deploy-script
+  namespace: nifi
+data:
+  deploy.sh: |
+      #!/bin/sh
+      set -e
+      
+      echo "Waiting for NiFi to be ready..."
+      
+      until curl -k -s $NIFI_URL/nifi-api/system-diagnostics > /dev/null; do
+        sleep 10
+      done
+      
+      echo "NiFi ready."
+      
+      echo "Getting token..."
+      
+      TOKEN=$(curl -k -s -X POST $NIFI_URL/nifi-api/access/token \
+        -H "Content-Type: application/x-www-form-urlencoded" \
+        -d "username=$USERNAME&password=$PASSWORD")
+      
+      ROOT_ID=$(curl -k -s $NIFI_URL/nifi-api/flow/process-groups/root \
+        -H "Authorization: Bearer $TOKEN" | jq -r '.processGroupFlow.id')
+    
+      echo "Root PG: $ROOT_ID"
+      
+      for FLOW in /flows/*.json; do
+    
+      NAME=$(jq -r '.flowContents.name' $FLOW)
+      HASH=$(sha256sum $FLOW | awk '{print $1}')
+    
+      echo "----------------------------------"
+      echo "Processing $NAME"
+      echo "Hash: $HASH"
+    
+      EXISTING_ID=$(curl -k -s \
+      $NIFI_URL/nifi-api/flow/process-groups/$ROOT_ID \
+        -H "Authorization: Bearer $TOKEN" | \
+      jq -r ".processGroupFlow.flow.processGroups[]? | select(.component.name==\"$NAME\") | .component.id")
+    
+      if [ -z "$EXISTING_ID" ]; then
+      echo "Importing new flow..."
+      
+      curl -k -X POST \
+      "$NIFI_URL/nifi-api/process-groups/$ROOT_ID/process-groups/upload" \
+        -H "Authorization: Bearer $TOKEN" \
+        -H "Content-Type: application/json" \
+        --data-binary @$FLOW
+      
+      echo "\nFlow imported."
+      continue
+      fi
+    
+      echo "Flow exists: $EXISTING_ID"
+    
+      STORED_HASH=$(curl -k -s \
+      $NIFI_URL/nifi-api/process-groups/$EXISTING_ID/variable-registry \
+        -H "Authorization: Bearer $TOKEN" | \
+      jq -r '.variableRegistry.variables[]? | select(.variable.name=="flow_hash") | .variable.value')
+    
+      if [ "$HASH" = "$STORED_HASH" ]; then
+        echo "No change detected. Skipping."
+      continue
+      fi
+    
+      echo "Hash changed. Replacing flow..."
+    
+      REV=$(curl -k -s \
+      $NIFI_URL/nifi-api/process-groups/$EXISTING_ID \
+        -H "Authorization: Bearer $TOKEN" | \
+      jq -r '.revision.version')
+    
+      curl -k -X DELETE \
+      "$NIFI_URL/nifi-api/process-groups/$EXISTING_ID?version=$REV" \
+        -H "Authorization: Bearer $TOKEN"
+    
+      sleep 2
+    
+      echo "Re-importing updated flow..."
+    
+      curl -k -X POST \
+      "$NIFI_URL/nifi-api/process-groups/$ROOT_ID/process-groups/upload" \
+        -H "Authorization: Bearer $TOKEN" \
+        -H "Content-Type: application/json" \
+        --data-binary @$FLOW
+    
+      echo "Flow replaced."
+      
+      done
+      
+      echo "----------------------------------"
+      echo "All flows deployed successfully."
+    
+      sleep infinity

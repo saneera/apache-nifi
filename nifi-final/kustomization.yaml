@@ -3,8 +3,18 @@ kind: Kustomization
 
 namespace: nifi
 
+configMapGenerator:
+  - name: nifi-flow-config
+    files:
+      - flow.json
+    literals:
+      - FLOW_VERSION=1.2.3
+
 resources:
+   - nifi-deployer-cm.yaml
    - deploy.yaml
+   - nifi.yaml
+   - deployer-job.yaml
 
 
 
