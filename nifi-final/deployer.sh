@@ -9,7 +9,9 @@ done
 
 echo "NiFi ready."
 
-# Get auth token
+# --------------------------------------------------
+# Authenticate
+# --------------------------------------------------
 TOKEN=$(curl -k -s -X POST \
   "$NIFI_URL/nifi-api/access/token" \
   -H "Content-Type: application/x-www-form-urlencoded" \
@@ -20,45 +22,67 @@ if [ -z "$TOKEN" ]; then
   exit 1
 fi
 
+# --------------------------------------------------
 # Get Root PG ID
+# --------------------------------------------------
 ROOT_ID=$(curl -k -s \
   "$NIFI_URL/nifi-api/flow/process-groups/root" \
   -H "Authorization: Bearer $TOKEN" | \
   jq -r '.processGroupFlow.id')
 
 echo "Root PG: $ROOT_ID"
-
 echo "Starting flow deployment..."
 
-# -------------------------------
-# Position configuration
-# -------------------------------
+# --------------------------------------------------
+# Position Layout Configuration
+# --------------------------------------------------
 BASE_X=400
 BASE_Y=200
-OFFSET_X=600
+OFFSET_X=650
 OFFSET_Y=500
 MAX_PER_ROW=3
 INDEX=0
 
-for FLOW in /flows/*.json; do
+for ORIGINAL_FLOW in /flows/*.json; do
 
-  NAME=$(jq -r '.flowContents.name' "$FLOW")
-  HASH=$(sha256sum "$FLOW" | awk '{print $1}')
-
-  # Calculate grid position
-  COL=$((INDEX % MAX_PER_ROW))
-  ROW=$((INDEX / MAX_PER_ROW))
-
-  POS_X=$((BASE_X + COL * OFFSET_X))
-  POS_Y=$((BASE_Y + ROW * OFFSET_Y))
-
-  INDEX=$((INDEX + 1))
+  NAME=$(jq -r '.flowContents.name' "$ORIGINAL_FLOW")
 
   echo "-----------------------------------"
-  echo "Processing: $NAME"
-  echo "New hash: $HASH"
+  echo "Processing flow: $NAME"
+
+  # --------------------------------------------------
+  # Rewrite Remote Process Group URLs
+  # --------------------------------------------------
+  TMP_FLOW="/tmp/$(basename $ORIGINAL_FLOW)"
+
+  jq --arg url "$TARGET_RPG_URL" '
+    (.flowContents.remoteProcessGroups[]?.targetUris) = $url
+    |
+    (.flowContents.processGroups[]?.remoteProcessGroups[]?.targetUris) = $url
+  ' "$ORIGINAL_FLOW" > "$TMP_FLOW"
+
+  FLOW="$TMP_FLOW"
+
+  # --------------------------------------------------
+  # Calculate hash AFTER rewrite
+  # --------------------------------------------------
+  HASH=$(sha256sum "$FLOW" | awk '{print $1}')
+  echo "Calculated hash: $HASH"
+
+  # --------------------------------------------------
+  # Calculate Position
+  # --------------------------------------------------
+  COL=$((INDEX % MAX_PER_ROW))
+  ROW=$((INDEX / MAX_PER_ROW))
+  POS_X=$((BASE_X + COL * OFFSET_X))
+  POS_Y=$((BASE_Y + ROW * OFFSET_Y))
+  INDEX=$((INDEX + 1))
+
   echo "Position: X=$POS_X Y=$POS_Y"
 
+  # --------------------------------------------------
+  # Check if PG exists
+  # --------------------------------------------------
   EXISTING_ID=$(curl -k -s \
     "$NIFI_URL/nifi-api/flow/process-groups/$ROOT_ID" \
     -H "Authorization: Bearer $TOKEN" | \
@@ -66,9 +90,9 @@ for FLOW in /flows/*.json; do
            | select(.component.name==\"$NAME\")
            | .component.id")
 
-  # ----------------------------------------------------------------
-  # CASE 1: Process Group does not exist
-  # ----------------------------------------------------------------
+  # ==================================================
+  # CASE 1 — Flow does not exist
+  # ==================================================
   if [ -z "$EXISTING_ID" ]; then
     echo "Flow does not exist. Uploading..."
 
@@ -81,6 +105,7 @@ for FLOW in /flows/*.json; do
       -F "positionY=$POS_Y" > /dev/null
 
     echo "Flow uploaded."
+
   else
     echo "Flow exists: $EXISTING_ID"
 
@@ -89,6 +114,8 @@ for FLOW in /flows/*.json; do
       -H "Authorization: Bearer $TOKEN")
 
     STORED_HASH=$(echo "$DETAILS" | jq -r '.component.comments // empty' | sed 's/flow-hash=//')
+
+    echo "Stored hash: $STORED_HASH"
 
     if [ "$HASH" = "$STORED_HASH" ]; then
       echo "No changes detected. Skipping."
@@ -99,6 +126,7 @@ for FLOW in /flows/*.json; do
 
     REV=$(echo "$DETAILS" | jq -r '.revision.version')
 
+    # Stop PG
     curl -k -s -X PUT \
       "$NIFI_URL/nifi-api/flow/process-groups/$EXISTING_ID" \
       -H "Authorization: Bearer $TOKEN" \
@@ -108,14 +136,16 @@ for FLOW in /flows/*.json; do
             \"state\": \"STOPPED\"
           }" > /dev/null
 
-    sleep 2
+    sleep 3
 
+    # Delete PG
     curl -k -s -X DELETE \
       "$NIFI_URL/nifi-api/process-groups/$EXISTING_ID?version=$REV" \
       -H "Authorization: Bearer $TOKEN" > /dev/null
 
-    sleep 2
+    sleep 3
 
+    # Re-upload
     curl -k -s -X POST \
       "$NIFI_URL/nifi-api/process-groups/$ROOT_ID/process-groups/upload" \
       -H "Authorization: Bearer $TOKEN" \
@@ -124,10 +154,12 @@ for FLOW in /flows/*.json; do
       -F "positionX=$POS_X" \
       -F "positionY=$POS_Y" > /dev/null
 
-    echo "Flow re-uploaded."
+    echo "Flow replaced."
   fi
 
-  # Get new ID after upload
+  # --------------------------------------------------
+  # Store hash in comments
+  # --------------------------------------------------
   NEW_ID=$(curl -k -s \
     "$NIFI_URL/nifi-api/flow/process-groups/$ROOT_ID" \
     -H "Authorization: Bearer $TOKEN" | \
@@ -152,7 +184,7 @@ for FLOW in /flows/*.json; do
           }
         }" > /dev/null
 
-  echo "Hash updated."
+  echo "Hash stored."
 
 done
 
