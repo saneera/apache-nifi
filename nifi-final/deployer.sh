@@ -4,12 +4,15 @@ set -e
 
 echo "Waiting for NiFi..."
 
-until curl -k -s -o /dev/null -w "%{http_code}" \
-  "$NIFI_URL/nifi-api" | grep -q "200"; do
+# Wait until token endpoint works
+until curl -k -s -X POST \
+  "$NIFI_URL/nifi-api/access/token" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "username=$USERNAME&password=$PASSWORD" > /dev/null; do
   sleep 5
 done
 
-echo "NiFi API reachable."
+echo "NiFi authentication endpoint ready."
 
 # --------------------------------------------------
 # Authenticate
