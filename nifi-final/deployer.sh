@@ -1,13 +1,15 @@
 #!/bin/sh
 set -e
 
+
 echo "Waiting for NiFi..."
 
-until curl -k -s "$NIFI_URL/nifi-api/system-diagnostics" > /dev/null; do
+until curl -k -s -o /dev/null -w "%{http_code}" \
+  "$NIFI_URL/nifi-api" | grep -q "200"; do
   sleep 5
 done
 
-echo "NiFi ready."
+echo "NiFi API reachable."
 
 # --------------------------------------------------
 # Authenticate
