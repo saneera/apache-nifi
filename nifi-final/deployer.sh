@@ -48,6 +48,22 @@ OFFSET_Y=500
 MAX_PER_ROW=3
 INDEX=0
 
+
+FOUND=false
+
+for ORIGINAL_FLOW in /flows/*.json; do
+  if [ ! -f "$ORIGINAL_FLOW" ]; then
+    continue
+  fi
+
+  FOUND=true
+
+done
+
+if [ "$FOUND" = false ]; then
+  echo "No flow files found. Nothing to deploy."
+fi
+
 for ORIGINAL_FLOW in /flows/*.json; do
 
   NAME=$(jq -r '.flowContents.name' "$ORIGINAL_FLOW")
