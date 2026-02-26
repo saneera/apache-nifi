@@ -211,3 +211,31 @@ done
 
 echo "-----------------------------------"
 echo "Deployment complete."
+
+
+
+
+echo "Disabling controller services..."
+
+CS_IDS=$(curl -k -s \
+  "$NIFI_URL/nifi-api/flow/process-groups/$EXISTING_ID/controller-services" \
+  -H "Authorization: Bearer $TOKEN" | \
+  jq -r '.controllerServices[]?.id')
+
+for CS_ID in $CS_IDS; do
+  CS_DETAILS=$(curl -k -s \
+    "$NIFI_URL/nifi-api/controller-services/$CS_ID" \
+    -H "Authorization: Bearer $TOKEN")
+
+  CS_REV=$(echo "$CS_DETAILS" | jq -r '.revision.version')
+
+  curl -k -s -X PUT \
+    "$NIFI_URL/nifi-api/controller-services/$CS_ID/run-status" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{\"revision\":{\"version\":$CS_REV},\"state\":\"DISABLED\"}" \
+    > /dev/null
+
+done
+
+sleep 3
