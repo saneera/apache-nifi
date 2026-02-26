@@ -1,12 +1,12 @@
 #!/bin/sh
 set -e
 
-echo "-----------------------------------"
-echo "NiFi Flow Deployer Starting"
-echo "-----------------------------------"
+echo "=============================================="
+echo " NiFi Blue/Green Zero-Downtime Deployer"
+echo "=============================================="
 
 # --------------------------------------------------
-# Wait for NiFi API (max 3 minutes)
+# Wait for NiFi API
 # --------------------------------------------------
 MAX_RETRIES=36
 COUNT=0
@@ -33,15 +33,10 @@ TOKEN=$(curl -k -s -X POST \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "username=$USERNAME&password=$PASSWORD")
 
-if [ -z "$TOKEN" ]; then
-  echo "Failed to obtain NiFi token"
-  exit 1
-fi
-
-echo "Authentication successful."
+[ -z "$TOKEN" ] && { echo "Auth failed"; exit 1; }
 
 # --------------------------------------------------
-# Get Root Process Group ID
+# Get Root ID
 # --------------------------------------------------
 ROOT_ID=$(curl -k -s \
   "$NIFI_URL/nifi-api/flow/process-groups/root" \
@@ -50,188 +45,176 @@ ROOT_ID=$(curl -k -s \
 
 echo "Root PG: $ROOT_ID"
 
-FOUND=false
+# --------------------------------------------------
+# Process All Flow Files
+# --------------------------------------------------
+for FLOW_FILE in /flows/*.json; do
 
-BASE_X=400
-BASE_Y=200
-OFFSET_X=650
-OFFSET_Y=500
-MAX_PER_ROW=3
-INDEX=0
+  [ -f "$FLOW_FILE" ] || continue
 
-for ORIGINAL_FLOW in /flows/*.json; do
+  BASE_NAME=$(jq -r '.flowContents.name' "$FLOW_FILE")
+  echo "----------------------------------------------"
+  echo "Deploying base flow: $BASE_NAME"
 
-  [ -f "$ORIGINAL_FLOW" ] || continue
-  FOUND=true
+  BLUE_NAME="${BASE_NAME}-Blue"
+  GREEN_NAME="${BASE_NAME}-Green"
 
-  NAME=$(jq -r '.flowContents.name' "$ORIGINAL_FLOW")
-  echo "-----------------------------------"
-  echo "Processing flow: $NAME"
+  HASH=$(sha256sum "$FLOW_FILE" | awk '{print $1}')
+  echo "New flow hash: $HASH"
 
-  TMP_FLOW="/tmp/$(basename $ORIGINAL_FLOW)"
-
-  jq --arg url "$TARGET_RPG_URL" '
-    (.flowContents.remoteProcessGroups[]?.targetUris) = $url
-    |
-    (.flowContents.processGroups[]?.remoteProcessGroups[]?.targetUris) = $url
-  ' "$ORIGINAL_FLOW" > "$TMP_FLOW"
-
-  FLOW="$TMP_FLOW"
-
-  HASH=$(sha256sum "$FLOW" | awk '{print $1}')
-  echo "Calculated hash: $HASH"
-
-  COL=$((INDEX % MAX_PER_ROW))
-  ROW=$((INDEX / MAX_PER_ROW))
-  POS_X=$((BASE_X + COL * OFFSET_X))
-  POS_Y=$((BASE_Y + ROW * OFFSET_Y))
-  INDEX=$((INDEX + 1))
-
-  EXISTING_ID=$(curl -k -s \
+  # --------------------------------------------------
+  # Find Existing Blue/Green
+  # --------------------------------------------------
+  FLOW_JSON=$(curl -k -s \
     "$NIFI_URL/nifi-api/flow/process-groups/$ROOT_ID" \
-    -H "Authorization: Bearer $TOKEN" | \
-    jq -r ".processGroupFlow.flow.processGroups[]?
-           | select(.component.name==\"$NAME\")
-           | .component.id")
+    -H "Authorization: Bearer $TOKEN")
 
-  if [ -z "$EXISTING_ID" ]; then
-    echo "Flow does not exist. Uploading..."
+  BLUE_ID=$(echo "$FLOW_JSON" | jq -r \
+    ".processGroupFlow.flow.processGroups[]?
+     | select(.component.name==\"$BLUE_NAME\")
+     | .component.id")
 
-    curl -f -k -s -X POST \
-      "$NIFI_URL/nifi-api/process-groups/$ROOT_ID/process-groups/upload" \
-      -H "Authorization: Bearer $TOKEN" \
-      -F "file=@$FLOW" \
-      -F "groupName=$NAME" \
-      -F "positionX=$POS_X" \
-      -F "positionY=$POS_Y" > /dev/null
+  GREEN_ID=$(echo "$FLOW_JSON" | jq -r \
+    ".processGroupFlow.flow.processGroups[]?
+     | select(.component.name==\"$GREEN_NAME\")
+     | .component.id")
 
-  else
-    echo "Flow exists: $EXISTING_ID"
+  # --------------------------------------------------
+  # Determine Active
+  # --------------------------------------------------
+  ACTIVE_ID=""
+  TARGET_NAME=""
+  TARGET_ID=""
 
-    DETAILS=$(curl -k -s \
-      "$NIFI_URL/nifi-api/process-groups/$EXISTING_ID" \
-      -H "Authorization: Bearer $TOKEN")
+  if [ -n "$BLUE_ID" ]; then
+    BLUE_RUNNING=$(curl -k -s \
+      "$NIFI_URL/nifi-api/process-groups/$BLUE_ID" \
+      -H "Authorization: Bearer $TOKEN" | \
+      jq -r '.component.runningCount')
 
-    STORED_HASH=$(echo "$DETAILS" | jq -r '.component.comments // empty' | sed 's/flow-hash=//')
-
-    if [ "$HASH" = "$STORED_HASH" ]; then
-      echo "No changes detected. Skipping."
-      continue
+    if [ "$BLUE_RUNNING" -gt 0 ]; then
+      ACTIVE_ID=$BLUE_ID
+      TARGET_NAME=$GREEN_NAME
+      TARGET_ID=$GREEN_ID
     fi
+  fi
 
-    echo "Change detected. Replacing flow safely..."
-
-    # --------------------------------------------------
-    # Stop processors
-    # --------------------------------------------------
-    curl -f -k -s -X PUT \
-      "$NIFI_URL/nifi-api/flow/process-groups/$EXISTING_ID" \
-      -H "Authorization: Bearer $TOKEN" \
-      -H "Content-Type: application/json" \
-      -d "{\"id\":\"$EXISTING_ID\",\"state\":\"STOPPED\"}" > /dev/null
-
-    echo "Waiting for processors to stop..."
-
-    until curl -k -s \
-      "$NIFI_URL/nifi-api/process-groups/$EXISTING_ID" \
+  if [ -z "$ACTIVE_ID" ] && [ -n "$GREEN_ID" ]; then
+    GREEN_RUNNING=$(curl -k -s \
+      "$NIFI_URL/nifi-api/process-groups/$GREEN_ID" \
       -H "Authorization: Bearer $TOKEN" | \
-      jq -e '.component.runningCount == 0' > /dev/null; do
-      sleep 2
-    done
+      jq -r '.component.runningCount')
 
-    echo "Processors stopped."
+    if [ "$GREEN_RUNNING" -gt 0 ]; then
+      ACTIVE_ID=$GREEN_ID
+      TARGET_NAME=$BLUE_NAME
+      TARGET_ID=$BLUE_ID
+    fi
+  fi
 
-    # --------------------------------------------------
-    # Disable controller services
-    # --------------------------------------------------
-    echo "Disabling controller services..."
+  # If neither running, default to Blue first deploy
+  if [ -z "$ACTIVE_ID" ]; then
+    TARGET_NAME=$BLUE_NAME
+    TARGET_ID=$BLUE_ID
+  fi
 
-    CS_IDS=$(curl -k -s \
-      "$NIFI_URL/nifi-api/flow/process-groups/$EXISTING_ID/controller-services" \
-      -H "Authorization: Bearer $TOKEN" | \
-      jq -r '.controllerServices[]?.id')
+  echo "Active Flow ID: $ACTIVE_ID"
+  echo "Deploy Target: $TARGET_NAME"
 
-    for CS_ID in $CS_IDS; do
+  # --------------------------------------------------
+  # If target exists → delete it safely (inactive only)
+  # --------------------------------------------------
+  if [ -n "$TARGET_ID" ]; then
+    echo "Cleaning inactive target..."
 
-      CS_DETAILS=$(curl -k -s \
-        "$NIFI_URL/nifi-api/controller-services/$CS_ID" \
-        -H "Authorization: Bearer $TOKEN")
-
-      CS_REV=$(echo "$CS_DETAILS" | jq -r '.revision.version')
-
-      curl -f -k -s -X PUT \
-        "$NIFI_URL/nifi-api/controller-services/$CS_ID/run-status" \
-        -H "Authorization: Bearer $TOKEN" \
-        -H "Content-Type: application/json" \
-        -d "{\"revision\":{\"version\":$CS_REV},\"state\":\"DISABLED\"}" \
-        > /dev/null
-
-    done
-
-    echo "Controller services disabled."
-    sleep 3
-
-    # --------------------------------------------------
-    # Delete old process group
-    # --------------------------------------------------
     REV=$(curl -k -s \
-      "$NIFI_URL/nifi-api/process-groups/$EXISTING_ID" \
+      "$NIFI_URL/nifi-api/process-groups/$TARGET_ID" \
       -H "Authorization: Bearer $TOKEN" | \
       jq -r '.revision.version')
 
-    curl -f -k -s -X DELETE \
-      "$NIFI_URL/nifi-api/process-groups/$EXISTING_ID?version=$REV" \
+    curl -k -s -X DELETE \
+      "$NIFI_URL/nifi-api/process-groups/$TARGET_ID?version=$REV" \
       -H "Authorization: Bearer $TOKEN" > /dev/null
 
-    echo "Old flow deleted."
-
     sleep 3
-
-    # --------------------------------------------------
-    # Upload new flow
-    # --------------------------------------------------
-    curl -f -k -s -X POST \
-      "$NIFI_URL/nifi-api/process-groups/$ROOT_ID/process-groups/upload" \
-      -H "Authorization: Bearer $TOKEN" \
-      -F "file=@$FLOW" \
-      -F "groupName=$NAME" \
-      -F "positionX=$POS_X" \
-      -F "positionY=$POS_Y" > /dev/null
-
-    echo "New flow uploaded."
   fi
 
   # --------------------------------------------------
-  # Store hash in comments
+  # Upload New Target Flow
   # --------------------------------------------------
+  echo "Uploading new target flow..."
+
+  curl -f -k -s -X POST \
+    "$NIFI_URL/nifi-api/process-groups/$ROOT_ID/process-groups/upload" \
+    -H "Authorization: Bearer $TOKEN" \
+    -F "file=@$FLOW_FILE" \
+    -F "groupName=$TARGET_NAME" \
+    -F "positionX=400" \
+    -F "positionY=200" > /dev/null
+
+  sleep 3
+
+  # Get new ID
   NEW_ID=$(curl -k -s \
     "$NIFI_URL/nifi-api/flow/process-groups/$ROOT_ID" \
     -H "Authorization: Bearer $TOKEN" | \
     jq -r ".processGroupFlow.flow.processGroups[]
-           | select(.component.name==\"$NAME\")
+           | select(.component.name==\"$TARGET_NAME\")
            | .component.id")
 
-  NEW_REV=$(curl -k -s \
-    "$NIFI_URL/nifi-api/process-groups/$NEW_ID" \
-    -H "Authorization: Bearer $TOKEN" | \
-    jq -r '.revision.version')
+  # --------------------------------------------------
+  # Start New Flow
+  # --------------------------------------------------
+  echo "Starting new flow..."
 
-  curl -f -k -s -X PUT \
-    "$NIFI_URL/nifi-api/process-groups/$NEW_ID" \
+  curl -k -s -X PUT \
+    "$NIFI_URL/nifi-api/flow/process-groups/$NEW_ID" \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
-    -d "{\"revision\":{\"version\":$NEW_REV},
-         \"component\":{\"id\":\"$NEW_ID\",\"comments\":\"flow-hash=$HASH\"}}" \
-    > /dev/null
+    -d "{\"id\":\"$NEW_ID\",\"state\":\"RUNNING\"}" > /dev/null
 
-  echo "Flow deployed successfully."
+  echo "New flow started."
+
+  # --------------------------------------------------
+  # Stop Old Flow (after switch)
+  # --------------------------------------------------
+  if [ -n "$ACTIVE_ID" ]; then
+    echo "Stopping old active flow..."
+
+    curl -k -s -X PUT \
+      "$NIFI_URL/nifi-api/flow/process-groups/$ACTIVE_ID" \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "Content-Type: application/json" \
+      -d "{\"id\":\"$ACTIVE_ID\",\"state\":\"STOPPED\"}" > /dev/null
+
+    echo "Old flow stopped."
+
+    # --------------------------------------------------
+    # Queue Purge Automation
+    # --------------------------------------------------
+    echo "Purging old queues..."
+
+    CONNECTIONS=$(curl -k -s \
+      "$NIFI_URL/nifi-api/flow/process-groups/$ACTIVE_ID/connections" \
+      -H "Authorization: Bearer $TOKEN" | \
+      jq -r '.connections[].id')
+
+    for CID in $CONNECTIONS; do
+      curl -k -s -X POST \
+        "$NIFI_URL/nifi-api/flowfile-queues/$CID/drop-requests" \
+        -H "Authorization: Bearer $TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "{}" > /dev/null
+    done
+
+    echo "Queues purged."
+  fi
+
+  echo "Deployment complete for $BASE_NAME"
+  echo "----------------------------------------------"
 
 done
 
-if [ "$FOUND" = false ]; then
-  echo "No flow files found. Nothing to deploy."
-fi
-
-echo "-----------------------------------"
-echo "Deployment complete."
-echo "-----------------------------------"
+echo "=============================================="
+echo " Blue/Green Deployment Finished Successfully"
+echo "=============================================="
