@@ -271,6 +271,54 @@ Example input:
 METAR YPAD 020630Z 18012KT 9999 FEW020 25/14 Q1015
 ```
 
+h1. METAR Message Structure
+
+METAR is a routine aviation weather observation report defined by ICAO standards.
+
+Example:
+{code}
+METAR YPAD 020630Z 18012KT 9999 FEW020 25/14 Q1015
+{code}
+
+Airport Example: Adelaide Airport (YPAD)
+
+h2. METAR Field Breakdown
+
+|| Section || Example || Description ||
+| Report Type | METAR | Routine weather observation |
+| Station | YPAD | ICAO airport code |
+| Date/Time | 020630Z | Day 02, 06:30 UTC |
+| Wind | 18012KT | Wind from 180° at 12 knots |
+| Visibility | 9999 | ≥ 10 km visibility |
+| Clouds | FEW020 | Few clouds at 2,000 ft |
+| Temperature/Dew | 25/14 | 25°C air temp, 14°C dew point |
+| Pressure | Q1015 | QNH 1015 hPa |
+
+h2. Weather Codes
+
+|| Code || Meaning ||
+| RA | Rain |
+| -RA | Light Rain |
+| TS | Thunderstorm |
+| FG | Fog |
+| SHRA | Rain Showers |
+| BR | Mist |
+
+h2. Cloud Coverage Codes
+
+|| Code || Coverage ||
+| FEW | 1–2 oktas |
+| SCT | 3–4 oktas |
+| BKN | 5–7 oktas |
+| OVC | 8 oktas (Overcast) |
+
+h2. Wind Format Examples
+
+|| Format || Meaning ||
+| 18012KT | 180° at 12 knots |
+| 18012G25KT | Gusting 25 knots |
+| VRB03KT | Variable at 3 knots |
+
 
 Acceptance Criteria
 •	✅ System accepts a raw METAR string as input
@@ -323,6 +371,51 @@ TAF YPAD 020500Z 0206/0312 18015KT 9999 SCT020
 TEMPO 0210/0214 4000 TSRA BKN015 
 FM021600 22020G30KT 9999 BKN025
 ```
+
+h1. TAF Message Structure
+
+TAF (Terminal Aerodrome Forecast) provides forecast weather conditions for an airport (24–30 hours).
+
+Example:
+{code}
+TAF YPAD 020500Z 0206/0312 18015KT 9999 SCT020
+TEMPO 0210/0214 4000 TSRA BKN015
+FM021600 22020G30KT 9999 BKN025
+{code}
+
+Airport Example: Adelaide Airport (YPAD)
+
+h2. TAF Field Breakdown
+
+|| Section || Example || Description ||
+| Report Type | TAF | Forecast report |
+| Station | YPAD | ICAO code |
+| Issue Time | 020500Z | Issued at 05:00 UTC |
+| Valid Period | 0206/0312 | Valid from 02 06:00 to 03 12:00 UTC |
+| Wind | 18015KT | Wind from 180° at 15 knots |
+| Visibility | 9999 | ≥ 10 km |
+| Clouds | SCT020 | Scattered at 2,000 ft |
+
+h2. TAF Change Groups
+
+|| Code || Meaning ||
+| TEMPO | Temporary condition |
+| FM | From (permanent change) |
+| BECMG | Becoming |
+| PROB30 | 30% probability |
+| PROB40 | 40% probability |
+
+h2. Example Change Interpretation
+
+TEMPO 0210/0214 4000 TSRA BKN015
+- Temporary thunderstorms between 10:00–14:00 UTC
+- Visibility reduced to 4 km
+- Broken clouds at 1,500 ft
+
+FM021600 22020G30KT 9999 BKN025
+- From 16:00 UTC onward
+- Wind 220° at 20 knots gusting 30
+- Broken clouds at 2,500 ft
 
 Acceptance Criteria
 •	✅ System accepts raw TAF string
