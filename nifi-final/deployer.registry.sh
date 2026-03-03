@@ -225,25 +225,30 @@ echo "GitOps Deployment Completed Successfully"
 echo "======================================="
 
 
+PAYLOAD=$(jq -n \
+  --arg registryId "$REGISTRY_ID" \
+  --arg bucketId "$REGISTRY_BUCKET_ID" \
+  --arg flowName "$NAME" \
+  '{
+    versionControlInformation: {
+      registryId: $registryId,
+      bucketId: $bucketId,
+      flowName: $flowName,
+      flowDescription: "GitOps managed flow",
+      version: 1
+    }
+  }')
 
 HTTP_RESPONSE=$(curl -k -s -X POST \
   "$NIFI_URL/nifi-api/versions/process-groups/$PG_ID" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d "{
-    \"versionControlInformation\": {
-      \"registryId\": \"$REGISTRY_ID\",
-      \"bucketId\": \"$REGISTRY_BUCKET_ID\",
-      \"flowName\": \"$NAME\",
-      \"flowDescription\": \"GitOps managed flow\",
-      \"version\": 1
-    }
-  }" \
+  -d "$PAYLOAD" \
   -w "HTTPSTATUS:%{http_code}")
 
-HTTP_BODY=$(echo "$HTTP_RESPONSE" | sed -e 's/HTTPSTATUS\:.*//g')
-HTTP_STATUS=$(echo "$HTTP_RESPONSE" | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
+BODY=$(echo "$HTTP_RESPONSE" | sed -e 's/HTTPSTATUS\:.*//g')
+STATUS=$(echo "$HTTP_RESPONSE" | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
 
-echo "Status: $HTTP_STATUS"
+echo "Status: $STATUS"
 echo "Body:"
-echo "$HTTP_BODY"
+echo "$BODY"
