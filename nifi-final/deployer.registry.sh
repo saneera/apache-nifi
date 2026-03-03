@@ -225,30 +225,25 @@ echo "GitOps Deployment Completed Successfully"
 echo "======================================="
 
 
+REVISION=$(curl -k -s \
+  "$NIFI_URL/nifi-api/process-groups/$PG_ID" \
+  -H "Authorization: Bearer $TOKEN" | \
+  jq -r '.revision.version')
+
 PAYLOAD=$(jq -n \
-  --arg registryId "$REGISTRY_ID" \
-  --arg bucketId "$REGISTRY_BUCKET_ID" \
-  --arg flowName "$NAME" \
+  --argjson rev "$REVISION" \
+  --arg comment "Git commit: ${GIT_COMMIT:-manual}" \
   '{
+    revision: {
+      version: $rev
+    },
     versionControlInformation: {
-      registryId: $registryId,
-      bucketId: $bucketId,
-      flowName: $flowName,
-      flowDescription: "GitOps managed flow",
-      version: 1
+      comment: $comment
     }
   }')
 
-HTTP_RESPONSE=$(curl -k -s -X POST \
+curl -k -s -X POST \
   "$NIFI_URL/nifi-api/versions/process-groups/$PG_ID" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d "$PAYLOAD" \
-  -w "HTTPSTATUS:%{http_code}")
-
-BODY=$(echo "$HTTP_RESPONSE" | sed -e 's/HTTPSTATUS\:.*//g')
-STATUS=$(echo "$HTTP_RESPONSE" | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
-
-echo "Status: $STATUS"
-echo "Body:"
-echo "$BODY"
+  -d "$PAYLOAD"
