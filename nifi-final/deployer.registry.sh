@@ -223,3 +223,27 @@ fi
 echo "======================================="
 echo "GitOps Deployment Completed Successfully"
 echo "======================================="
+
+
+
+HTTP_RESPONSE=$(curl -k -s -X POST \
+  "$NIFI_URL/nifi-api/versions/process-groups/$PG_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"versionControlInformation\": {
+      \"registryId\": \"$REGISTRY_ID\",
+      \"bucketId\": \"$REGISTRY_BUCKET_ID\",
+      \"flowName\": \"$NAME\",
+      \"flowDescription\": \"GitOps managed flow\",
+      \"version\": 1
+    }
+  }" \
+  -w "HTTPSTATUS:%{http_code}")
+
+HTTP_BODY=$(echo "$HTTP_RESPONSE" | sed -e 's/HTTPSTATUS\:.*//g')
+HTTP_STATUS=$(echo "$HTTP_RESPONSE" | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
+
+echo "Status: $HTTP_STATUS"
+echo "Body:"
+echo "$HTTP_BODY"
