@@ -6,7 +6,7 @@ echo "NiFi GitOps Registry Deployment Starting"
 echo "======================================="
 
 # --------------------------------------------------
-# Wait for NiFi API
+# Wait for NiFi
 # --------------------------------------------------
 echo "Waiting for NiFi API..."
 
@@ -26,11 +26,10 @@ TOKEN=$(curl -k -s -X POST \
   -d "username=$USERNAME&password=$PASSWORD")
 
 [ -z "$TOKEN" ] && echo "Authentication failed" && exit 1
-
 echo "Authenticated."
 
 # --------------------------------------------------
-# Get Root Process Group ID
+# Get Root PG ID
 # --------------------------------------------------
 ROOT_ID=$(curl -k -s \
   "$NIFI_URL/nifi-api/flow/process-groups/root" \
@@ -47,52 +46,78 @@ calculate_local_hash() {
   jq -S '.' "$1" | sha256sum | awk '{print $1}'
 }
 
-is_versioned() {
+get_pg() {
   curl -k -s \
-    "$NIFI_URL/nifi-api/versions/process-groups/$1" \
-    -H "Authorization: Bearer $TOKEN" | \
-    jq -e '.versionControlInformation' > /dev/null 2>&1
-}
-
-get_registry_info() {
-  curl -k -s \
-    "$NIFI_URL/nifi-api/versions/process-groups/$1" \
+    "$NIFI_URL/nifi-api/process-groups/$1" \
     -H "Authorization: Bearer $TOKEN"
 }
 
-get_registry_snapshot_hash() {
+get_pg_revision() {
+  get_pg "$1" | jq -r '.revision.version'
+}
+
+get_pg_hash_variable() {
+  get_pg "$1" | jq -r '.component.variables.GIT_FLOW_HASH // empty'
+}
+
+set_pg_hash_variable() {
   PG_ID=$1
+  HASH=$2
 
-  VERSION_INFO=$(get_registry_info "$PG_ID")
+  REVISION=$(get_pg_revision "$PG_ID")
 
-  BUCKET_ID=$(echo "$VERSION_INFO" | jq -r '.versionControlInformation.bucketId')
-  FLOW_ID=$(echo "$VERSION_INFO" | jq -r '.versionControlInformation.flowId')
-  VERSION=$(echo "$VERSION_INFO" | jq -r '.versionControlInformation.version')
+  echo "Updating PG hash variable..."
 
-  SNAPSHOT=$(curl -k -s \
-    "$REGISTRY_URL/nifi-registry-api/buckets/$BUCKET_ID/flows/$FLOW_ID/versions/$VERSION")
+  curl -f -k -s -X PUT \
+    "$NIFI_URL/nifi-api/process-groups/$PG_ID" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{
+      \"revision\": {
+        \"version\": $REVISION
+      },
+      \"component\": {
+        \"id\": \"$PG_ID\",
+        \"variables\": {
+          \"GIT_FLOW_HASH\": \"$HASH\",
+          \"GIT_COMMIT\": \"${GIT_COMMIT:-manual}\"
+        }
+      }
+    }" > /dev/null
 
-  echo "$SNAPSHOT" | jq -S '.flowSnapshot.flowContents' | sha256sum | awk '{print $1}'
+  echo "Hash variable updated."
+}
+
+is_versioned() {
+  resp=$(curl -k -s \
+    "$NIFI_URL/nifi-api/versions/process-groups/$1" \
+    -H "Authorization: Bearer $TOKEN")
+
+  echo "$resp" | jq -e '.versionControlInformation != null' > /dev/null
 }
 
 start_version_control() {
   PG_ID=$1
   NAME=$2
+  REVISION=$(get_pg_revision "$PG_ID")
 
-  echo "Starting version control for $NAME..."
+  echo "Starting version control..."
 
   curl -f -k -s -X POST \
     "$NIFI_URL/nifi-api/versions/process-groups/$PG_ID" \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
     -d "{
+      \"processGroupRevision\": {
+        \"version\": $REVISION
+      },
       \"versionControlInformation\": {
         \"registryId\": \"$REGISTRY_ID\",
         \"bucketId\": \"$REGISTRY_BUCKET_ID\",
         \"flowName\": \"$NAME\",
-        \"flowDescription\": \"GitOps managed flow\",
-        \"version\": 1
-      }
+        \"flowDescription\": \"GitOps managed flow\"
+      },
+      \"comments\": \"Initial GitOps version - ${GIT_COMMIT:-manual}\"
     }" > /dev/null
 
   echo "Version control started."
@@ -100,6 +125,7 @@ start_version_control() {
 
 commit_registry_version() {
   PG_ID=$1
+  REVISION=$(get_pg_revision "$PG_ID")
 
   echo "Committing new registry version..."
 
@@ -108,33 +134,41 @@ commit_registry_version() {
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
     -d "{
-      \"versionControlInformation\": {
-        \"comment\": \"Git commit: ${GIT_COMMIT:-manual}\"
-      }
+      \"processGroupRevision\": {
+        \"version\": $REVISION
+      },
+      \"comments\": \"Git commit: ${GIT_COMMIT:-manual}\"
     }" > /dev/null
 
-  echo "New version committed."
+  echo "Registry version committed."
 }
 
 update_pg_to_latest() {
   PG_ID=$1
 
-  VERSION_INFO=$(get_registry_info "$PG_ID")
-  CURRENT_VERSION=$(echo "$VERSION_INFO" | jq -r '.versionControlInformation.version')
+  VERSION_INFO=$(curl -k -s \
+    "$NIFI_URL/nifi-api/versions/process-groups/$PG_ID" \
+    -H "Authorization: Bearer $TOKEN")
 
-  echo "Updating PG to version $CURRENT_VERSION..."
+  TARGET_VERSION=$(echo "$VERSION_INFO" | jq -r '.versionControlInformation.version')
+  REVISION=$(get_pg_revision "$PG_ID")
+
+  echo "Updating PG to version $TARGET_VERSION..."
 
   curl -f -k -s -X PUT \
     "$NIFI_URL/nifi-api/versions/process-groups/$PG_ID" \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
     -d "{
+      \"processGroupRevision\": {
+        \"version\": $REVISION
+      },
       \"versionControlInformation\": {
-        \"version\": $CURRENT_VERSION
+        \"version\": $TARGET_VERSION
       }
     }" > /dev/null
 
-  echo "PG updated."
+  echo "PG updated to latest."
 }
 
 # --------------------------------------------------
@@ -149,7 +183,6 @@ for FLOW_FILE in /flows/*.json; do
   FOUND=true
 
   NAME=$(jq -r '.flowContents.name' "$FLOW_FILE")
-
   echo "---------------------------------------"
   echo "Processing flow: $NAME"
 
@@ -161,7 +194,7 @@ for FLOW_FILE in /flows/*.json; do
            | .component.id")
 
   # --------------------------------------------------
-  # New Flow
+  # NEW FLOW
   # --------------------------------------------------
   if [ -z "$EXISTING_ID" ]; then
 
@@ -184,33 +217,36 @@ for FLOW_FILE in /flows/*.json; do
 
     start_version_control "$NEW_ID" "$NAME"
 
+    LOCAL_HASH=$(calculate_local_hash "$FLOW_FILE")
+    set_pg_hash_variable "$NEW_ID" "$LOCAL_HASH"
+
     echo "Flow deployed and versioned."
 
   else
 
     echo "Flow exists: $EXISTING_ID"
 
+    LOCAL_HASH=$(calculate_local_hash "$FLOW_FILE")
+    STORED_HASH=$(get_pg_hash_variable "$EXISTING_ID")
+
+    echo "Local hash: $LOCAL_HASH"
+    echo "Stored hash: $STORED_HASH"
+
+    if [ "$LOCAL_HASH" = "$STORED_HASH" ]; then
+      echo "No changes detected. Skipping."
+      continue
+    fi
+
+    echo "Change detected."
+
     if is_versioned "$EXISTING_ID"; then
-
-      LOCAL_HASH=$(calculate_local_hash "$FLOW_FILE")
-      REGISTRY_HASH=$(get_registry_snapshot_hash "$EXISTING_ID")
-
-      echo "Local hash: $LOCAL_HASH"
-      echo "Registry hash: $REGISTRY_HASH"
-
-      if [ "$LOCAL_HASH" = "$REGISTRY_HASH" ]; then
-        echo "No changes detected. Skipping."
-      else
-        echo "Change detected."
-
-        commit_registry_version "$EXISTING_ID"
-        update_pg_to_latest "$EXISTING_ID"
-      fi
-
+      commit_registry_version "$EXISTING_ID"
+      update_pg_to_latest "$EXISTING_ID"
     else
-      echo "Flow not versioned. Starting version control."
       start_version_control "$EXISTING_ID" "$NAME"
     fi
+
+    set_pg_hash_variable "$EXISTING_ID" "$LOCAL_HASH"
 
   fi
 
@@ -223,23 +259,3 @@ fi
 echo "======================================="
 echo "GitOps Deployment Completed Successfully"
 echo "======================================="
-
-get_registry_info() {
-  RESPONSE=$(curl -k -sS \
-    --connect-timeout 5 \
-    --max-time 20 \
-    -w "\n%{http_code}" \
-    -H "Authorization: Bearer $TOKEN" \
-    "$NIFI_URL/nifi-api/versions/process-groups/$1")
-
-  BODY=$(echo "$RESPONSE" | head -n -1)
-  STATUS=$(echo "$RESPONSE" | tail -n1)
-
-  if [ "$STATUS" != "200" ]; then
-    echo "Error getting registry info: $STATUS" >&2
-    echo "$BODY" >&2
-    return 1
-  fi
-
-  echo "$BODY"
-}
