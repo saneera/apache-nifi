@@ -224,26 +224,22 @@ echo "======================================="
 echo "GitOps Deployment Completed Successfully"
 echo "======================================="
 
+get_registry_info() {
+  RESPONSE=$(curl -k -sS \
+    --connect-timeout 5 \
+    --max-time 20 \
+    -w "\n%{http_code}" \
+    -H "Authorization: Bearer $TOKEN" \
+    "$NIFI_URL/nifi-api/versions/process-groups/$1")
 
-REVISION=$(curl -k -s \
-  "$NIFI_URL/nifi-api/process-groups/$PG_ID" \
-  -H "Authorization: Bearer $TOKEN" | \
-  jq -r '.revision.version')
+  BODY=$(echo "$RESPONSE" | head -n -1)
+  STATUS=$(echo "$RESPONSE" | tail -n1)
 
-PAYLOAD=$(jq -n \
-  --argjson rev "$REVISION" \
-  --arg comment "Git commit: ${GIT_COMMIT:-manual}" \
-  '{
-    revision: {
-      version: $rev
-    },
-    versionControlInformation: {
-      comment: $comment
-    }
-  }')
+  if [ "$STATUS" != "200" ]; then
+    echo "Error getting registry info: $STATUS" >&2
+    echo "$BODY" >&2
+    return 1
+  fi
 
-curl -k -s -X POST \
-  "$NIFI_URL/nifi-api/versions/process-groups/$PG_ID" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "$PAYLOAD"
+  echo "$BODY"
+}
