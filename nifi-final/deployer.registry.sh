@@ -56,6 +56,21 @@ get_pg_revision() {
   get_pg "$1" | jq -r '.revision.version'
 }
 
+debug_pg_hash() {
+  PG_ID=$1
+
+  echo "Checking PG hash variable..."
+
+  curl -k -s \
+    "$NIFI_URL/nifi-api/process-groups/$PG_ID" \
+    -H "Authorization: Bearer $TOKEN" \
+  | jq '{
+      revision: .revision.version,
+      hash: .component.variables.GIT_FLOW_HASH,
+      commit: .component.variables.GIT_COMMIT
+    }'
+}
+
 get_pg_hash_variable() {
   get_pg "$1" | jq -r '.component.variables.GIT_FLOW_HASH // empty'
 }
@@ -81,13 +96,9 @@ set_pg_hash_variable() {
         "GIT_COMMIT": $commit
       }')
 
-    RESPONSE_FILE=$(mktemp)
 
     HTTP_STATUS=$(curl -k \
-      --connect-timeout 10 \
-      --max-time 60 \
       -w "%{http_code}" \
-      -o "$RESPONSE_FILE" \
       -X PUT \
       "$NIFI_URL/nifi-api/process-groups/$PG_ID" \
       -H "Authorization: Bearer $TOKEN" \
@@ -103,27 +114,23 @@ set_pg_hash_variable() {
       }")
 
     if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
-      echo "✅ Hash variable updated successfully."
-      rm -f "$RESPONSE_FILE"
+      echo "Hash variable updated successfully."
       return 0
     fi
 
     if [ "$HTTP_STATUS" = "409" ]; then
-      echo "⚠️ Revision conflict. Retrying ($attempt/3)..."
-      rm -f "$RESPONSE_FILE"
+      echo "Revision conflict. Retrying ($attempt/3)..."
       sleep 2
       continue
     fi
 
-    echo "❌ Failed to update PG variables"
+    echo "Failed to update PG variables"
     echo "HTTP Status: $HTTP_STATUS"
-    cat "$RESPONSE_FILE"
-    rm -f "$RESPONSE_FILE"
     exit 1
 
   done
 
-  echo "❌ Failed after 3 attempts due to revision conflicts."
+  echo "Failed after 3 attempts due to revision conflicts."
   exit 1
 }
 
