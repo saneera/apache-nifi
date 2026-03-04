@@ -64,28 +64,67 @@ set_pg_hash_variable() {
   PG_ID=$1
   HASH=$2
 
-  REVISION=$(get_pg_revision "$PG_ID")
-
   echo "Updating PG hash variable..."
 
-  curl -f -k -s -X PUT \
-    "$NIFI_URL/nifi-api/process-groups/$PG_ID" \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "Content-Type: application/json" \
-    -d "{
-      \"revision\": {
-        \"version\": $REVISION
-      },
-      \"component\": {
-        \"id\": \"$PG_ID\",
-        \"variables\": {
-          \"GIT_FLOW_HASH\": \"$HASH\",
-          \"GIT_COMMIT\": \"${GIT_COMMIT:-manual}\"
-        }
-      }
-    }" > /dev/null
+  # Retry up to 3 times if revision conflict
+  for attempt in 1 2 3; do
 
-  echo "Hash variable updated."
+    PG_JSON=$(get_pg "$PG_ID")
+    REVISION=$(echo "$PG_JSON" | jq -r '.revision.version')
+
+    # Merge existing variables safely
+    UPDATED_VARIABLES=$(echo "$PG_JSON" | jq \
+      --arg hash "$HASH" \
+      --arg commit "${GIT_COMMIT:-manual}" \
+      '.component.variables + {
+        "GIT_FLOW_HASH": $hash,
+        "GIT_COMMIT": $commit
+      }')
+
+    RESPONSE_FILE=$(mktemp)
+
+    HTTP_STATUS=$(curl -k \
+      --connect-timeout 10 \
+      --max-time 60 \
+      -w "%{http_code}" \
+      -o "$RESPONSE_FILE" \
+      -X PUT \
+      "$NIFI_URL/nifi-api/process-groups/$PG_ID" \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "Content-Type: application/json" \
+      -d "{
+        \"revision\": {
+          \"version\": $REVISION
+        },
+        \"component\": {
+          \"id\": \"$PG_ID\",
+          \"variables\": $UPDATED_VARIABLES
+        }
+      }")
+
+    if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+      echo "✅ Hash variable updated successfully."
+      rm -f "$RESPONSE_FILE"
+      return 0
+    fi
+
+    if [ "$HTTP_STATUS" = "409" ]; then
+      echo "⚠️ Revision conflict. Retrying ($attempt/3)..."
+      rm -f "$RESPONSE_FILE"
+      sleep 2
+      continue
+    fi
+
+    echo "❌ Failed to update PG variables"
+    echo "HTTP Status: $HTTP_STATUS"
+    cat "$RESPONSE_FILE"
+    rm -f "$RESPONSE_FILE"
+    exit 1
+
+  done
+
+  echo "❌ Failed after 3 attempts due to revision conflicts."
+  exit 1
 }
 
 is_versioned() {
@@ -128,8 +167,16 @@ commit_registry_version() {
   REVISION=$(get_pg_revision "$PG_ID")
 
   echo "Committing new registry version..."
+  echo "PG: $PG_ID | Revision: $REVISION"
 
-  curl -f -k -s -X POST \
+  RESPONSE_FILE=$(mktemp)
+
+  HTTP_STATUS=$(curl -k \
+    --connect-timeout 10 \
+    --max-time 60 \
+    -w "%{http_code}" \
+    -o "$RESPONSE_FILE" \
+    -X POST \
     "$NIFI_URL/nifi-api/versions/process-groups/$PG_ID" \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
@@ -138,9 +185,20 @@ commit_registry_version() {
         \"version\": $REVISION
       },
       \"comments\": \"Git commit: ${GIT_COMMIT:-manual}\"
-    }" > /dev/null
+    }")
 
-  echo "Registry version committed."
+  if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+    echo "✅ Registry version committed successfully."
+    rm -f "$RESPONSE_FILE"
+    return 0
+  fi
+
+  echo "❌ Failed to commit registry version"
+  echo "HTTP Status: $HTTP_STATUS"
+  echo "Response body:"
+  cat "$RESPONSE_FILE"
+  rm -f "$RESPONSE_FILE"
+  exit 1
 }
 
 update_pg_to_latest() {
