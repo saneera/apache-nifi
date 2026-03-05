@@ -57,11 +57,22 @@ api "$NIFI_URL/nifi-api/process-groups/$ROOT_PG_ID/process-groups" \
 # Get PG revision
 ############################################
 
-get_pg_revision() {
+gget_pg_revision() {
 
-api "$NIFI_URL/nifi-api/process-groups/$1" \
- | jq '.revision.version'
-}
+ PG_ID=$1
+
+ RESP=$(curl -s -k \
+   -H "Authorization: Bearer $TOKEN" \
+   "$NIFI_URL/nifi-api/process-groups/$PG_ID")
+
+ echo "$RESP" | jq empty 2>/dev/null || {
+   echo "Invalid JSON response from NiFi"
+   echo "$RESP"
+   exit 1
+ }
+
+ echo "$RESP" | jq -r '.revision.version'
+ }
 
 ############################################
 # Create process group
