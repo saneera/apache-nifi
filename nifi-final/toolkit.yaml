@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nifi-toolkit
+  namespace: nifi
+  labels:
+    app: nifi-toolkit
+spec:
+  containers:
+    - name: toolkit
+      image: apache/nifi-toolkit:1.27.0
+      command: ["/bin/sh"]
+      args: ["-c", "sleep infinity"]
+      imagePullPolicy: IfNotPresent
+  restartPolicy: Always
