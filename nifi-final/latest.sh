@@ -57,7 +57,7 @@ api "$NIFI_URL/nifi-api/process-groups/$ROOT_PG_ID/process-groups" \
 # Get PG revision
 ############################################
 
-gget_pg_revision() {
+get_pg_revision() {
 
  PG_ID=$1
 
@@ -156,12 +156,16 @@ api -X POST \
 
 get_registry_hash() {
 
-FLOW_ID=$1
+  FLOW_ID=$1
 
-curl -s \
- "$REGISTRY_URL/nifi-registry-api/buckets/$BUCKET_ID/flows/$FLOW_ID/versions/latest" \
- | jq -r '.snapshotMetadata.comments' \
- | sed 's/hash://'
+  RESP=$(curl -s \
+  "$REGISTRY_URL/nifi-registry-api/buckets/$BUCKET_ID/flows/$FLOW_ID/versions/latest")
+
+  REGISTRY_HASH=$(echo "$RESP" | jq -r '.snapshotMetadata.comments' | sed 's/hash://')
+
+  REGISTRY_VERSION=$(echo "$RESP" | jq -r '.version')
+
+  echo "$REGISTRY_HASH|$REGISTRY_VERSION"
 }
 
 ############################################
@@ -301,7 +305,13 @@ fi
 INFO=$(get_version_info "$PG_ID")
 FLOW_ID=$(echo "$INFO" | jq -r '.versionControlInformation.flowId')
 
-REGISTRY_HASH=$(get_registry_hash "$FLOW_ID")
+HASH_INFO=$(get_registry_hash "$FLOW_ID")
+
+REGISTRY_HASH=$(echo "$HASH_INFO" | cut -d'|' -f1)
+REGISTRY_VERSION=$(echo "$HASH_INFO" | cut -d'|' -f2)
+
+echo "Registry hash: $REGISTRY_HASH"
+echo "Registry version: $REGISTRY_VERSION"
 
 echo "Local hash: $LOCAL_HASH"
 echo "Registry hash: $REGISTRY_HASH"
