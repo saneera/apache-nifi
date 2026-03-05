@@ -1,254 +1,309 @@
 #!/usr/bin/env bash
 set -e
 
-NIFI_URL=${NIFI_URL}
-REGISTRY_ID=${REGISTRY_ID}
-TOKEN=${TOKEN}
-FLOW_DIR=${FLOW_DIR:-flows}
-ROOT_PG_ID=${ROOT_PG_ID}
+############################################
+# Environment variables required
+############################################
 
-########################################
-# Generic API wrapper
-########################################
+NIFI_URL=${NIFI_URL}
+REGISTRY_URL=${REGISTRY_URL}
+TOKEN=${TOKEN}
+
+ROOT_PG_ID=${ROOT_PG_ID}
+REGISTRY_ID=${REGISTRY_ID}
+BUCKET_ID=${BUCKET_ID}
+
+FLOW_DIR=${FLOW_DIR:-flows}
+
+############################################
+# Generic NiFi API wrapper
+############################################
+
 api() {
-  curl -s -k \
+ curl -s -k \
    -H "Authorization: Bearer $TOKEN" \
    -H "Content-Type: application/json" \
    "$@"
 }
 
-########################################
-# Calculate flow hash
-########################################
+############################################
+# Calculate stable flow hash
+############################################
+
 calculate_local_hash() {
-  jq -S '.' "$1" | sha256sum | awk '{print $1}'
+
+jq 'del(.snapshotMetadata.comments)' "$1" \
+ | jq -S '.' \
+ | sha256sum \
+ | awk '{print $1}'
 }
 
-########################################
-# Get PG revision
-########################################
-get_pg_revision() {
-  api "$NIFI_URL/nifi-api/process-groups/$1" \
-  | jq '.revision.version'
-}
+############################################
+# Find process group by name
+############################################
 
-########################################
-# Get PG by name
-########################################
 find_pg_by_name() {
 
-  local name=$1
+NAME=$1
 
-  api "$NIFI_URL/nifi-api/process-groups/$ROOT_PG_ID/process-groups" \
-  | jq -r --arg NAME "$name" '
-      .processGroups[]
-      | select(.component.name==$NAME)
-      | .component.id'
+api "$NIFI_URL/nifi-api/process-groups/$ROOT_PG_ID/process-groups" \
+ | jq -r --arg NAME "$NAME" '
+.processGroups[]
+| select(.component.name==$NAME)
+| .component.id'
 }
 
-########################################
-# Create new process group
-########################################
+############################################
+# Get PG revision
+############################################
+
+get_pg_revision() {
+
+api "$NIFI_URL/nifi-api/process-groups/$1" \
+ | jq '.revision.version'
+}
+
+############################################
+# Create process group
+############################################
+
 create_pg() {
 
-  local name=$1
+NAME=$1
 
-  echo "Creating process group: $name"
+echo "Creating process group: $NAME"
 
-  local payload=$(jq -n \
-   --arg name "$name" \
-  '{
-     revision:{version:0},
-     component:{
-        name:$name,
-        position:{x:0,y:0}
-     }
-  }')
+PAYLOAD=$(jq -n --arg name "$NAME" '
+{
+ revision:{version:0},
+ component:{
+   name:$name,
+   position:{x:0,y:0}
+ }
+}')
 
-  api -X POST \
-   "$NIFI_URL/nifi-api/process-groups/$ROOT_PG_ID/process-groups" \
-   -d "$payload" \
-   | jq -r '.id'
+api -X POST \
+ "$NIFI_URL/nifi-api/process-groups/$ROOT_PG_ID/process-groups" \
+ -d "$PAYLOAD" \
+ | jq -r '.id'
 }
 
-########################################
+############################################
 # Get version control info
-########################################
+############################################
+
 get_version_info() {
 
-  api "$NIFI_URL/nifi-api/versions/process-groups/$1"
+api "$NIFI_URL/nifi-api/versions/process-groups/$1"
 }
 
-########################################
-# Check if PG is versioned
-########################################
+############################################
+# Check if version controlled
+############################################
+
 is_versioned() {
 
-  get_version_info "$1" \
-  | jq '.versionControlInformation != null'
+get_version_info "$1" \
+ | jq '.versionControlInformation != null'
 }
 
-########################################
+############################################
 # Start version control
-########################################
+############################################
+
 start_version_control() {
 
-  PG_ID=$1
-  FLOW_NAME=$2
-  BUCKET_ID=$3
+PG_ID=$1
+FLOW_NAME=$2
 
-  REV=$(get_pg_revision "$PG_ID")
+REV=$(get_pg_revision "$PG_ID")
 
-  echo "Starting version control for $FLOW_NAME"
+echo "Starting version control for $FLOW_NAME"
 
-  payload=$(jq -n \
-   --arg bucket "$BUCKET_ID" \
-   --arg flowName "$FLOW_NAME" \
-   --arg registry "$REGISTRY_ID" \
-   --argjson rev "$REV" \
-  '{
-    processGroupRevision:{version:$rev},
-    versionControlInformation:{
-       registryId:$registry,
-       bucketId:$bucket,
-       flowName:$flowName
-    }
-  }')
+PAYLOAD=$(jq -n \
+ --arg bucket "$BUCKET_ID" \
+ --arg registry "$REGISTRY_ID" \
+ --arg flowName "$FLOW_NAME" \
+ --argjson rev "$REV" '
+{
+ processGroupRevision:{version:$rev},
+ versionControlInformation:{
+   registryId:$registry,
+   bucketId:$bucket,
+   flowName:$flowName
+ }
+}')
 
-  api -X POST \
-   "$NIFI_URL/nifi-api/versions/process-groups/$PG_ID" \
-   -d "$payload"
+api -X POST \
+ "$NIFI_URL/nifi-api/versions/process-groups/$PG_ID" \
+ -d "$PAYLOAD"
 }
 
-########################################
-# Commit registry version
-########################################
+############################################
+# Get registry hash from comment
+############################################
+
+get_registry_hash() {
+
+FLOW_ID=$1
+
+curl -s \
+ "$REGISTRY_URL/nifi-registry-api/buckets/$BUCKET_ID/flows/$FLOW_ID/versions/latest" \
+ | jq -r '.snapshotMetadata.comments' \
+ | sed 's/hash://'
+}
+
+############################################
+# Commit new registry version
+############################################
+
 commit_registry_version() {
 
-  PG_ID=$1
-  COMMENT=$2
+PG_ID=$1
+HASH=$2
 
-  INFO=$(get_version_info "$PG_ID")
+INFO=$(get_version_info "$PG_ID")
 
-  BUCKET=$(echo "$INFO" | jq -r '.versionControlInformation.bucketId')
-  FLOW=$(echo "$INFO" | jq -r '.versionControlInformation.flowId')
+BUCKET=$(echo "$INFO" | jq -r '.versionControlInformation.bucketId')
+FLOW=$(echo "$INFO" | jq -r '.versionControlInformation.flowId')
 
-  REV=$(get_pg_revision "$PG_ID")
+REV=$(get_pg_revision "$PG_ID")
 
-  echo "Committing registry version..."
+COMMENT="hash:$HASH"
 
-  payload=$(jq -n \
-   --arg bucket "$BUCKET" \
-   --arg flow "$FLOW" \
-   --arg comment "$COMMENT" \
-   --argjson rev "$REV" \
-  '{
-     processGroupRevision:{version:$rev},
-     versionedFlow:{
-        bucketId:$bucket,
-        flowId:$flow,
-        action:"COMMIT",
-        comment:$comment
-     }
-  }')
+echo "Committing new version with hash $HASH"
 
-  api -X POST \
-   "$NIFI_URL/nifi-api/versions/process-groups/$PG_ID" \
-   -d "$payload"
+PAYLOAD=$(jq -n \
+ --arg bucket "$BUCKET" \
+ --arg flow "$FLOW" \
+ --arg comment "$COMMENT" \
+ --argjson rev "$REV" '
+{
+ processGroupRevision:{version:$rev},
+ versionedFlow:{
+   bucketId:$bucket,
+   flowId:$flow,
+   action:"COMMIT",
+   comment:$comment
+ }
+}')
+
+api -X POST \
+ "$NIFI_URL/nifi-api/versions/process-groups/$PG_ID" \
+ -d "$PAYLOAD"
 }
 
-########################################
+############################################
 # Update PG to latest registry version
-########################################
+############################################
+
 update_pg_to_latest() {
 
-  PG_ID=$1
+PG_ID=$1
 
-  INFO=$(get_version_info "$PG_ID")
+INFO=$(get_version_info "$PG_ID")
 
-  BUCKET=$(echo "$INFO" | jq -r '.versionControlInformation.bucketId')
-  FLOW=$(echo "$INFO" | jq -r '.versionControlInformation.flowId')
-  VERSION=$(echo "$INFO" | jq -r '.versionControlInformation.version')
+BUCKET=$(echo "$INFO" | jq -r '.versionControlInformation.bucketId')
+FLOW=$(echo "$INFO" | jq -r '.versionControlInformation.flowId')
+VERSION=$(echo "$INFO" | jq -r '.versionControlInformation.version')
 
-  REV=$(get_pg_revision "$PG_ID")
+REV=$(get_pg_revision "$PG_ID")
 
-  echo "Updating PG to version $VERSION"
+echo "Updating process group to version $VERSION"
 
-  payload=$(jq -n \
-   --arg bucket "$BUCKET" \
-   --arg flow "$FLOW" \
-   --argjson version "$VERSION" \
-   --argjson rev "$REV" \
-  '{
-     processGroupRevision:{version:$rev},
-     versionControlInformation:{
-        bucketId:$bucket,
-        flowId:$flow,
-        version:$version
-     }
-  }')
+PAYLOAD=$(jq -n \
+ --arg bucket "$BUCKET" \
+ --arg flow "$FLOW" \
+ --argjson version "$VERSION" \
+ --argjson rev "$REV" '
+{
+ processGroupRevision:{version:$rev},
+ versionControlInformation:{
+   bucketId:$bucket,
+   flowId:$flow,
+   version:$version
+ }
+}')
 
-  api -X POST \
-   "$NIFI_URL/nifi-api/versions/update-requests/process-groups/$PG_ID" \
-   -d "$payload"
+api -X POST \
+ "$NIFI_URL/nifi-api/versions/update-requests/process-groups/$PG_ID" \
+ -d "$PAYLOAD"
 }
 
-########################################
-# Deploy flows
-########################################
+############################################
+# Deploy all flows
+############################################
+
 deploy_flows() {
 
 for FLOW_FILE in $FLOW_DIR/*.json
 do
 
-  FLOW_NAME=$(basename "$FLOW_FILE" .json)
+FLOW_NAME=$(basename "$FLOW_FILE" .json)
 
-  echo "----------------------------------"
-  echo "Processing flow: $FLOW_NAME"
+echo "--------------------------------"
+echo "Processing flow: $FLOW_NAME"
 
-  PG_ID=$(find_pg_by_name "$FLOW_NAME")
+LOCAL_HASH=$(calculate_local_hash "$FLOW_FILE")
 
-  if [ -z "$PG_ID" ]; then
+PG_ID=$(find_pg_by_name "$FLOW_NAME")
 
-      PG_ID=$(create_pg "$FLOW_NAME")
+################################
+# Flow does not exist
+################################
 
-      start_version_control "$PG_ID" "$FLOW_NAME" "$BUCKET_ID"
+if [ -z "$PG_ID" ]; then
 
-      continue
-  fi
+ echo "Flow not found in NiFi"
 
-  LOCAL_HASH=$(calculate_local_hash "$FLOW_FILE")
-  STORED_HASH=$(get_pg_hash_variable "$PG_ID")
+ PG_ID=$(create_pg "$FLOW_NAME")
 
-  echo "Local hash: $LOCAL_HASH"
-  echo "Stored hash: $STORED_HASH"
+ start_version_control "$PG_ID" "$FLOW_NAME"
 
-  if [ "$LOCAL_HASH" = "$STORED_HASH" ]; then
-      echo "No changes detected."
-      continue
-  fi
+ commit_registry_version "$PG_ID" "$LOCAL_HASH"
 
-  echo "Change detected."
+ update_pg_to_latest "$PG_ID"
 
-  if is_versioned "$PG_ID"; then
-      commit_registry_version "$PG_ID" "GitOps commit"
-      update_pg_to_latest "$PG_ID"
-  else
-      start_version_control "$PG_ID" "$FLOW_NAME" "$BUCKET_ID"
-  fi
+ continue
+fi
 
-  set_pg_hash_variable "$PG_ID" "$LOCAL_HASH"
+################################
+# Flow exists
+################################
+
+INFO=$(get_version_info "$PG_ID")
+FLOW_ID=$(echo "$INFO" | jq -r '.versionControlInformation.flowId')
+
+REGISTRY_HASH=$(get_registry_hash "$FLOW_ID")
+
+echo "Local hash: $LOCAL_HASH"
+echo "Registry hash: $REGISTRY_HASH"
+
+if [ "$LOCAL_HASH" = "$REGISTRY_HASH" ]; then
+ echo "Flow unchanged"
+ continue
+fi
+
+echo "Flow changed"
+
+commit_registry_version "$PG_ID" "$LOCAL_HASH"
+
+update_pg_to_latest "$PG_ID"
 
 done
 
 }
 
-########################################
+############################################
 # Start deployment
-########################################
+############################################
 
+echo "================================"
 echo "NiFi GitOps Deployment Starting"
+echo "================================"
 
 deploy_flows
 
+echo "================================"
 echo "Deployment Completed"
+echo "================================"
