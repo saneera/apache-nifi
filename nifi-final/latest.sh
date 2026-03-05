@@ -230,6 +230,20 @@ api -X POST \
  -d "$PAYLOAD"
 }
 
+
+upload_flow_definition() {
+
+PG_ID=$1
+FLOW_FILE=$2
+
+echo "Uploading flow definition..."
+
+curl -s -k -X POST \
+ "$NIFI_URL/nifi-api/process-groups/$PG_ID/process-groups/upload" \
+ -H "Authorization: Bearer $TOKEN" \
+ -F "file=@$FLOW_FILE"
+}
+
 ############################################
 # Deploy all flows
 ############################################
@@ -257,6 +271,8 @@ if [ -z "$PG_ID" ]; then
  echo "Flow not found in NiFi"
 
  PG_ID=$(create_pg "$FLOW_NAME")
+
+ upload_flow_definition "$PG_ID" "$FLOW_FILE"
 
  start_version_control "$PG_ID" "$FLOW_NAME"
 
