@@ -98,3 +98,15 @@ spec:
         configMap:
           name: nifi-flows-cm # This CM contains all your .json files
 
+
+
+
+NIFI_PROPS="/tmp/nifi.properties"
+cat <<EOF > "$NIFI_PROPS"
+baseUrl=$NIFI_BASE_URL
+EOF
+
+REG_PROPS="/tmp/reg.properties"
+cat <<EOF > "$REG_PROPS"
+baseUrl=$REG_BASE_URL
+EOF
