@@ -304,3 +304,39 @@ done
 
 echo ""
 echo "All flows deployed successfully"
+
+
+
+FLOW_INFO=$(echo "$INFO" | jq '.versionControlInformation')
+FLOW_ID=$(echo "$INFO" | jq -r '.versionControlInformation.flowId')
+
+REGISTRY_ID=$(echo "$INFO" | jq -r '.versionControlInformation.registryId')
+
+BUCKET_ID=$(echo "$INFO" | jq -r '.versionControlInformation.bucketId')
+
+CURRENT_VERSION=$(echo "$INFO" | jq -r '.versionControlInformation.version')
+
+PAYLOAD=$(jq -n \
+--argjson rev "$REVISION" \
+--arg reg "$REGISTRY_ID" \
+--arg bucket "$BUCKET_ID" \
+--arg flow "$FLOW_ID" \
+--argjson ver "$LATEST" \
+'{
+    processGroupRevision:{version:$rev},
+    versionedFlow:{
+    registryId:$reg,
+    bucketId:$bucket,
+    flowId:$flow,
+    version:$ver
+    }
+    }')
+
+
+    curl -k -X PUT \
+    "$NIFI_URL/nifi-api/versions/process-groups/$PG_ID" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "$PAYLOAD"
+
+
