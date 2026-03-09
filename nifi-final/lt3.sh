@@ -110,3 +110,155 @@ REG_PROPS="/tmp/reg.properties"
 cat <<EOF > "$REG_PROPS"
 baseUrl=$REG_BASE_URL
 EOF
+
+
+
+
+=============
+
+#!/bin/bash
+set -e
+
+NIFI_URL=https://nifi:8443
+REGISTRY_URL=https://nifi-registry:18443
+
+FLOW_FILE=$1
+BUCKET_ID=$2
+
+USERNAME=$NIFI_USERNAME
+PASSWORD=$NIFI_PASSWORD
+
+echo "Processing flow file: $FLOW_FILE"
+
+############################################
+# Get NiFi access token
+############################################
+TOKEN=$(curl -k -s -X POST \
+  "$NIFI_URL/nifi-api/access/token" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "username=$USERNAME&password=$PASSWORD")
+
+############################################
+# Extract Flow Name
+############################################
+FLOW_NAME=$(jq -r '.flowContents.name // .header.flowName' "$FLOW_FILE")
+
+if [ -z "$FLOW_NAME" ] || [ "$FLOW_NAME" == "null" ]; then
+  echo "Cannot determine flow name"
+  exit 1
+fi
+
+echo "Flow name: $FLOW_NAME"
+
+############################################
+# Check if flow exists in Registry
+############################################
+FLOW_ID=$(curl -k -s \
+ "$REGISTRY_URL/nifi-registry-api/buckets/$BUCKET_ID/flows" \
+ | jq -r ".[] | select(.name==\"$FLOW_NAME\") | .identifier")
+
+############################################
+# Create flow if not exists
+############################################
+if [ -z "$FLOW_ID" ]; then
+
+  echo "Creating new flow in registry..."
+
+  FLOW_ID=$(curl -k -s -X POST \
+   "$REGISTRY_URL/nifi-registry-api/buckets/$BUCKET_ID/flows" \
+   -H "Content-Type: application/json" \
+   -d "{
+      \"name\": \"$FLOW_NAME\",
+      \"description\": \"Created by automation\"
+   }" | jq -r '.identifier')
+
+fi
+
+echo "Registry Flow ID: $FLOW_ID"
+
+############################################
+# Import new flow version
+############################################
+echo "Uploading new flow version..."
+
+curl -k -s -X POST \
+ "$REGISTRY_URL/nifi-registry-api/buckets/$BUCKET_ID/flows/$FLOW_ID/versions" \
+ -H "Content-Type: application/json" \
+ -d @"$FLOW_FILE" > /dev/null
+
+############################################
+# Get latest registry version
+############################################
+LATEST_REG_VER=$(curl -k -s \
+ "$REGISTRY_URL/nifi-registry-api/buckets/$BUCKET_ID/flows/$FLOW_ID/versions/latest" \
+ | jq '.version')
+
+echo "Latest Registry Version: $LATEST_REG_VER"
+
+############################################
+# Find process group in NiFi
+############################################
+PG_ID=$(curl -k -s \
+ -H "Authorization: Bearer $TOKEN" \
+ "$NIFI_URL/nifi-api/process-groups/root" \
+ | jq -r ".processGroupFlow.flow.processGroups[] | select(.component.name==\"$FLOW_NAME\") | .component.id")
+
+############################################
+# Import PG if not exists
+############################################
+if [ -z "$PG_ID" ]; then
+
+  echo "Importing process group..."
+
+  curl -k -s -X POST \
+   "$NIFI_URL/nifi-api/process-groups/root/process-groups" \
+   -H "Authorization: Bearer $TOKEN" \
+   -H "Content-Type: application/json" \
+   -d "{
+     \"revision\": {\"version\":0},
+     \"component\":{
+        \"name\":\"$FLOW_NAME\",
+        \"position\":{\"x\":0,\"y\":0}
+     }
+   }"
+
+  sleep 5
+
+  PG_ID=$(curl -k -s \
+   -H "Authorization: Bearer $TOKEN" \
+   "$NIFI_URL/nifi-api/process-groups/root" \
+   | jq -r ".processGroupFlow.flow.processGroups[] | select(.component.name==\"$FLOW_NAME\") | .component.id")
+
+fi
+
+echo "Process Group ID: $PG_ID"
+
+############################################
+# Get revision
+############################################
+REVISION=$(curl -k -s \
+ -H "Authorization: Bearer $TOKEN" \
+ "$NIFI_URL/nifi-api/process-groups/$PG_ID" \
+ | jq '.revision.version')
+
+############################################
+# Connect PG to registry
+############################################
+echo "Updating version control..."
+
+curl -k -s -X PUT \
+ "$NIFI_URL/nifi-api/versions/process-groups/$PG_ID" \
+ -H "Authorization: Bearer $TOKEN" \
+ -H "Content-Type: application/json" \
+ -d "{
+   \"processGroupRevision\": {
+      \"version\": $REVISION
+   },
+   \"versionControlInformation\": {
+      \"bucketId\": \"$BUCKET_ID\",
+      \"flowId\": \"$FLOW_ID\",
+      \"version\": $LATEST_REG_VER
+   }
+ }"
+
+echo "Deployment complete"
