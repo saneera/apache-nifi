@@ -266,22 +266,19 @@ echo "Deployment complete"
 
 ====
 
-RESP=$(jq \
+jq -n \
 --arg bucket "$BUCKET_ID" \
 --arg flow "$FLOW_ID" \
-'
-.snapshotMetadata.bucketIdentifier=$bucket |
-.snapshotMetadata.flowIdentifier=$flow |
-.snapshotMetadata.version=1
-' "$FLOW_FILE" \
-| curl -k -s -w "%{http_code}" -o /tmp/resp.txt \
--X POST \
+--slurpfile flow "$FLOW_FILE" '
+{
+ snapshotMetadata:{
+   bucketIdentifier:$bucket,
+   flowIdentifier:$flow,
+   version:1
+ },
+ flowContents:$flow[0].flowContents
+}
+' | curl -k -X POST \
 "$REGISTRY_URL/nifi-registry-api/buckets/$BUCKET_ID/flows/$FLOW_ID/versions" \
 -H "Content-Type: application/json" \
--d @-)
-
-if [ "$RESP" != "201" ]; then
-  echo "Upload failed"
-  cat /tmp/resp.txt
-  exit 1
-fi
+-d @-
