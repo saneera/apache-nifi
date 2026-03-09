@@ -266,19 +266,29 @@ echo "Deployment complete"
 
 ====
 
-jq -n \
+PAYLOAD=$(jq \
 --arg bucket "$BUCKET_ID" \
 --arg flow "$FLOW_ID" \
---slurpfile flow "$FLOW_FILE" '
-{
- snapshotMetadata:{
-   bucketIdentifier:$bucket,
-   flowIdentifier:$flow,
-   version:1
- },
- flowContents:$flow[0].flowContents
-}
-' | curl -k -X POST \
+'
+.snapshotMetadata.bucketIdentifier=$bucket |
+.snapshotMetadata.flowIdentifier=$flow |
+.snapshotMetadata.version=1
+' "$FLOW_FILE")
+
+
+RESPONSE=$(curl -k -s -w "\n%{http_code}" \
+-X POST \
 "$REGISTRY_URL/nifi-registry-api/buckets/$BUCKET_ID/flows/$FLOW_ID/versions" \
 -H "Content-Type: application/json" \
--d @-
+-d "$PAYLOAD")
+
+BODY=$(echo "$RESPONSE" | sed '$d')
+STATUS=$(echo "$RESPONSE" | tail -n1)
+
+echo "Status: $STATUS"
+echo "Body: $BODY"
+
+if [ "$STATUS" != "201" ]; then
+  echo "Flow version upload failed"
+  exit 1
+fi
