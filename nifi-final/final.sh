@@ -263,3 +263,23 @@ PAYLOAD=$(jq -n \
     }
   }
 }')
+
+
+curl -k -s -X POST \
+"$NIFI_URL/nifi-api/process-groups/root/process-groups" \
+-H "Authorization: Bearer $TOKEN" \
+-H "Content-Type: application/json" \
+-d "{
+\"revision\":{\"version\":0},
+\"component\":{
+\"name\":\"$FLOW_NAME\",
+\"position\":{\"x\":0,\"y\":0},
+\"versionControlInformation\":{
+\"registryId\":\"$REGISTRY_ID\",
+\"bucketId\":\"$BUCKET_ID\",
+\"flowId\":\"$FLOW_ID\",
+\"version\":$VERSION
+}
+}
+}"
+
