@@ -100,9 +100,15 @@ else
 
   echo "Flow changed. Creating new version..."
 
+
   LATEST=$(curl -k -s \
-  "$REGISTRY_URL/nifi-registry-api/buckets/$BUCKET_ID/flows/$FLOW_ID/versions/latest" \
-  | jq '.version // 0')
+  "$REGISTRY_URL/nifi-registry-api/buckets/$BUCKET_ID/flows/$FLOW_ID/versions/latest")
+
+  if echo "$LATEST" | jq . >/dev/null 2>&1; then
+    REG_VERSION=$(echo "$LATEST" | jq '.version')
+  else
+    REG_VERSION=0
+  fi
 
   NEXT_VERSION=$((LATEST+1))
 
