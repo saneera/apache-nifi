@@ -283,3 +283,49 @@ curl -k -s -X POST \
 }
 }"
 
+
+
+PAYLOAD=$(jq -n \
+  --arg name "$FLOW_NAME" \
+  --arg registryId "$REGISTRY_ID" \
+  --arg bucketId "$BUCKET_ID" \
+  --arg flowId "$FLOW_ID" \
+  --argjson version "$VERSION" \
+'{
+  revision: {
+    version: 0
+  },
+  component: {
+    name: $name,
+    position: {
+      x: 0,
+      y: 0
+    },
+    versionControlInformation: {
+      registryId: $registryId,
+      bucketId: $bucketId,
+      flowId: $flowId,
+      version: $version
+    }
+  }
+}')
+
+
+echo "Payload:"
+echo "$PAYLOAD" | jq .
+
+
+RESPONSE=$(curl -k -s -w "\nHTTP_STATUS:%{http_code}" \
+  -X POST \
+  "$NIFI_URL/nifi-api/process-groups/root/process-groups" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "$PAYLOAD")
+
+
+  BODY=$(echo "$RESPONSE" | sed -e 's/HTTP_STATUS:.*//g')
+  STATUS=$(echo "$RESPONSE" | tr -d '\n' | sed -e 's/.*HTTP_STATUS://')
+
+  echo "Status: $STATUS"
+  echo "Body: $BODY"
+
