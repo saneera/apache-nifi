@@ -292,3 +292,25 @@ if [ "$STATUS" != "201" ]; then
   echo "Flow version upload failed"
   exit 1
 fi
+
+
+
+LOCAL_HASH=$(jq '
+  walk(
+    if type == "object"
+    then del(.identifier,.instanceIdentifier,.componentId,.groupId)
+    else .
+    end
+  )
+' "$FLOW_FILE" | jq -S . | sha256sum | awk '{print $1}')
+
+
+REG_HASH=$(echo "$REGISTRY_FLOW" | jq '
+  .flowContents |
+  walk(
+    if type == "object"
+    then del(.identifier,.instanceIdentifier,.componentId,.groupId)
+    else .
+    end
+  )
+' | jq -S . | sha256sum | awk '{print $1}')
