@@ -235,3 +235,31 @@ else
 fi
 
 echo "Deployment complete"
+
+
+
+
+PAYLOAD=$(jq -n \
+  --arg registryId "$REGISTRY_ID" \
+  --arg bucketId "$REGISTRY_BUCKET_ID" \
+  --arg name "$FLOW_NAME" \
+  --arg flowId "$FLOW_ID" \
+  --argjson regVersion "$REG_VERSION" \
+'{
+  revision: {
+    version: 0
+  },
+  component: {
+    name: $name,
+    position: {
+      x: 0,
+      y: 0
+    },
+    versionControlInformation: {
+      version: $regVersion,
+      flowId: $flowId,
+      bucketId: $bucketId,
+      registryId: $registryId
+    }
+  }
+}')
