@@ -4,12 +4,12 @@
 import { ref } from "vue"
 import { calculateFlowHash,calculateParamHash,combinedHash } from "../utils/hash"
 
+const emit = defineEmits(["flow-loaded"])
+
 const flowName=ref("")
 const flowHash=ref("")
 const paramHash=ref("")
 const localHash=ref("")
-
-export const localFlow = ref(null)
 
 function upload(event:any){
 
@@ -21,7 +21,7 @@ function upload(event:any){
 
     const json=JSON.parse(reader.result as string)
 
-    localFlow.value=json
+    emit("flow-loaded", json)
 
     flowName.value=json.flowContents.name
     flowHash.value=calculateFlowHash(json.flowContents)
