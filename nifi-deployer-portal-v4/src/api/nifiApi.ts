@@ -29,3 +29,34 @@ const c=client()
 const res=await c.get("/flow/process-groups/root")
 return res.data.processGroupFlow.flow.processGroups
 }
+
+
+export async function deployToNiFi(name:string, flowId:string, version:number){
+
+    const payload = {
+
+        revision:{version:0},
+
+        component:{
+            name,
+            position:{x:400,y:300},
+
+            versionControlInformation:{
+                registryId:import.meta.env.VITE_REGISTRY_ID,
+                bucketId:import.meta.env.VITE_REGISTRY_BUCKET,
+                flowId,
+                version
+            }
+
+        }
+
+    }
+
+    const res = await axios.post(
+        `${NIFI_URL}/nifi-api/process-groups/root/process-groups`,
+        payload
+    )
+
+    return res.data
+
+}

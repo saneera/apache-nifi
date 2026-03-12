@@ -39,19 +39,39 @@ async function deployFlow(flow:any){
 
   console.log("Deploying flow")
 
-  if(!flowId.value){
+  const name = flow.flowContents.name
 
-    console.log("New flow deployment")
+  let id = flowId.value
 
-    return
+  // STEP 1: create registry flow if missing
+  if(!id){
+
+    console.log("Creating new registry flow")
+
+    const created = await createRegistryFlow(name)
+
+    id = created.identifier
+
+    flowId.value = id
 
   }
 
-  const payload = flow
+  // STEP 2: get latest version
+  const latest = await getLatestFlow(id)
 
-  await uploadRegistryVersion(flowId.value, 1, payload)
+  const version = latest?.snapshotMetadata?.version || 0
 
-  console.log("Registry version uploaded")
+  const nextVersion = version + 1
+
+  console.log("Uploading version", nextVersion)
+
+  // STEP 3: upload registry version
+  await uploadRegistryVersion(id,nextVersion,flow)
+
+  // STEP 4: import or update NiFi
+  await deployToNiFi(name,id,nextVersion)
+
+  console.log("Deployment complete")
 
 }
 
