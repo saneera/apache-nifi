@@ -1,11 +1,12 @@
 
 <script setup lang="ts">
 import FlowUploader from "../components/FlowUploader.vue"
-import FlowDiffViewer from "../components/FlowDiffViewer.vue"
 </script>
 
 <template>
-<h2>Deploy Flow</h2>
+
+<h1 class="text-2xl font-bold mb-6">Deploy Flow</h1>
+
 <FlowUploader/>
-<FlowDiffViewer/>
+
 </template>

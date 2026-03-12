@@ -5,26 +5,26 @@ const store = useAppStore()
 </script>
 
 <template>
-<div style="display:flex;height:100vh;font-family:Arial">
-<aside style="width:240px;border-right:1px solid #ddd;padding:20px">
-<h3>NiFi Portal</h3>
+<div class="flex h-screen">
+<aside class="w-64 bg-gray-900 text-white p-6">
+<h2 class="text-xl font-bold mb-6">NiFi Portal</h2>
 
-<select v-model="store.environment">
+<select v-model="store.environment" class="w-full text-black p-2 rounded mb-6">
 <option>DEV</option>
 <option>TEST</option>
 <option>PROD</option>
 </select>
 
-<ul style="list-style:none;padding:0;margin-top:20px">
-<li><router-link to="/">Dashboard</router-link></li>
-<li><router-link to="/deploy">Deploy Flow</router-link></li>
-<li><router-link to="/registry">Registry</router-link></li>
-<li><router-link to="/parameters">Parameters</router-link></li>
-<li><router-link to="/logs">Logs</router-link></li>
-</ul>
+<nav class="space-y-3">
+<router-link class="block hover:text-blue-400" to="/">Dashboard</router-link>
+<router-link class="block hover:text-blue-400" to="/deploy">Deploy Flow</router-link>
+<router-link class="block hover:text-blue-400" to="/registry">Registry</router-link>
+<router-link class="block hover:text-blue-400" to="/parameters">Parameters</router-link>
+<router-link class="block hover:text-blue-400" to="/logs">Logs</router-link>
+</nav>
 </aside>
 
-<main style="flex:1;padding:20px">
+<main class="flex-1 p-8 overflow-auto bg-gray-100">
 <router-view/>
 </main>
 </div>
