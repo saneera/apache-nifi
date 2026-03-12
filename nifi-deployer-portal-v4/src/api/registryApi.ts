@@ -10,3 +10,14 @@ const res=await axios.get(
 )
 return res.data
 }
+
+
+export async function getLatestFlow(bucketId:string, flowId:string){
+
+    const res = await axios.get(
+        `${REG_URL}/nifi-registry-api/buckets/${bucketId}/flows/${flowId}/versions/latest`
+    )
+
+    return res.data
+
+}
