@@ -7,15 +7,13 @@ import Registry from "../views/Registry.vue"
 import Parameters from "../views/Parameters.vue"
 import Logs from "../views/Logs.vue"
 
-const routes = [
+export default createRouter({
+ history: createWebHistory(),
+ routes: [
  { path: "/", component: Dashboard },
  { path: "/deploy", component: Deploy },
  { path: "/registry", component: Registry },
  { path: "/parameters", component: Parameters },
  { path: "/logs", component: Logs }
-]
-
-export default createRouter({
- history: createWebHistory(),
- routes
+ ]
 })
