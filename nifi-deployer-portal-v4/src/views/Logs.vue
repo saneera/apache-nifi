@@ -1,16 +1,19 @@
 
 <script setup lang="ts">
-import LogConsole from "../components/LogConsole.vue"
+import LogConsole from '../components/LogConsole.vue'
 
 const logs=[
-"Authenticating",
-"Fetching flows",
-"Comparing hashes",
-"Deployment ready"
+'Checking registry',
+'Uploading version',
+'Deploying flow',
+'Deployment complete'
 ]
 </script>
 
 <template>
-<h2>Logs</h2>
+
+<h1 class="text-3xl font-bold mb-6">Logs</h1>
+
 <LogConsole :logs="logs"/>
+
 </template>

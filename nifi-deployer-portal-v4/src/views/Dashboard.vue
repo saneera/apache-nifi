@@ -1,46 +1,30 @@
 
-<script setup lang="ts">
-import { ref,onMounted } from "vue"
-import { login,getRootFlows } from "../api/nifiApi"
-
-const flows = ref([])
-
-onMounted(async()=>{
- await login()
- flows.value = await getRootFlows()
-})
-</script>
-
 <template>
 
-<h1 class="text-2xl font-bold mb-6">Dashboard</h1>
+<h1 class="text-3xl font-bold mb-8">Dashboard</h1>
 
-<table class="w-full bg-white shadow rounded">
+<div class="grid grid-cols-4 gap-6">
 
-<thead class="bg-gray-200">
-<tr>
-<th class="p-3 text-left">Flow</th>
-<th class="p-3 text-left">ID</th>
-<th class="p-3 text-left">Position</th>
-</tr>
-</thead>
+<div class="bg-white p-6 shadow rounded">
+<h3 class="font-semibold">Flows</h3>
+<p class="text-4xl mt-2">--</p>
+</div>
 
-<tbody>
+<div class="bg-white p-6 shadow rounded">
+<h3 class="font-semibold">Registry Versions</h3>
+<p class="text-4xl mt-2">--</p>
+</div>
 
-<tr v-for="f in flows" :key="f.id" class="border-t hover:bg-gray-50">
+<div class="bg-white p-6 shadow rounded">
+<h3 class="font-semibold">Deployments</h3>
+<p class="text-4xl mt-2">--</p>
+</div>
 
-<td class="p-3">{{f.component.name}}</td>
+<div class="bg-white p-6 shadow rounded">
+<h3 class="font-semibold">Failed</h3>
+<p class="text-4xl mt-2">--</p>
+</div>
 
-<td class="p-3 text-xs text-gray-500">{{f.id}}</td>
-
-<td class="p-3">
-{{f.component.position.x}}, {{f.component.position.y}}
-</td>
-
-</tr>
-
-</tbody>
-
-</table>
+</div>
 
 </template>
