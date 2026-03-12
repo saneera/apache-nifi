@@ -1,16 +1,15 @@
-
 <script setup lang="ts">
 
 import { ref } from "vue"
-import { calculateFlowHash,calculateParamHash,combinedHash } from "../utils/hash"
+import { uploadRegistryVersion } from "../api/deployApi"
 
-const emit = defineEmits(["flow-loaded"])
-
+const emit = defineEmits(["flow-loaded","deploy"])
 
 const flowName=ref("")
 const flowHash=ref("")
 const paramHash=ref("")
 const localHash=ref("")
+const flowJson=ref(null)
 
 function upload(event:any){
 
@@ -22,12 +21,11 @@ function upload(event:any){
 
     const json=JSON.parse(reader.result as string)
 
+    flowJson.value = json
+
     emit("flow-loaded", json)
 
     flowName.value=json.flowContents.name
-    flowHash.value=calculateFlowHash(json.flowContents)
-    paramHash.value=calculateParamHash(json.parameterContexts)
-    localHash.value=combinedHash(flowHash.value,paramHash.value)
 
   }
 
@@ -35,27 +33,33 @@ function upload(event:any){
 
 }
 
+function deploy(){
+
+  emit("deploy", flowJson.value)
+
+}
+
 </script>
 
 <template>
 
-<div class="bg-white p-6 rounded shadow max-w-xl">
+  <div class="bg-white p-6 rounded shadow max-w-xl">
 
-<input type="file" @change="upload" class="mb-4"/>
+    <input type="file" @change="upload" class="mb-4"/>
 
-<div v-if="flowName" class="space-y-2">
+    <div v-if="flowName">
 
-<p><b>Flow:</b> {{flowName}}</p>
-<p><b>Flow Hash:</b> {{flowHash}}</p>
-<p><b>Param Hash:</b> {{paramHash}}</p>
-<p><b>Combined Hash:</b> {{localHash}}</p>
+      <p><b>Flow:</b> {{flowName}}</p>
 
-<button class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
-Deploy
-</button>
+      <button
+          class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 mt-4"
+          @click="deploy"
+      >
+        Deploy
+      </button>
 
-</div>
+    </div>
 
-</div>
+  </div>
 
 </template>

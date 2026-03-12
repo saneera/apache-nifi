@@ -4,9 +4,11 @@ import { ref } from "vue"
 import FlowUploader from "../components/FlowUploader.vue"
 import FlowDiffViewer from "../components/FlowDiffViewer.vue"
 import { getRegistryFlows, getLatestFlow } from "../api/registryApi"
+import { uploadRegistryVersion } from "../api/deployApi"
 
 const localFlow = ref(null)
 const registryFlow = ref(null)
+const flowId = ref(null)
 
 async function handleFlowUpload(flow:any){
 
@@ -20,19 +22,36 @@ async function handleFlowUpload(flow:any){
 
   if(!registryMeta){
 
-    console.log("Flow not found in registry")
-
     registryFlow.value = null
     return
 
   }
 
-  const version = await getLatestFlow(registryMeta.identifier)
+  flowId.value = registryMeta.identifier
+
+  const version = await getLatestFlow(flowId.value)
 
   registryFlow.value = version.flowContents
 
-  console.log("Local flow", localFlow.value)
-  console.log("Registry flow", registryFlow.value)
+}
+
+async function deployFlow(flow:any){
+
+  console.log("Deploying flow")
+
+  if(!flowId.value){
+
+    console.log("New flow deployment")
+
+    return
+
+  }
+
+  const payload = flow
+
+  await uploadRegistryVersion(flowId.value, 1, payload)
+
+  console.log("Registry version uploaded")
 
 }
 
@@ -44,7 +63,10 @@ async function handleFlowUpload(flow:any){
     Deploy Flow
   </h1>
 
-  <FlowUploader @flow-loaded="handleFlowUpload"/>
+  <FlowUploader
+      @flow-loaded="handleFlowUpload"
+      @deploy="deployFlow"
+  />
 
   <FlowDiffViewer
       :localFlow="localFlow"
