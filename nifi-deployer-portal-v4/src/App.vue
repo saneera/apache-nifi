@@ -1,8 +1,8 @@
 
 <script setup lang="ts">
-import Layout from "./layouts/MainLayout.vue"
+import MainLayout from "./layouts/MainLayout.vue"
 </script>
 
 <template>
-<Layout/>
+<MainLayout/>
 </template>

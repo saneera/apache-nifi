@@ -5,9 +5,11 @@ defineProps({logs:Array})
 
 <template>
 
-<div class="bg-black text-green-400 p-4 rounded font-mono text-sm">
+<div class="bg-black text-green-400 p-4 rounded font-mono">
 
-<div v-for="l in logs">{{l}}</div>
+<div v-for="l in logs">
+{{l}}
+</div>
 
 </div>
 

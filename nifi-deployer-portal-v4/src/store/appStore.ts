@@ -1,8 +1,12 @@
 
-import { defineStore } from "pinia"
+import { defineStore } from 'pinia'
 
-export const useAppStore = defineStore("app",{
+export const useAppStore = defineStore('app',{
+
 state:()=>({
-environment:"DEV"
+
+environment:'DEV'
+
 })
+
 })

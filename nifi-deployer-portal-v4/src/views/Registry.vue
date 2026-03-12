@@ -1,20 +1,10 @@
 
-<script setup lang="ts">
-import { ref,onMounted } from "vue"
-import { getRegistryFlows } from "../api/registryApi"
-
-const flows = ref([])
-
-onMounted(async()=>{
- flows.value = await getRegistryFlows()
-})
-</script>
-
 <template>
-<h2>Registry Browser</h2>
-<ul>
-<li v-for="f in flows" :key="f.identifier">
-{{f.name}} ({{f.identifier}})
-</li>
-</ul>
+
+<h1 class="text-3xl font-bold mb-6">Registry Browser</h1>
+
+<div class="bg-white p-6 shadow rounded">
+Registry flow list will appear here.
+</div>
+
 </template>
