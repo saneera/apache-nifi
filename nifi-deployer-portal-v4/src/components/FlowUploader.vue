@@ -1,5 +1,6 @@
 
 <script setup lang="ts">
+
 import { ref } from "vue"
 import { calculateFlowHash,calculateParamHash,combinedHash } from "../utils/hash"
 
@@ -8,21 +9,31 @@ const flowHash=ref("")
 const paramHash=ref("")
 const localHash=ref("")
 
+export const localFlow = ref(null)
+
 function upload(event:any){
-const file=event.target.files[0]
-const reader=new FileReader()
 
-reader.onload=()=>{
-const json=JSON.parse(reader.result as string)
+  const file=event.target.files[0]
 
-flowName.value=json.flowContents.name
-flowHash.value=calculateFlowHash(json.flowContents)
-paramHash.value=calculateParamHash(json.parameterContexts)
-localHash.value=combinedHash(flowHash.value,paramHash.value)
+  const reader=new FileReader()
+
+  reader.onload=()=>{
+
+    const json=JSON.parse(reader.result as string)
+
+    localFlow.value=json
+
+    flowName.value=json.flowContents.name
+    flowHash.value=calculateFlowHash(json.flowContents)
+    paramHash.value=calculateParamHash(json.parameterContexts)
+    localHash.value=combinedHash(flowHash.value,paramHash.value)
+
+  }
+
+  reader.readAsText(file)
+
 }
 
-reader.readAsText(file)
-}
 </script>
 
 <template>
