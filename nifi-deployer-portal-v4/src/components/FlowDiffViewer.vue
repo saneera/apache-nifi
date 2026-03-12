@@ -1,14 +1,14 @@
 <script setup lang="ts">
 
 import { ref, watch } from "vue"
-import { calculateDiff, formatDiff } from "../utils/diff"
+import { calculateDiff } from "../utils/diff"
 
 const props = defineProps({
   localFlow: Object,
   registryFlow: Object
 })
 
-const diff = ref("")
+const diff = ref(null)
 
 watch(
     () => props.localFlow,
@@ -16,16 +16,15 @@ watch(
 
       if(props.localFlow && props.registryFlow){
 
-        const d = calculateDiff(
+        diff.value = calculateDiff(
             props.localFlow,
             props.registryFlow
         )
 
-        diff.value = formatDiff(d)
-
       }
 
-    }
+    },
+    { immediate: true }
 )
 
 </script>
@@ -42,7 +41,7 @@ watch(
         class="bg-black text-green-400 p-4 rounded overflow-auto text-sm"
     >
 
-{{ diff || "No differences detected" }}
+{{ diff ? JSON.stringify(diff,null,2) : "No diff available yet" }}
 
 </pre>
 
