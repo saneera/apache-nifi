@@ -1,0 +1,34 @@
+#apiVersion: v1
+#kind: Service
+#metadata:
+#  name: openfire-service
+#spec:
+#  type: NodePort
+#  selector:
+#    app: openfire
+#  ports:
+#    - name: admin-console
+#      port: 9090
+#      targetPort: 9090
+#      nodePort: 30090
+#    - name: xmpp
+#      port: 5222
+#      targetPort: 5222
+#      nodePort: 30522
+
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: openfire
+spec:
+  type: ClusterIP
+  selector:
+    app: openfire
+  ports:
+    - name: admin
+      port: 9090
+      targetPort: 9090
+    - name: xmpp
+      port: 5222
+      targetPort: 5222

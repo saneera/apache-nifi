@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openfire
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openfire
+  template:
+    metadata:
+      labels:
+        app: openfire
+    spec:
+      containers:
+        - name: openfire
+          image: ghcr.io/igniterealtime/openfire@sha256:d17733fa763d0a3390bfaaacc169f91e80f34f39d7958911eb9704314614d86c
+          ports:
+            - containerPort: 9090
+            - containerPort: 5222
+            - containerPort: 7070
+          env:
+            - name: OPENFIRE_DB_TYPE
+              value: mysql
+            - name: OPENFIRE_DB_HOST
+              value: mysql
+            - name: OPENFIRE_DB_PORT
+              value: "3306"
+            - name: OPENFIRE_DB_NAME
+              value: openfire
+            - name: OPENFIRE_DB_USER
+              value: openfire
+            - name: OPENFIRE_DB_PASSWORD
+              value: openfirepass
