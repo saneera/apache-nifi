@@ -432,3 +432,14 @@ for ORIGINAL_FLOW in /flows/*.json; do
 done
 
 log_section "All flows processed"
+
+
+jq '.parameterContexts // .flowContents.parameterContexts' "$FLOW_FILE"
+
+(.. | objects | select(has("parameters")) | .parameters) |=
+map(
+  if .name == "fragment-manager-url"
+  then .value = $fragmentUrl
+  else .
+  end
+)
