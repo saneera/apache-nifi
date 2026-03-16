@@ -433,13 +433,54 @@ done
 
 log_section "All flows processed"
 
+########################################
+# Update Parameter Context in NiFi
+########################################
 
-jq '.parameterContexts // .flowContents.parameterContexts' "$FLOW_FILE"
+update_parameter_context() {
 
-(.. | objects | select(has("parameters")) | .parameters) |=
-map(
-  if .name == "fragment-manager-url"
-  then .value = $fragmentUrl
-  else .
-  end
-)
+ log_info "Updating parameter context"
+
+ PC_JSON=$(curl -k -s \
+ "$NIFI_URL/nifi-api/flow/parameter-contexts" \
+ -H "$AUTH_HEADER")
+
+ PC_ID=$(echo "$PC_JSON" | jq -r '.parameterContexts[]
+ | select(.component.name=="circuit-manager-params")
+ | .component.id // empty')
+
+ if [ -z "$PC_ID" ]; then
+  log_warn "Parameter context 'circuit-manager-params' not found"
+  return
+ fi
+
+ CURRENT=$(curl -k -s \
+ "$NIFI_URL/nifi-api/parameter-contexts/$PC_ID" \
+ -H "$AUTH_HEADER")
+
+ REVISION=$(echo "$CURRENT" | jq -r '.revision.version')
+
+ UPDATED=$(echo "$CURRENT" | jq \
+ --arg url "$FRAGMENT_MANAGER_URL" '
+ .component.parameters |= map(
+   if .parameter.name=="fragment-manager-url"
+   then .parameter.value=$url
+   else .
+   end
+ )')
+
+ PAYLOAD=$(echo "$UPDATED" | jq \
+ --argjson rev "$REVISION" '
+ {
+   revision:{version:$rev},
+   component:.component
+ }')
+
+ curl -k -s -X PUT \
+ "$NIFI_URL/nifi-api/parameter-contexts/$PC_ID" \
+ -H "$AUTH_HEADER" \
+ -H "Content-Type: application/json" \
+ -d "$PAYLOAD"
+
+ log_info "Parameter context updated"
+}
