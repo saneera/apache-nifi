@@ -1,0 +1,46 @@
+{
+  "info": {
+    "name": "Openfire Chat API",
+    "_postman_id": "openfire-chat-api",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Login",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8080/auth/login"
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"username\":\"john\"}"
+        }
+      }
+    },
+    {
+      "name": "Upload File",
+      "request": {
+        "method": "POST",
+        "url": {
+          "raw": "http://localhost:8080/api/files"
+        },
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

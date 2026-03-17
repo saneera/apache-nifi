@@ -1,0 +1,13 @@
+
+server:
+  port: 8080
+
+openfire:
+  url: http://localhost:9090/plugins/restapi/v1
+  secret: secret123
+  domain: localhost
+  host: localhost
+  xmpp-port: 5222
+
+file:
+  upload-dir: uploads/
