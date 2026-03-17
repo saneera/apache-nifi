@@ -1,0 +1,17 @@
+
+----
+
+#############################################
+# Metrics (Prometheus)
+#############################################
+nifi.metrics.enabled=true
+nifi.metrics.service.address=0.0.0.0
+nifi.metrics.service.port=9092
+
+nifi.metrics.publisher.prometheus.enabled=true
+nifi.metrics.publisher.prometheus.endpoint=/metrics
+
+
+ports:
+  - name: metrics
+    containerPort: 9092
