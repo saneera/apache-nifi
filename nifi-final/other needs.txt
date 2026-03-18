@@ -15,3 +15,134 @@ nifi.metrics.publisher.prometheus.endpoint=/metrics
 ports:
   - name: metrics
     containerPort: 9092
+
+
+ OpenId Connect
+
+ ✅ Step 1 — Configure Keycloak
+
+ 1. Create a Realm
+ 	•	Example: nifi-realm
+
+ ⸻
+
+ 2. Create a Client
+ 	•	Client ID: nifi
+ 	•	Client Type: OpenID Connect
+ 	•	Access Type: confidential
+
+ ⸻
+
+ 3. Set Redirect URI
+
+ ```
+ https://<your-nifi-domain>/nifi-api/access/oidc/callback
+ ```
+
+ example
+ https://nifi.mycompany.com/nifi-api/access/oidc/callback
+
+ 4. Get Client Secret
+ 	•	Go to:
+ 	•	Clients → nifi → Credentials
+ 	•	Copy:
+ 	•	client-secret
+
+ ⸻
+
+ 5. (Optional but Recommended) Create Roles / Groups
+
+ Example:
+ 	•	nifi-admin
+ 	•	nifi-user
+
+ You’ll map these later to NiFi policies.
+
+ ⸻
+
+ ✅ Step 2 — Update NiFi Configuration
+
+ You need to update nifi.properties.
+
+ nifi.security.user.login.identity.provider=oidc-provider
+
+ nifi.security.user.oidc.discovery.url=https://<keycloak-host>/realms/nifi-realm/.well-known/openid-configuration
+
+ nifi.security.user.oidc.client.id=nifi
+ nifi.security.user.oidc.client.secret=<client-secret>
+
+ nifi.security.user.oidc.claim.identifying.user=preferred_username
+ nifi.security.user.oidc.claim.groups=groups
+
+ nifi.security.user.oidc.truststore.strategy=JDK
+
+
+ 🧠 Important Notes
+ 	•	discovery.url must be reachable from inside the cluster
+ 	•	If Keycloak is inside K8s:
+
+ 	```
+ 	http://keycloak:8080/realms/nifi-realm/.well-known/openid-configuration
+ 	```
+
+ 	✅ Step 3 — Kubernetes (Kustomize) Changes
+
+    You likely have:
+    	•	ConfigMap for nifi.properties
+    	•	Deployment/StatefulSet
+
+    ⸻
+
+    Option A — ConfigMap update
+
+    Add OIDC configs into your nifi.properties ConfigMap:
+
+
+    ```
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: nifi-properties
+    data:
+      nifi.properties: |
+        nifi.security.user.login.identity.provider=oidc-provider
+        nifi.security.user.oidc.discovery.url=https://keycloak:8443/realms/nifi-realm/.well-known/openid-configuration
+        nifi.security.user.oidc.client.id=nifi
+        nifi.security.user.oidc.client.secret=YOUR_SECRET
+
+        ```
+
+
+
+        Option B — Use Secrets (Recommended 🔥)
+
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: nifi-oidc-secret
+        type: Opaque
+        stringData:
+          client-secret: YOUR_SECRET
+
+
+
+✅ Step 4 — Authorizers (VERY IMPORTANT)
+
+OIDC only authenticates users. You still need authorization.
+
+⸻
+
+Update authorizers.xml
+
+<userGroupProvider>
+    <identifier>file-user-group-provider</identifier>
+    <class>org.apache.nifi.authorization.FileUserGroupProvider</class>
+</userGroupProvider>
+
+<accessPolicyProvider>
+    <identifier>file-access-policy-provider</identifier>
+    <class>org.apache.nifi.authorization.FileAccessPolicyProvider</class>
+    <property name="Initial Admin Identity">admin</property>
+</accessPolicyProvider>
+
+preferred_username = admin
