@@ -2,20 +2,27 @@
 import { onMounted, ref, watch } from 'vue'
 import * as monaco from 'monaco-editor'
 
-const props = defineProps<{ original: string, modified: string }>()
+const props = defineProps<{
+  original: string
+  modified: string
+}>()
+
 const el = ref<HTMLDivElement | null>(null)
+
 let editor: any
+let originalModel: any
+let modifiedModel: any
 
 onMounted(() => {
   if (!el.value) return
-
-  const originalModel = monaco.editor.createModel(props.original || '{}', 'json')
-  const modifiedModel = monaco.editor.createModel(props.modified || '{}', 'json')
 
   editor = monaco.editor.createDiffEditor(el.value, {
     automaticLayout: true,
     theme: 'vs-dark'
   })
+
+  originalModel = monaco.editor.createModel(props.original || '{}', 'json')
+  modifiedModel = monaco.editor.createModel(props.modified || '{}', 'json')
 
   editor.setModel({
     original: originalModel,
@@ -23,14 +30,25 @@ onMounted(() => {
   })
 })
 
-watch(() => [props.original, props.modified], ([o, m]) => {
-  if (!editor) return
-  const model = editor.getModel()
-  model.original.setValue(o || '{}')
-  model.modified.setValue(m || '{}')
-})
+watch(
+    () => props.modified,
+    (newVal) => {
+      if (modifiedModel) {
+        modifiedModel.setValue(newVal || '{}')
+      }
+    }
+)
+
+watch(
+    () => props.original,
+    (newVal) => {
+      if (originalModel) {
+        originalModel.setValue(newVal || '{}')
+      }
+    }
+)
 </script>
 
 <template>
-  <div ref="el" style="height: 500px; border: 1px solid #e5e7eb"></div>
+  <div ref="el" style="height: 500px;"></div>
 </template>
