@@ -8,10 +8,19 @@ let editor: any
 
 onMounted(() => {
   if (!el.value) return
-  editor = monaco.editor.createDiffEditor(el.value, { automaticLayout: true })
+
   const originalModel = monaco.editor.createModel(props.original || '{}', 'json')
   const modifiedModel = monaco.editor.createModel(props.modified || '{}', 'json')
-  editor.setModel({ original: originalModel, modified: modifiedModel })
+
+  editor = monaco.editor.createDiffEditor(el.value, {
+    automaticLayout: true,
+    theme: 'vs-dark'
+  })
+
+  editor.setModel({
+    original: originalModel,
+    modified: modifiedModel
+  })
 })
 
 watch(() => [props.original, props.modified], ([o, m]) => {
