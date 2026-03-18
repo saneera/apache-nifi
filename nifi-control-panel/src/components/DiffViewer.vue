@@ -12,15 +12,12 @@ const el = ref<HTMLDivElement | null>(null)
 let editor: monaco.editor.IStandaloneDiffEditor | null = null
 
 const createModels = () => {
-  const originalModel = monaco.editor.createModel(
-      props.original || '{}',
-      'json'
-  )
+  const old = editor?.getModel()
+  old?.original?.dispose()
+  old?.modified?.dispose()
 
-  const modifiedModel = monaco.editor.createModel(
-      props.modified || '{}',
-      'json'
-  )
+  const originalModel = monaco.editor.createModel(props.original || '{}', 'json')
+  const modifiedModel = monaco.editor.createModel(props.modified || '{}', 'json')
 
   editor?.setModel({
     original: originalModel,
