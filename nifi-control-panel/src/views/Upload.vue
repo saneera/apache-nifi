@@ -6,9 +6,16 @@ const file = ref<File|null>(null)
 const localJson = ref('{}')
 const registryJson = ref('{}')
 
+
 const onFile = async (e: any) => {
-  file.value = e.target.files[0]
-  localJson.value = await file.value.text()
+  const f = e.target.files[0]
+  if (!f) return
+
+  const text = await f.text()
+
+  console.log('Loaded file:', text) // debug
+
+  localJson.value = text
 }
 
 function simpleHash(s: string) {
