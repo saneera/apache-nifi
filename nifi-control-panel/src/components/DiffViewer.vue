@@ -9,9 +9,24 @@ const props = defineProps<{
 
 const el = ref<HTMLDivElement | null>(null)
 
-let editor: any
-let originalModel: any
-let modifiedModel: any
+let editor: monaco.editor.IStandaloneDiffEditor | null = null
+
+const createModels = () => {
+  const originalModel = monaco.editor.createModel(
+      props.original || '{}',
+      'json'
+  )
+
+  const modifiedModel = monaco.editor.createModel(
+      props.modified || '{}',
+      'json'
+  )
+
+  editor?.setModel({
+    original: originalModel,
+    modified: modifiedModel
+  })
+}
 
 onMounted(() => {
   if (!el.value) return
@@ -21,30 +36,18 @@ onMounted(() => {
     theme: 'vs-dark'
   })
 
-  originalModel = monaco.editor.createModel(props.original || '{}', 'json')
-  modifiedModel = monaco.editor.createModel(props.modified || '{}', 'json')
-
-  editor.setModel({
-    original: originalModel,
-    modified: modifiedModel
-  })
+  createModels()
 })
 
+/**
+ * 🔥 KEY FIX: recreate models when props change
+ */
 watch(
-    () => props.modified,
-    (newVal) => {
-      if (modifiedModel) {
-        modifiedModel.setValue(newVal || '{}')
-      }
-    }
-)
+    () => [props.original, props.modified],
+    () => {
+      if (!editor) return
 
-watch(
-    () => props.original,
-    (newVal) => {
-      if (originalModel) {
-        originalModel.setValue(newVal || '{}')
-      }
+      createModels()
     }
 )
 </script>
