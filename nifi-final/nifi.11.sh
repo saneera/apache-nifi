@@ -463,3 +463,15 @@ get_next_position() {
 
  echo "POS_X=$POS_X"
 }
+
+
+jq --argjson params "$PARAM_JSON" '
+(.. | objects | select(has("parameters")) | .parameters) |=
+map(
+  .parameter.name as $n
+  | if $params[$n]
+    then .parameter.value = $params[$n]
+    else .
+    end
+)
+' "$FLOW_FILE" > "$TMP"
