@@ -6,13 +6,19 @@ import { useToast } from 'vue-toastification'
 const api = axios.create()
 
 api.interceptors.request.use((config) => {
-    const loader = useLoadingStore()
     const store = useNifiStore()
-
-    loader.start()
 
     if (store.token) {
         config.headers.Authorization = `Bearer ${store.token}`
+    }
+
+    config.headers['Content-Type'] = 'application/json'
+
+    // 🔥 Add CSRF token from cookie
+    const match = document.cookie.match(/__Secure-Request-Token=([^;]+)/)
+
+    if (match) {
+        config.headers['Request-Token'] = match[1]
     }
 
     return config
