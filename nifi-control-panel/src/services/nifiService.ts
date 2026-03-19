@@ -36,10 +36,26 @@ async flows() {
     return api.get(`${s.registryUrl}/nifi-registry-api/flows/${flowId}/versions`)
   },
 
+
   async parameterContexts() {
-    const s = useNifiStore()
-    return api.get(`${s.nifiUrl}/nifi-api/flow/parameter-contexts`, { headers: this.headers() })
-  },
+    const store = useNifiStore()
+
+    const res = await api.get(
+        `${store.nifiUrl}/nifi-api/flow/parameter-contexts`
+    )
+
+    return res.data.parameterContexts
+},
+
+async parameterContext(id: string) {
+    const store = useNifiStore()
+
+    const res = await api.get(
+        `${store.nifiUrl}/nifi-api/parameter-contexts/${id}`
+    )
+
+    return res.data.component
+}
 
   async updateParameterContext(id: string, payload: any) {
     const s = useNifiStore()
