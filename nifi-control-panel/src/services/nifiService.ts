@@ -55,7 +55,18 @@ async parameterContext(id: string) {
     )
 
     return res.data.component
-}
+},
+
+    async registryFlow(flowId: string) {
+        const store = useNifiStore()
+
+        // get latest version
+        const res = await api.get(
+            `/nifi-registry-api/buckets/${store.bucketId}/flows/${flowId}/versions/latest`
+        )
+
+        return res.data
+    }
 
   async updateParameterContext(id: string, payload: any) {
     const s = useNifiStore()
