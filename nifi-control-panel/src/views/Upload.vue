@@ -2,20 +2,54 @@
 import { ref } from 'vue'
 import DiffViewer from '../components/DiffViewer.vue'
 
+import { normalizeFlow } from '../utils/normalizeFlow'
+import {nifiService} from "../services/nifiService";
+
 const file = ref<File|null>(null)
 const localJson = ref('{}')
 const registryJson = ref('{}')
 
 
 const onFile = async (e: any) => {
-  const f = e.target.files[0]
-  if (!f) return
+  const file = e.target.files[0]
+  if (!file) return
 
-  const text = await f.text()
+  const text = await file.text()
 
-  console.log('Loaded file:', text) // debug
+  try {
+    const parsed = JSON.parse(text)
 
-  localJson.value = text
+    const normalized = normalizeFlow(parsed)
+
+    localJson.value = JSON.stringify(normalized, null, 2)
+
+    // 🔥 extract flow name
+    const flowName =
+        parsed.flowContents?.name ||
+        parsed.header?.flowName
+
+// 🔥 load registry version
+    await loadRegistryFlow(flowName)
+  } catch {
+    localJson.value = text
+  }
+}
+
+const loadRegistryFlow = async (flowName: string) => {
+  const flows = await nifiService.registryFlows()
+
+  const match = flows.find((f: any) => f.name === flowName)
+
+  if (!match) {
+    console.warn('Flow not found in registry')
+    return
+  }
+
+  const snapshot = await nifiService.registryFlow(match.identifier)
+
+  const normalized = normalizeFlow(snapshot)
+
+  registryJson.value = JSON.stringify(normalized, null, 2)
 }
 
 function simpleHash(s: string) {
