@@ -25,26 +25,6 @@ api.interceptors.request.use((config) => {
 })
 
 
-
-async getLatestVersion(flowId: string) {
-    const store = useNifiStore()
-
-    try {
-        const res = await api.get(
-            `${store.registryUrl}/nifi-registry-api/buckets/${store.bucketId}/flows/${flowId}/versions/latest`
-        )
-
-        return res.data.snapshotMetadata.version
-    } catch (e: any) {
-
-        // 🔥 handle 404 (no versions yet)
-        if (e.response?.status === 404) {
-            return 0
-        }
-
-        throw e
-    }
-}
 api.interceptors.response.use(
     (response) => {
         const loader = useLoadingStore()

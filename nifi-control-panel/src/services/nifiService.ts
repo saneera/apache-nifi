@@ -66,18 +66,36 @@ async parameterContext(id: string) {
         )
 
         return res.data
-    }
+    },
 
   async updateParameterContext(id: string, payload: any) {
     const s = useNifiStore()
     return api.put(`${s.nifiUrl}/nifi-api/parameter-contexts/${id}`, payload, { headers: this.headers() })
   },
 
-  // optional: deploy trigger endpoint (if you later add a gateway)
-  async triggerDeploy(flowName: string) {
-    const s = useNifiStore()
-    const url = import.meta.env.VITE_DEPLOY_URL
-    if (!url) throw new Error('VITE_DEPLOY_URL not set')
-    return api.post(`${url}/deploy/${encodeURIComponent(flowName)}`, {}, { headers: this.headers() })
-  }
+    async flowVersions(flowId: string) {,
+        const store = useNifiStore()
+
+        const res = await api.get(
+            `/nifi-registry-api/buckets/${store.bucketId}/flows/${flowId}/versions`
+        )
+
+        return res.data
+    },
+
+    async getCurrentVersion(flowName: string) {
+        const store = useNifiStore()
+
+        const res = await api.get(
+            `${store.nifiUrl}/nifi-api/flow/process-groups/root`
+        )
+
+        const pg = res.data.processGroupFlow.flow.processGroups.find(
+            (p: any) => p.component.name === flowName
+        )
+
+        if (!pg) return null
+
+        return pg.component.versionControlInformation?.version || null
+    }
 }
