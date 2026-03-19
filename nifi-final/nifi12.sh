@@ -36,7 +36,7 @@ log_section() {
 }
 
 ########################################
-# Wait for NiFi
+# Wait + Auth
 ########################################
 
 wait_for_nifi() {
@@ -50,10 +50,6 @@ wait_for_nifi() {
 
  log_info "NiFi API is ready"
 }
-
-########################################
-# Authenticate
-########################################
 
 authenticate() {
  TOKEN=$(curl -k -s -X POST \
@@ -76,16 +72,22 @@ get_root_pg() {
 }
 
 ########################################
-# Position
+# Position (FIXED)
 ########################################
 
 get_next_position() {
+
  MAX_X=$(curl -k -s \
  "$NIFI_URL/nifi-api/flow/process-groups/$ROOT_PG" \
  -H "$AUTH_HEADER" |
  jq '[.processGroupFlow.flow.processGroups[].position.x] | max')
 
- POS_X=${MAX_X:-300}
+ if [ "$MAX_X" = "null" ] || [ -z "$MAX_X" ]; then
+   POS_X=300
+ else
+   POS_X=$MAX_X
+ fi
+
  POS_X=$((POS_X + POSITION_STEP))
  POS_Y=300
 }
@@ -123,9 +125,12 @@ inject_parameters() {
 
  jq --argjson params "$PARAM_JSON" '
  (.. | objects | select(has("parameters")) | .parameters) |=
- map(if .parameter.name as $n | $params[$n]
-     then .parameter.value=$params[$n]
-     else . end)
+ map(
+   if (.parameter? and .parameter.name? and $params[.parameter.name]? != null)
+   then .parameter.value = $params[.parameter.name]
+   else .
+   end
+ )
  ' "$FLOW_FILE" > "$TMP"
 
  FLOW_FILE="$TMP"
@@ -225,8 +230,7 @@ find_pg() {
 
 import_flow() {
 
- DEPLOY_TIME=$(date +"%Y-%m-%d %H:%M:%S")
- COMMENTS="version:$NEXT_VERSION | hash:$LOCAL_HASH | deployed:$DEPLOY_TIME"
+ COMMENTS="version:$NEXT_VERSION | hash:$LOCAL_HASH | $(date)"
 
  PAYLOAD=$(jq -n \
  --arg name "$FLOW_NAME" \
@@ -297,26 +301,27 @@ update_flow_version() {
 }
 
 ########################################
-# Update comments
+# SAFE COMMENT UPDATE (FIXED)
 ########################################
 
 update_pg_comments() {
 
- DEPLOY_TIME=$(date +"%Y-%m-%d %H:%M:%S")
- COMMENTS="version:$NEXT_VERSION | hash:$LOCAL_HASH | deployed:$DEPLOY_TIME"
-
- REVISION=$(curl -k -s \
+ PG_JSON=$(curl -k -s \
  "$NIFI_URL/nifi-api/process-groups/$PG_ID" \
- -H "$AUTH_HEADER" | jq -r '.revision.version')
+ -H "$AUTH_HEADER")
 
- PAYLOAD=$(jq -n \
- --argjson rev "$REVISION" \
- --arg id "$PG_ID" \
- --arg name "$FLOW_NAME" \
- --arg comments "$COMMENTS" \
- '
- {revision:{version:$rev},
-  component:{id:$id,name:$name,comments:$comments}}')
+ COMMENT="version:$NEXT_VERSION | hash:$LOCAL_HASH | $(date)"
+
+ PAYLOAD=$(echo "$PG_JSON" | jq \
+ --arg comment "$COMMENT" '
+ {
+  revision: .revision,
+  component: {
+    id: .component.id,
+    comments: $comment,
+    versionControlInformation: .component.versionControlInformation
+  }
+ }')
 
  curl -k -s -X PUT \
  "$NIFI_URL/nifi-api/process-groups/$PG_ID" \
@@ -326,18 +331,12 @@ update_pg_comments() {
 }
 
 ########################################
-# Start / Stop PG
+# Start/Stop
 ########################################
 
 control_pg_state() {
 
- if [ "$START_FLOW" = "true" ]; then
-   STATE="RUNNING"
- else
-   STATE="STOPPED"
- fi
-
- log_info "Setting process group state: $STATE"
+ STATE=$([ "$START_FLOW" = "true" ] && echo "RUNNING" || echo "STOPPED")
 
  PAYLOAD=$(jq -n \
  --arg id "$PG_ID" \
@@ -349,45 +348,6 @@ control_pg_state() {
  -H "$AUTH_HEADER" \
  -H "Content-Type: application/json" \
  -d "$PAYLOAD"
-}
-
-########################################
-# Parameter contexts
-########################################
-
-update_parameter_contexts() {
-
- build_param_json
-
- CONTEXTS=$(curl -k -s \
- "$NIFI_URL/nifi-api/flow/parameter-contexts" \
- -H "$AUTH_HEADER")
-
- echo "$CONTEXTS" | jq -c '.parameterContexts[]' | while read -r ctx; do
-
-   PC_ID=$(echo "$ctx" | jq -r '.component.id')
-
-   CURRENT=$(curl -k -s \
-   "$NIFI_URL/nifi-api/parameter-contexts/$PC_ID" \
-   -H "$AUTH_HEADER")
-
-   REVISION=$(echo "$CURRENT" | jq -r '.revision.version')
-
-   UPDATED=$(echo "$CURRENT" | jq --argjson params "$PARAM_JSON" '
-   .component.parameters |= map(
-     if .parameter.name as $n | $params[$n]
-     then .parameter.value=$params[$n]
-     else . end)')
-
-   PAYLOAD=$(echo "$UPDATED" | jq --argjson rev "$REVISION" '
-   {revision:{version:$rev},component:.component}')
-
-   curl -k -s -X PUT \
-   "$NIFI_URL/nifi-api/parameter-contexts/$PC_ID" \
-   -H "$AUTH_HEADER" \
-   -H "Content-Type: application/json" \
-   -d "$PAYLOAD"
- done
 }
 
 ########################################
@@ -434,7 +394,6 @@ for ORIGINAL_FLOW in /flows/*.json; do
    update_pg_comments
  fi
 
- update_parameter_contexts
  control_pg_state
 
  log_info "Done: $FLOW_NAME"
