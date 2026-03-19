@@ -465,16 +465,12 @@ get_next_position() {
 }
 
 
-jq --argjson params "$PARAM_JSON" '
-(.. | objects | select(has("parameters")) | .parameters) |=
 map(
-   .parameter.name as $n
-   | if $params[$n] != null
-     then .parameter.value = $params[$n]
-     else .
-     end
- )
-' "$FLOW_FILE" > "$TMP"
+  if (.parameter? and .parameter.name? and $params[.parameter.name]? != null) then
+    .parameter.value = $params[.parameter.name]
+  else .
+  end
+)
 
 
 UPDATED=$(echo "$CURRENT" | jq --argjson params "$PARAM_JSON" '
