@@ -443,31 +443,23 @@ done
 
 log_section "All flows deployed"
 
+get_next_position() {
 
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: nifi-deployer-env
-data:
-  NIFI_URL: https://nifi-dev
-  REGISTRY_URL: https://registry-dev
-  TARGET_RPG_URL: http://target-rpg
-  SINGLE_USER_CREDENTIALS_USERNAME: admin
-  SINGLE_USER_CREDENTIALS_PASSWORD: password
-  REGISTRY_ID: your-registry-id
-  REGISTRY_BUCKET_ID: your-bucket-id
+ MAX_X=$(curl -k -s \
+ "$NIFI_URL/nifi-api/flow/process-groups/$ROOT_PG" \
+ -H "$AUTH_HEADER" |
+ jq '[.processGroupFlow.flow.processGroups[].position.x] | max')
 
-  START_FLOW: "true"
+ echo "MAX_X=$MAX_X"
 
-  PARAM_fragment_manager_url: http://dev-fragment
-  PARAM_composer_url: http://dev-composer
+ if [ "$MAX_X" = "null" ] || [ -z "$MAX_X" ]; then
+   POS_X=300
+ else
+   POS_X=$MAX_X
+ fi
 
+ POS_X=$((POS_X + POSITION_STEP))
+ POS_Y=300
 
----
-
-envFrom:
-    - configMapRef:
-        name: nifi-deployer-env
-
-
+ echo "POS_X=$POS_X"
+}
