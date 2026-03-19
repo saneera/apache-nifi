@@ -76,5 +76,38 @@ export const deployService = {
         return {
             version: nextVersion
         }
+    },
+
+    async rollbackFlow(flowName: string, version: number) {
+        const store = useNifiStore()
+
+        // 1️⃣ find PG
+        const root = await api.get(
+            `/nifi-api/flow/process-groups/root`
+        )
+
+        const pg = root.data.processGroupFlow.flow.processGroups.find(
+            (p: any) => p.component.name === flowName
+        )
+
+        if (!pg) throw new Error('Process group not found')
+
+        // 2️⃣ update version
+        await api.post(
+            `/nifi-api/versions/update-requests/process-groups/${pg.component.id}`,
+            {
+                processGroupRevision: {
+                    version: pg.revision.version
+                },
+                versionControlInformation: {
+                    registryId: store.registryId,
+                    bucketId: store.bucketId,
+                    flowId: pg.component.versionControlInformation.flowId,
+                    version: version
+                }
+            }
+        )
+
+        return { version }
     }
 }
