@@ -1,100 +1,66 @@
-import api from './api'
-import { useNifiStore } from '../store/nifi'
+async deployFlow(flowName: string, flowJson: any) {
+    const store = useNifiStore()
 
-export const deployService = {
+    // 1️⃣ get registry flows
+    const flowsRes = await api.get(
+        `${store.registryUrl}/nifi-registry-api/buckets/${store.bucketId}/flows`
+    )
 
-    async deployFlow(flowName: string, flowJson: any) {
-        const store = useNifiStore()
+    let flow = flowsRes.data.find((f: any) => f.name === flowName)
 
-        // 1️⃣ find registry flow
-        const flows = await api.get(
-            `${store.registryUrl}/nifi-registry-api/buckets/${store.bucketId}/flows`
+    // 2️⃣ create registry flow if not exists
+    if (!flow) {
+        const created = await api.post(
+            `${store.registryUrl}/nifi-registry-api/buckets/${store.bucketId}/flows`,
+            {
+                name: flowName,
+                description: 'created via UI'
+            }
         )
+        flow = created.data
+    }
 
-        let flow = flows.data.find((f: any) => f.name === flowName)
+    // 3️⃣ get latest version (handle 404)
+    let currentVersion = 0
 
-        // 2️⃣ create if not exists
-        if (!flow) {
-            const created = await api.post(
-                `${store.registryUrl}/nifi-registry-api/buckets/${store.bucketId}/flows`,
-                {
-                    name: flowName,
-                    description: 'created via UI'
-                }
-            )
-            flow = created.data
-        }
-
-        // 3️⃣ get latest version
+    try {
         const latest = await api.get(
             `${store.registryUrl}/nifi-registry-api/buckets/${store.bucketId}/flows/${flow.identifier}/versions/latest`
         )
 
-        const currentVersion = latest.data.snapshotMetadata?.version || 0
-        const nextVersion = currentVersion + 1
+        currentVersion = latest.data.snapshotMetadata?.version || 0
+    } catch (e: any) {
+        if (e.response?.status !== 404) throw e
+    }
 
-        // 4️⃣ upload new version
-        await api.post(
-            `${store.registryUrl}/nifi-registry-api/buckets/${store.bucketId}/flows/${flow.identifier}/versions`,
-            {
-                ...flowJson,
-                snapshotMetadata: {
-                    bucketIdentifier: store.bucketId,
-                    flowIdentifier: flow.identifier,
-                    version: nextVersion
-                }
+    const nextVersion = currentVersion + 1
+
+    // 4️⃣ upload new version
+    await api.post(
+        `${store.registryUrl}/nifi-registry-api/buckets/${store.bucketId}/flows/${flow.identifier}/versions`,
+        {
+            ...flowJson,
+            snapshotMetadata: {
+                bucketIdentifier: store.bucketId,
+                flowIdentifier: flow.identifier,
+                version: nextVersion
             }
-        )
-
-        // 5️⃣ find PG in NiFi
-        const root = await api.get(
-            `${store.nifiUrl}/nifi-api/flow/process-groups/root`
-        )
-
-        const pg = root.data.processGroupFlow.flow.processGroups.find(
-            (p: any) => p.component.name === flowName
-        )
-
-        // 6️⃣ update version
-        if (pg) {
-            await api.post(
-                `${store.nifiUrl}/nifi-api/versions/update-requests/process-groups/${pg.component.id}`,
-                {
-                    processGroupRevision: {
-                        version: pg.revision.version
-                    },
-                    versionControlInformation: {
-                        registryId: store.registryId,
-                        bucketId: store.bucketId,
-                        flowId: flow.identifier,
-                        version: nextVersion
-                    }
-                }
-            )
         }
+    )
 
-        return {
-            version: nextVersion
-        }
-    },
+    // 5️⃣ find PG in NiFi
+    const root = await api.get(
+        `${store.nifiUrl}/nifi-api/flow/process-groups/root`
+    )
 
-    async rollbackFlow(flowName: string, version: number) {
-        const store = useNifiStore()
+    const pg = root.data.processGroupFlow.flow.processGroups.find(
+        (p: any) => p.component.name === flowName
+    )
 
-        // 1️⃣ find PG
-        const root = await api.get(
-            `/nifi-api/flow/process-groups/root`
-        )
-
-        const pg = root.data.processGroupFlow.flow.processGroups.find(
-            (p: any) => p.component.name === flowName
-        )
-
-        if (!pg) throw new Error('Process group not found')
-
-        // 2️⃣ update version
+    // 🟢 CASE 1: PG exists → update version
+    if (pg) {
         await api.post(
-            `/nifi-api/versions/update-requests/process-groups/${pg.component.id}`,
+            `${store.nifiUrl}/nifi-api/versions/update-requests/process-groups/${pg.component.id}`,
             {
                 processGroupRevision: {
                     version: pg.revision.version
@@ -102,12 +68,34 @@ export const deployService = {
                 versionControlInformation: {
                     registryId: store.registryId,
                     bucketId: store.bucketId,
-                    flowId: pg.component.versionControlInformation.flowId,
-                    version: version
+                    flowId: flow.identifier,
+                    version: nextVersion
                 }
             }
         )
 
-        return { version }
+        return { version: nextVersion, action: 'updated' }
     }
+
+    // 🔥 CASE 2: PG NOT found → import flow (CREATE)
+    const importPayload = {
+        revision: { version: 0 },
+        component: {
+            name: flowName,
+            position: { x: 300, y: 300 },
+            versionControlInformation: {
+                registryId: store.registryId,
+                bucketId: store.bucketId,
+                flowId: flow.identifier,
+                version: nextVersion
+            }
+        }
+    }
+
+    await api.post(
+        `${store.nifiUrl}/nifi-api/process-groups/root/process-groups`,
+        importPayload
+    )
+
+    return { version: nextVersion, action: 'created' }
 }
