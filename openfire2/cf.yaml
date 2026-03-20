@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openfire-config
+data:
+  openfire.xml: |
+    <?xml version="1.0" encoding="UTF-8"?>
+    <jive>
+        
+        <adminConsole>
+            <port>9090</port>
+            <interface>0.0.0.0</interface>
+        </adminConsole>
+        
+        <xmpp>
+            <domain>localhost</domain>
+        </xmpp>
+        
+        <database>
+            <defaultProvider>
+                <driver>org.jivesoftware.database.EmbeddedConnectionProvider</driver>
+                <serverURL>jdbc:hsqldb:openfire-db/openfire</serverURL>
+            </defaultProvider>
+        </database>
+
+    </jive>
