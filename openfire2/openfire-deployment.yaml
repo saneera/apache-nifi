@@ -19,6 +19,13 @@ spec:
             - containerPort: 9090
             - containerPort: 5222
             - containerPort: 7070
+
+          volumeMounts:
+            - name: config
+              mountPath: /opt/openfire/conf/openfire.xml
+              subPath: openfire.xml
+
+
           env:
             - name: OPENFIRE_DB_TYPE
               value: mysql
@@ -32,3 +39,9 @@ spec:
               value: openfire
             - name: OPENFIRE_DB_PASSWORD
               value: openfirepass
+
+
+      volumes:
+        - name: config
+          configMap:
+            name: openfire-config
