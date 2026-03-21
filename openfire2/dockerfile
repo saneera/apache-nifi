@@ -1,0 +1,23 @@
+FROM ghcr.io/igniterealtime/openfire:latest
+
+# Switch to root to install plugins
+USER root
+
+# Create plugins directory if not exists
+RUN mkdir -p /opt/openfire/plugins
+
+# Download plugins
+RUN curl -L -o /opt/openfire/plugins/restAPI.jar \
+    https://github.com/igniterealtime/openfire-restAPI-plugin/releases/latest/download/restAPI.jar
+
+RUN curl -L -o /opt/openfire/plugins/monitoring.jar \
+    https://github.com/igniterealtime/openfire-monitoring-plugin/releases/latest/download/monitoring.jar
+
+RUN curl -L -o /opt/openfire/plugins/httpfileupload.jar \
+    https://github.com/igniterealtime/openfire-httpFileUpload-plugin/releases/latest/download/httpfileupload.jar
+
+# Fix permissions
+RUN chown -R openfire:openfire /opt/openfire/plugins
+
+# Switch back to openfire user
+USER openfire

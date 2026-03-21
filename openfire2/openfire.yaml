@@ -1,0 +1,93 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openfire-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openfire
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openfire
+  template:
+    metadata:
+      labels:
+        app: openfire
+    spec:
+      containers:
+        - name: openfire
+          image: your-dockerhub/openfire:latest   # 👈 your custom image with plugins
+          ports:
+            - containerPort: 9090   # Admin Console (HTTP)
+            - containerPort: 9091   # Admin Console (HTTPS)
+            - containerPort: 5222   # XMPP client
+            - containerPort: 7070   # HTTP binding
+
+          env:
+            - name: OPENFIRE_SYSTEM_PROPERTIES
+              value: |
+                plugin.restapi.enabled=true
+                plugin.restapi.secret=secret123
+
+          volumeMounts:
+            - name: openfire-data
+              mountPath: /var/lib/openfire
+
+          readinessProbe:
+            httpGet:
+              path: /index.jsp
+              port: 9090
+            initialDelaySeconds: 40
+            periodSeconds: 10
+
+          livenessProbe:
+            httpGet:
+              path: /index.jsp
+              port: 9090
+            initialDelaySeconds: 60
+            periodSeconds: 20
+
+      volumes:
+        - name: openfire-data
+          persistentVolumeClaim:
+            claimName: openfire-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openfire-service
+spec:
+  type: NodePort
+  selector:
+    app: openfire
+  ports:
+    - name: admin-http
+      port: 9090
+      targetPort: 9090
+      nodePort: 30090
+
+    - name: admin-https
+      port: 9091
+      targetPort: 9091
+      nodePort: 30091
+
+    - name: xmpp
+      port: 5222
+      targetPort: 5222
+      nodePort: 30522
+
+    - name: http-bind
+      port: 7070
+      targetPort: 7070
+      nodePort: 30070

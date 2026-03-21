@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openfire
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openfire
+  template:
+    metadata:
+      labels:
+        app: openfire
+    spec:
+      containers:
+        - name: openfire
+          image: your-dockerhub/openfire:latest
+          ports:
+            - containerPort: 9090
+            - containerPort: 9091
+            - containerPort: 5222
+            - containerPort: 7070
+
+          env:
+            - name: OPENFIRE_SYSTEM_PROPERTIES
+              value: |
+                plugin.restapi.enabled=true
+                plugin.restapi.secret=secret123
+
+          volumeMounts:
+            - name: openfire-data
+              mountPath: /var/lib/openfire
+
+          readinessProbe:
+            httpGet:
+              path: /index.jsp
+              port: 9090
+            initialDelaySeconds: 40
+            periodSeconds: 10
+
+          livenessProbe:
+            httpGet:
+              path: /index.jsp
+              port: 9090
+            initialDelaySeconds: 60
+            periodSeconds: 20
+
+      volumes:
+        - name: openfire-data
+          persistentVolumeClaim:
+            claimName: openfire-pvc
