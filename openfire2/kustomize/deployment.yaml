@@ -12,6 +12,33 @@ spec:
       labels:
         app: openfire
     spec:
+
+      initContainers:
+        - name: init-openfire
+          image: busybox
+          command:
+            - sh
+            - -c
+            - |
+              echo "Preparing Openfire data directory..."
+
+              mkdir -p /data/conf
+              mkdir -p /data/plugins
+              mkdir -p /data/embedded-db
+
+              # Copy config if not exists
+              if [ ! -f /data/conf/openfire.xml ]; then
+                cp /config/openfire.xml /data/conf/openfire.xml
+              fi
+
+              # IMPORTANT: ensure plugins dir exists
+              chmod -R 777 /data
+
+          volumeMounts:
+            - name: openfire-data
+              mountPath: /data
+            - name: config
+              mountPath: /config
       containers:
         - name: openfire
           image: your-dockerhub/openfire:latest
