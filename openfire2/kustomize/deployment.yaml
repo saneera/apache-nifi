@@ -15,24 +15,36 @@ spec:
 
       initContainers:
         - name: init-openfire
-          image: busybox
+          image: your-dockerhub/openfire:latest
           command:
             - sh
             - -c
             - |
-              echo "Preparing Openfire data directory..."
+              echo "Initializing Openfire home..."
 
+              # Create required dirs
               mkdir -p /data/conf
               mkdir -p /data/plugins
               mkdir -p /data/embedded-db
 
-              # Copy config if not exists
+              # Copy default config if not exists
               if [ ! -f /data/conf/openfire.xml ]; then
                 cp /config/openfire.xml /data/conf/openfire.xml
               fi
 
-              # IMPORTANT: ensure plugins dir exists
-              chmod -R 777 /data
+              # 🔥 IMPORTANT: copy default security.xml if missing
+              if [ ! -f /data/conf/security.xml ]; then
+                cp /opt/openfire/conf/security.xml /data/conf/security.xml
+              fi
+
+              # Copy plugins if empty
+              if [ -z "$(ls -A /data/plugins)" ]; then
+                cp -r /opt/openfire/plugins/* /data/plugins/
+              fi
+
+              # Fix permissions
+              chown -R 1000:1000 /data
+              chmod -R 775 /data
 
           volumeMounts:
             - name: openfire-data
