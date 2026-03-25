@@ -39,3 +39,33 @@ try {
     log.error("Error reading stream: ${e.message}", e)
     session.transfer(incomingFlowFile, REL_FAILURE)
 }
+
+
+import java.nio.charset.StandardCharsets
+import java.net.URL
+import org.apache.nifi.processor.io.OutputStreamCallback
+
+def flowFile = session.get()
+if (!flowFile) return
+
+def url = new URL("http://10.11.253.93:30117/stream/circuits")
+def connection = url.openConnection()
+connection.setRequestMethod("GET")
+
+def reader = connection.inputStream.newReader("UTF-8")
+
+def line = reader.readLine()
+
+if (line && !line.trim().isEmpty()) {
+
+    log.info("STREAM DATA: " + line)
+
+    flowFile = session.write(flowFile, { out ->
+        out.write(line.getBytes(StandardCharsets.UTF_8))
+    } as OutputStreamCallback)
+
+    session.transfer(flowFile, REL_SUCCESS)
+
+} else {
+    session.transfer(flowFile, REL_FAILURE)
+}
