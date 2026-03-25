@@ -1,29 +1,16 @@
-import java.nio.charset.StandardCharsets
-import java.net.URL
-import org.apache.nifi.processor.io.OutputStreamCallback
+def reader = connection.inputStream.newReader("UTF-8")
 
-def urlString = "http://10.11.253.93:30117/stream/circuits"
+for (int i = 0; i < 10; i++) {
+    def line = reader.readLine()
+    if (line == null) break
 
-try {
-    def url = new URL(urlString)
-    def connection = url.openConnection()
-    connection.setRequestMethod("GET")
+    if (!line.trim().isEmpty()) {
+        def flowFile = session.create()
 
-    def reader = connection.inputStream.newReader("UTF-8")
+        flowFile = session.write(flowFile, { out ->
+            out.write(line.getBytes(StandardCharsets.UTF_8))
+        } as OutputStreamCallback)
 
-    reader.eachLine { line ->
-        if (line && !line.trim().isEmpty()) {
-
-            def flowFile = session.create()
-
-            flowFile = session.write(flowFile, { out ->
-                out.write(line.getBytes(StandardCharsets.UTF_8))
-            } as OutputStreamCallback)
-
-            session.transfer(flowFile, REL_SUCCESS)
-        }
+        session.transfer(flowFile, REL_SUCCESS)
     }
-
-} catch (Exception e) {
-    log.error("Error reading stream: ${e.message}", e)
 }
