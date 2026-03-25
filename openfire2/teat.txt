@@ -1,31 +1,29 @@
 import java.nio.charset.StandardCharsets
+import java.net.URL
+import org.apache.nifi.processor.io.OutputStreamCallback
 
-// Define the API endpoint URL
-def urlString = "http://your-api-endpoint.com"
+def urlString = "http://10.11.253.93:30117/stream/circuits"
 
 try {
-    def url = new URL(urlString)
-    def connection = url.openConnection()
-    connection.setRequestMethod("GET")
+    def url = new URL(urlString)
+    def connection = url.openConnection()
+    connection.setRequestMethod("GET")
 
-    // Open the stream and read line by line
-    connection.inputStream.eachLine { line ->
-        if (line && !line.trim().isEmpty()) {
-            // Create a new FlowFile for every received event line
-            def flowFile = session.create()
+    def reader = connection.inputStream.newReader("UTF-8")
 
-            // Write the line content into the FlowFile
-            flowFile = session.write(flowFile, { out ->
-                out.write(line.getBytes(StandardCharsets.UTF_8))
-            } as OutputStreamCallback)
+    reader.eachLine { line ->
+        if (line && !line.trim().isEmpty()) {
 
-            // Immediately transfer the FlowFile to the success relationship
-            session.transfer(flowFile, REL_SUCCESS)
+            def flowFile = session.create()
 
-            // Force session commit to ensure data flows while the script is running
-            session.commit()
-        }
-    }
+            flowFile = session.write(flowFile, { out ->
+                out.write(line.getBytes(StandardCharsets.UTF_8))
+            } as OutputStreamCallback)
+
+            session.transfer(flowFile, REL_SUCCESS)
+        }
+    }
+
 } catch (Exception e) {
-    log.error("Error reading from continuous stream: ${e.message}", e)
+    log.error("Error reading stream: ${e.message}", e)
 }
