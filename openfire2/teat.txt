@@ -1,16 +1,41 @@
-def reader = connection.inputStream.newReader("UTF-8")
+import java.nio.charset.StandardCharsets
+import java.net.URL
+import org.apache.nifi.processor.io.OutputStreamCallback
 
-for (int i = 0; i < 10; i++) {
-    def line = reader.readLine()
-    if (line == null) break
+def incomingFlowFile = session.get()
+if (!incomingFlowFile) return
 
-    if (!line.trim().isEmpty()) {
-        def flowFile = session.create()
+def urlString = "http://10.11.253.93:30117/stream/circuits"
 
-        flowFile = session.write(flowFile, { out ->
-            out.write(line.getBytes(StandardCharsets.UTF_8))
-        } as OutputStreamCallback)
+try {
+    def url = new URL(urlString)
+    def connection = url.openConnection()
+    connection.setRequestMethod("GET")
 
-        session.transfer(flowFile, REL_SUCCESS)
+    def reader = connection.inputStream.newReader("UTF-8")
+
+    for (int i = 0; i < 10; i++) {
+        def line = reader.readLine()
+        if (line == null) break
+
+        if (!line.trim().isEmpty()) {
+
+            log.info("DATA: " + line)
+
+            def flowFile = session.create(incomingFlowFile)
+
+            flowFile = session.write(flowFile, { out ->
+                out.write(line.getBytes(StandardCharsets.UTF_8))
+            } as OutputStreamCallback)
+
+            session.transfer(flowFile, REL_SUCCESS)
+        }
     }
+
+    // pass original request forward
+    session.transfer(incomingFlowFile, REL_SUCCESS)
+
+} catch (Exception e) {
+    log.error("Error reading stream: ${e.message}", e)
+    session.transfer(incomingFlowFile, REL_FAILURE)
 }
