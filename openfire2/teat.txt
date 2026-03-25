@@ -1,0 +1,31 @@
+import java.nio.charset.StandardCharsets
+
+// Define the API endpoint URL
+def urlString = "http://your-api-endpoint.com"
+
+try {
+    def url = new URL(urlString)
+    def connection = url.openConnection()
+    connection.setRequestMethod("GET")
+
+    // Open the stream and read line by line
+    connection.inputStream.eachLine { line ->
+        if (line && !line.trim().isEmpty()) {
+            // Create a new FlowFile for every received event line
+            def flowFile = session.create()
+
+            // Write the line content into the FlowFile
+            flowFile = session.write(flowFile, { out ->
+                out.write(line.getBytes(StandardCharsets.UTF_8))
+            } as OutputStreamCallback)
+
+            // Immediately transfer the FlowFile to the success relationship
+            session.transfer(flowFile, REL_SUCCESS)
+
+            // Force session commit to ensure data flows while the script is running
+            session.commit()
+        }
+    }
+} catch (Exception e) {
+    log.error("Error reading from continuous stream: ${e.message}", e)
+}

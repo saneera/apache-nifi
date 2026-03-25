@@ -21,3 +21,5 @@ RUN chown -R openfire:openfire /opt/openfire/plugins
 
 # Switch back to openfire user
 USER openfire
+
+
