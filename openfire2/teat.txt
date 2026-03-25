@@ -69,3 +69,11 @@ if (line && !line.trim().isEmpty()) {
 } else {
     session.transfer(flowFile, REL_FAILURE)
 }
+
+
+Access-Control-Allow-Origin = *
+Access-Control-Allow-Methods = GET, POST, OPTIONS
+Access-Control-Allow-Headers = *
+Content-Type = application/json
+
+${http.method:equals('OPTIONS')}
