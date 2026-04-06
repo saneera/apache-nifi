@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jive>
+<adminConsole>
+<port>9090</port>
+<securePort>9091</securePort>
+</adminConsole>
+<setup>true</setup>
+<database>
+<defaultProvider>
+<driver>org.hsqldb.jdbcDriver</driver>
+<!-- Force the embedded DB to use the persistent volume path -->
+<serverURL>jdbc:hsqldb:/var/lib/openfire/embedded-db/openfire</serverURL>
+<username>sa</username>
+<password></password>
+</defaultProvider>
+</database>
+</jive>
+
+
+INSERT INTO ofProperty (name, propValue) VALUES ('plugin.restapi.enabled', 'true') ON DUPLICATE KEY UPDATE propValue='true';
+INSERT INTO ofProperty (name, propValue) VALUES ('plugin.restapi.httpAuth', 'secretKey') ON DUPLICATE KEY UPDATE propValue='secretKey';
+INSERT INTO ofProperty (name, propValue) VALUES ('plugin.restapi.secret', 'your-api-key') ON DUPLICATE KEY UPDATE propValue='your-api-key';
+INSERT INTO ofProperty (name, propValue) VALUES ('plugin.restapi.allowedIPs', '*') ON DUPLICATE KEY UPDATE propValue='*';
+INSERT INTO ofProperty (name, propValue) VALUES ('adminConsole.access.allow-wildcards-in-excludes', 'true') ON DUPLICATE KEY UPDATE propValue='true';
+
+
+
+FROM ghcr.io/igniterealtime/openfire:latest
+
+ENV OPENFIRE_DATA=/var/lib/openfire
+
+# 1. Copy the plugin and config
+COPY restAPI.jar ${OPENFIRE_DATA}/plugins/restAPI.jar
+COPY openfire.xml ${OPENFIRE_DATA}/conf/openfire.xml
+
+# 2. Copy the SQL to be injected (you may need to run this manually or via entrypoint)
+COPY init-restapi.sql ${OPENFIRE_DATA}/init-restapi.sql
+
+USER root
+# Pre-create the embedded-db folder in the persistent path
+RUN mkdir -p ${OPENFIRE_DATA}/embedded-db && \
+chown -R openfire:openfire ${OPENFIRE_DATA} ${OPENFIRE_HOME}
+USER openfire
