@@ -41,3 +41,34 @@ USER root
 RUN mkdir -p ${OPENFIRE_DATA}/embedded-db && \
 chown -R openfire:openfire ${OPENFIRE_DATA} ${OPENFIRE_HOME}
 USER openfire
+
+
+piVersion: apps/v1
+kind: Deployment
+metadata:
+name: openfire
+spec:
+template:
+spec:
+initContainers:
+
+name: copy-plugins
+image: your-username/openfire-custom:v1 # Use your custom image here
+command: ['sh', '-c', 'cp -r /usr/local/openfire/plugins/* /data/plugins/ && cp /usr/local/openfire/conf/openfire.xml /data/conf/openfire.xml']
+volumeMounts:
+
+name: openfire-data
+mountPath: /data # Mount the PVC here to prep it
+containers:
+
+name: openfire
+image: your-username/openfire-custom:v1
+volumeMounts:
+
+name: openfire-data
+mountPath: /var/lib/openfire # Final mount where Openfire looks for data
+volumes:
+
+name: openfire-data
+persistentVolumeClaim:
+claimName: openfire-pvc
