@@ -101,3 +101,29 @@ if [ -f "$DB_SCRIPT" ]; then
 echo "INSERT INTO OFPROPERTY (NAME, PROPVALUE) VALUES ('plugin.restapi.enabled', 'true');" >> "$DB_SCRIPT"
 echo "INSERT INTO OFPROPERTY (NAME, PROPVALUE) VALUES ('plugin.restapi.secret', 'your-secret-key');" >> "$DB_SCRIPT"
 fi
+
+
+
+
+mkdir -p /data/embedded-db /data/plugins /data/conf
+
+    # 2. Copy plugins from image to PVC
+    cp -r /usr/local/openfire/plugins/* /data/plugins/
+    cp /usr/local/openfire/conf/openfire.xml /data/conf/openfire.xml
+    # 3. Handle HSQLDB Script
+    DB_SCRIPT="/data/embedded-db/openfire.script"
+
+    # If the file is missing (first boot), create the required HSQLDB header
+    if [ ! -f "$DB_SCRIPT" ]; then
+      echo "CREATE SCHEMA PUBLIC AUTHORIZATION DBA" > "$DB_SCRIPT"
+      echo "SET SCHEMA PUBLIC" >> "$DB_SCRIPT"
+      echo "CREATE MEMORY TABLE OFPROPERTY(NAME VARCHAR(100) NOT NULL,PROPVALUE VARCHAR(4000) NOT NULL,CONSTRAINT OFPROPERTY_PK PRIMARY KEY(NAME))" >> "$DB_SCRIPT"
+    fi
+    # 4. Inject or Update the secret
+    # Remove existing entry to prevent duplicates
+    sed -i "/'plugin.restapi.secret'/d" "$DB_SCRIPT"
+    echo "INSERT INTO OFPROPERTY (NAME, PROPVALUE) VALUES ('plugin.restapi.secret', '${REST_API_SECRET}');" >> "$DB_SCRIPT"
+
+    # Enable other required properties for auto-setup
+    sed -i "/'plugin.restapi.enabled'/d" "$DB_SCRIPT"
+    echo "INSERT INTO OFPROPERTY (NAME, PROPVALUE) VALUES ('plugin.restapi.enabled', 'true');" >> "$DB_SCRIPT"
