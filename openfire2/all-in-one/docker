@@ -72,3 +72,32 @@ volumes:
 name: openfire-data
 persistentVolumeClaim:
 claimName: openfire-pvc
+
+
+
+
+
+
+
+
+===========
+
+nitContainers:
+
+name: setup-openfire
+image: your-username/openfire-custom:v1
+command:
+
+"sh"
+"-c"
+|
+# 1. Copy plugins as before
+cp -r /usr/local/openfire/plugins/* /data/plugins/
+
+# 2. Append SQL properties to the embedded DB script if it exists
+# This enables REST API properties directly in the DB file
+DB_SCRIPT="/data/embedded-db/openfire.script"
+if [ -f "$DB_SCRIPT" ]; then
+echo "INSERT INTO OFPROPERTY (NAME, PROPVALUE) VALUES ('plugin.restapi.enabled', 'true');" >> "$DB_SCRIPT"
+echo "INSERT INTO OFPROPERTY (NAME, PROPVALUE) VALUES ('plugin.restapi.secret', 'your-secret-key');" >> "$DB_SCRIPT"
+fi
