@@ -20,3 +20,34 @@
     # Copy only if NOT exists (important!)
     [ ! -f /data/conf/openfire.xml ] && cp /config/openfire.xml /data/conf/openfire.xml
     [ ! -f /data/conf/security.xml ] && cp /config/security.xml /data/conf/security.xml
+
+
+
+
+    initContainers:
+    - name: init-openfire
+    image: openfire-image
+    securityContext:
+    runAsUser: 0
+    command:
+    - sh
+    - -c
+    - |
+    echo "Fixing Openfire setup"
+
+    mkdir -p /data/conf
+    mkdir -p /data/resources/security
+
+    # Copy config if missing
+    [ ! -f /data/conf/openfire.xml ] && cp /config/openfire.xml /data/conf/openfire.xml
+    [ ! -f /data/conf/security.xml ] && cp /config/security.xml /data/conf/security.xml
+
+    # 🔥 REMOVE WRONG SYMLINK FROM IMAGE
+    rm -rf /usr/local/openfire/resources/security
+
+    # 🔥 CREATE CORRECT SYMLINK
+    ln -s /data/resources/security /usr/local/openfire/resources/security
+
+    # Fix permissions
+    chown -R 1000:1000 /data
+    chmod -R 755 /data

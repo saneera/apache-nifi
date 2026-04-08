@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openfire
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openfire
+  template:
+    metadata:
+      labels:
+        app: openfire
+    spec:
+
+#      initContainers:
+#        - name: init-openfire
+#          image: ghcr.io/igniterealtime/openfire@sha256:d17733fa763d0a3390bfaaacc169f91e80f34f39d7958911eb9704314614d86c
+#          command:
+#            - sh
+#            - -c
+#            - |
+#              echo "Initializing Openfire..."
+#
+#              mkdir -p /data/conf
+#              mkdir -p /data/plugins
+#
+#              # Copy config ONLY if not exists
+#              [ ! -f /data/conf/openfire.xml ] && cp /config/openfire.xml /data/conf/openfire.xml
+#              [ ! -f /data/conf/security.xml ] && cp /config/security.xml /data/conf/security.xml
+#
+#          volumeMounts:
+#            - name: openfire-config
+#              mountPath: /config
+#            - name: openfire-data
+#              mountPath: /data
+
+      containers:
+        - name: openfire
+          image: ghcr.io/igniterealtime/openfire@sha256:d17733fa763d0a3390bfaaacc169f91e80f34f39d7958911eb9704314614d86c
+          ports:
+            - containerPort: 9090
+            - containerPort: 5222
+            - containerPort: 7070
+
+          volumeMounts:
+            - name: openfire-data
+              mountPath: /var/lib/openfire
+
+      volumes:
+        - name: openfire-data
+          persistentVolumeClaim:
+            claimName: openfire-pvc
+
+#        - name: openfire-config
+#          configMap:
+#            name: openfire-configmap

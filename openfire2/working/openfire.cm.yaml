@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openfire-configmap
+data:
+  openfire.xml: |
+    <?xml version="1.0" encoding="UTF-8"?>
+    <jive>
+        <adminConsole>
+            <port>9090</port>
+            <securePort>9091</securePort>
+        </adminConsole>
+        
+        <setup>true</setup>
+        
+        <xmpp>
+            <domain>openfire.dev1</domain>
+        </xmpp>
+        
+        <database>
+            <defaultProvider>
+                <driver>org.hsqldb.jdbcDriver</driver>
+                <serverURL>jdbc:hsqldb:file:/var/lib/openfire/embedded-db/openfire</serverURL>
+                <username>sa</username>
+                <password></password>
+            </defaultProvider>
+        </database>
+        
+        <connectionProvider>
+            <className>org.jivesoftware.database.DefaultConnectionProvider</className>
+        </connectionProvider>
+    </jive>
+
+  security.xml: |
+    <?xml version="1.0" encoding="UTF-8"?>
+    <security>
+        <encrypt>
+            <algorithm>AES</algorithm>
+            <key>c2VjcmV0S2V5MTIzNDU2</key>
+        </encrypt>
+    </security>
