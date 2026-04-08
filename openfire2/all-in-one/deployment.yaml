@@ -61,3 +61,6 @@ spec:
     - name: xmpp
       port: 5222
       targetPort: 5222
+
+
+

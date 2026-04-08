@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<security>
+    <encrypt>
+        <algorithm>AES</algorithm>
+        <key>c2VjcmV0S2V5MTIzNDU2</key>
+    </encrypt>
+</security>
+
+
+    initContainers:
+    - name: init-openfire
+    image: openfire-image
+    command:
+    - sh
+    - -c
+    - |
+    echo "Copying Config"
+    mkdir -p /data/conf
+
+    # Copy only if NOT exists (important!)
+    [ ! -f /data/conf/openfire.xml ] && cp /config/openfire.xml /data/conf/openfire.xml
+    [ ! -f /data/conf/security.xml ] && cp /config/security.xml /data/conf/security.xml
