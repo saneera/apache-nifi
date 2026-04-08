@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: openfire
+spec:
+  type: ClusterIP
+  selector:
+    app: openfire
+  ports:
+    - name: admin
+      port: 9090
+      targetPort: 9090
+    - name: xmpp
+      port: 5222
+      targetPort: 5222
