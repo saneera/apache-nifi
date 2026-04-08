@@ -43,8 +43,16 @@ spec:
             - containerPort: 5222
             - containerPort: 7070
 
+          env:
+            - name: OPENFIRE_DOMAIN
+              value: "openfire.dev1"
+            - name: OPENFIRE_DATABASE_TYPE
+              value: "embedded"
           volumeMounts:
             - name: openfire-data
+              mountPath: /usr/local/openfire/embedded-db
+
+            - name: openfire-config
               mountPath: /var/lib/openfire
 
       volumes:
@@ -52,6 +60,6 @@ spec:
           persistentVolumeClaim:
             claimName: openfire-pvc
 
-#        - name: openfire-config
-#          configMap:
-#            name: openfire-configmap
+        - name: openfire-config
+          persistentVolumeClaim:
+            claimName: openfire-config-pvc
