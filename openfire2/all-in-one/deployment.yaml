@@ -91,3 +91,21 @@ spec:
 
 
 
+initContainers:
+  - name: fix-db-path
+    image: busybox
+    command:
+      - sh
+      - -c
+      - |
+        echo "Fixing embedded-db path"
+
+        rm -rf /usr/local/openfire/embedded-db
+        mkdir -p /var/lib/openfire/embedded-db
+        ln -s /var/lib/openfire/embedded-db /usr/local/openfire/embedded-db
+
+    volumeMounts:
+      - name: openfire-data
+        mountPath: /var/lib/openfire
+      - name: openfire-root
+        mountPath: /usr/local/openfire
