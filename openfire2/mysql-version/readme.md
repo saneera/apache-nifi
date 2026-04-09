@@ -245,3 +245,18 @@ flowchart LR
 ```
 
 
+args:
+- |
+  echo "Parsing DB URL..."
+
+  DB_HOST=$(echo $OPENFIRE_DB_URL | sed -E 's|jdbc:mysql://([^:/]+).*|\1|')
+  DB_PORT=$(echo $OPENFIRE_DB_URL | sed -E 's|.*:([0-9]+)/.*|\1|')
+
+  echo "Waiting for MySQL at $DB_HOST:$DB_PORT..."
+
+  until nc -z $DB_HOST $DB_PORT; do
+  echo "MySQL not ready, retrying..."
+  sleep 4
+  done
+
+  echo "MySQL is ready!"
