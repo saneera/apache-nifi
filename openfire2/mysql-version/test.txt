@@ -1,0 +1,328 @@
+@Service
+public class XmppCoreService {
+
+    private XMPPTCPConnection connection;
+
+    public void connect(String username, String password, String domain, String host, int port) throws Exception {
+        XMPPTCPConnectionConfiguration config =
+                XMPPTCPConnectionConfiguration.builder()
+                        .setXmppDomain(domain)
+                        .setHost(host)
+                        .setPort(port)
+                        .setSecurityMode(ConnectionConfiguration.SecurityMode.ifpossible)
+                        .build();
+
+        connection = new XMPPTCPConnection(config);
+        connection.connect();
+        connection.login(username, password);
+    }
+
+    public void disconnect() {
+        if (connection != null) connection.disconnect();
+    }
+
+    public XMPPTCPConnection getConnection() {
+        return connection;
+    }
+
+    public boolean isConnected() {
+        return connection != null && connection.isAuthenticated();
+    }
+}
+
+
+@Service
+@RequiredArgsConstructor
+public class MessageService {
+
+    private final XmppCoreService xmpp;
+
+    public void sendMessage(String to, String body) throws Exception {
+        ChatManager chatManager = ChatManager.getInstanceFor(xmpp.getConnection());
+        EntityBareJid jid = JidCreate.entityBareFrom(to);
+
+        Chat chat = chatManager.chatWith(jid);
+        chat.send(body);
+    }
+}
+
+@Component
+@RequiredArgsConstructor
+public class MessageListener {
+
+    private final XmppCoreService xmpp;
+
+    @PostConstruct
+    public void init() {
+        ChatManager chatManager = ChatManager.getInstanceFor(xmpp.getConnection());
+
+        chatManager.addIncomingListener((from, message, chat) -> {
+            System.out.println("Message from " + from + ": " + message.getBody());
+        });
+    }
+}
+
+@Service
+@RequiredArgsConstructor
+public class PresenceService {
+
+    private final XmppCoreService xmpp;
+
+    public void setOnline() throws Exception {
+        Presence presence = new Presence(Presence.Type.available);
+        xmpp.getConnection().sendStanza(presence);
+    }
+
+    public void setOffline() throws Exception {
+        Presence presence = new Presence(Presence.Type.unavailable);
+        xmpp.getConnection().sendStanza(presence);
+    }
+}
+
+@Service
+@RequiredArgsConstructor
+public class RosterService {
+
+    private final XmppCoreService xmpp;
+
+    public List<String> getContacts() throws Exception {
+        Roster roster = Roster.getInstanceFor(xmpp.getConnection());
+        roster.reloadAndWait();
+
+        return roster.getEntries().stream()
+                .map(entry -> entry.getJid().toString())
+                .toList();
+    }
+
+    public void addContact(String jid, String name) throws Exception {
+        Roster roster = Roster.getInstanceFor(xmpp.getConnection());
+        roster.createEntry(JidCreate.bareFrom(jid), name, null);
+    }
+}
+
+@Service
+@RequiredArgsConstructor
+public class RoomService {
+
+    private final XmppCoreService xmpp;
+
+    public MultiUserChat joinRoom(String roomJid, String nickname) throws Exception {
+        MultiUserChatManager manager = MultiUserChatManager.getInstanceFor(xmpp.getConnection());
+        MultiUserChat muc = manager.getMultiUserChat(JidCreate.entityBareFrom(roomJid));
+
+        muc.join(Resourcepart.from(nickname));
+        return muc;
+    }
+
+    public void sendRoomMessage(String roomJid, String message) throws Exception {
+        MultiUserChatManager manager = MultiUserChatManager.getInstanceFor(xmpp.getConnection());
+        MultiUserChat muc = manager.getMultiUserChat(JidCreate.entityBareFrom(roomJid));
+
+        muc.sendMessage(message);
+    }
+}
+
+@RestController
+@RequestMapping("/xmpp")
+@RequiredArgsConstructor
+public class XmppController {
+
+    private final XmppCoreService xmpp;
+    private final MessageService messageService;
+    private final PresenceService presenceService;
+    private final RosterService rosterService;
+    private final RoomService roomService;
+
+    @PostMapping("/connect")
+    public String connect() throws Exception {
+        xmpp.connect("admin", "admin", "openfire.dev1", "openfire", 5222);
+        return "Connected";
+    }
+
+    @PostMapping("/disconnect")
+    public String disconnect() {
+        xmpp.disconnect();
+        return "Disconnected";
+    }
+
+    @PostMapping("/messages/send")
+    public String send(@RequestParam String to, @RequestParam String body) throws Exception {
+        messageService.sendMessage(to, body);
+        return "Sent";
+    }
+
+    @GetMapping("/contacts")
+    public List<String> contacts() throws Exception {
+        return rosterService.getContacts();
+    }
+
+    @PostMapping("/presence/online")
+    public String online() throws Exception {
+        presenceService.setOnline();
+        return "Online";
+    }
+
+    @PostMapping("/presence/offline")
+    public String offline() throws Exception {
+        presenceService.setOffline();
+        return "Offline";
+    }
+
+    @PostMapping("/rooms/join")
+    public String join(@RequestParam String room, @RequestParam String nick) throws Exception {
+        roomService.joinRoom(room, nick);
+        return "Joined";
+    }
+
+    @PostMapping("/rooms/send")
+    public String sendRoom(@RequestParam String room, @RequestParam String msg) throws Exception {
+        roomService.sendRoomMessage(room, msg);
+        return "Sent to room";
+    }
+}
+
+
+
+@Service
+@RequiredArgsConstructor
+public class RoomService {
+
+    private final XmppCoreService xmpp;
+
+    private MultiUserChatManager getManager() {
+        return MultiUserChatManager.getInstanceFor(xmpp.getConnection());
+    }
+
+    // ✅ CREATE ROOM
+    public void createRoom(String roomJid, String ownerNick) throws Exception {
+        MultiUserChat muc = getManager()
+                .getMultiUserChat(JidCreate.entityBareFrom(roomJid));
+
+        // create room
+        muc.create(Resourcepart.from(ownerNick));
+
+        // configure room
+        Form form = muc.getConfigurationForm();
+        Form submitForm = form.createAnswerForm();
+
+        submitForm.setAnswer("muc#roomconfig_persistentroom", true);
+        submitForm.setAnswer("muc#roomconfig_publicroom", true);
+        submitForm.setAnswer("muc#roomconfig_membersonly", false);
+        submitForm.setAnswer("muc#roomconfig_allowinvites", true);
+
+        muc.sendConfigurationForm(submitForm);
+    }
+
+    // ✅ JOIN ROOM
+    public void joinRoom(String roomJid, String nickname) throws Exception {
+        MultiUserChat muc = getManager()
+                .getMultiUserChat(JidCreate.entityBareFrom(roomJid));
+
+        muc.join(Resourcepart.from(nickname));
+    }
+
+    // ✅ SEND MESSAGE TO ROOM
+    public void sendMessage(String roomJid, String message) throws Exception {
+        MultiUserChat muc = getManager()
+                .getMultiUserChat(JidCreate.entityBareFrom(roomJid));
+
+        muc.sendMessage(message);
+    }
+
+    // ✅ DESTROY ROOM
+    public void destroyRoom(String roomJid) throws Exception {
+        MultiUserChat muc = getManager()
+                .getMultiUserChat(JidCreate.entityBareFrom(roomJid));
+
+        muc.destroy("Room closed", null);
+    }
+
+    // ✅ LIST ROOMS
+    public List<String> listRooms(String mucService) throws Exception {
+        return getManager()
+                .getHostedRooms(mucService)
+                .stream()
+                .map(room -> room.getJid().toString())
+                .toList();
+    }
+}
+
+
+@RestController
+@RequestMapping("/xmpp/rooms")
+@RequiredArgsConstructor
+public class RoomController {
+
+    private final RoomService roomService;
+
+    // ✅ CREATE ROOM
+    @PostMapping("/create")
+    public ResponseEntity<String> create(
+            @RequestParam String room,
+            @RequestParam String owner) {
+
+        try {
+            roomService.createRoom(room, owner);
+            return ResponseEntity.ok("Room created");
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError()
+                    .body("Failed: " + e.getMessage());
+        }
+    }
+
+    // ✅ JOIN ROOM
+    @PostMapping("/join")
+    public ResponseEntity<String> join(
+            @RequestParam String room,
+            @RequestParam String nick) {
+
+        try {
+            roomService.joinRoom(room, nick);
+            return ResponseEntity.ok("Joined room");
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError()
+                    .body("Failed: " + e.getMessage());
+        }
+    }
+
+    // ✅ SEND MESSAGE
+    @PostMapping("/send")
+    public ResponseEntity<String> send(
+            @RequestParam String room,
+            @RequestParam String message) {
+
+        try {
+            roomService.sendMessage(room, message);
+            return ResponseEntity.ok("Message sent");
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError()
+                    .body("Failed: " + e.getMessage());
+        }
+    }
+
+    // ✅ DESTROY ROOM
+    @PostMapping("/destroy")
+    public ResponseEntity<String> destroy(
+            @RequestParam String room) {
+
+        try {
+            roomService.destroyRoom(room);
+            return ResponseEntity.ok("Room destroyed");
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError()
+                    .body("Failed: " + e.getMessage());
+        }
+    }
+
+    // ✅ LIST ROOMS
+    @GetMapping("/list")
+    public ResponseEntity<List<String>> list(
+            @RequestParam(defaultValue = "conference.openfire.dev1") String service) {
+
+        try {
+            return ResponseEntity.ok(roomService.listRooms(service));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+}
