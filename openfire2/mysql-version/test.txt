@@ -326,3 +326,326 @@ public class RoomController {
         }
     }
 }
+
+=============================================
+
+
+# RoomDto
+
+// RoomDto.java
+package com.example.chat.dto;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class RoomDto {
+
+    private String jid;
+    private String name;
+    private String description;
+
+    private boolean persistent;
+    private boolean isPublic;
+    private boolean membersOnly;
+    private boolean passwordProtected;
+    private boolean moderated;
+
+    private int occupants;
+    private int maxUsers;
+
+    private String createdAt;
+}
+
+
+// RoomCreateRequest.java
+package com.example.chat.dto;
+
+import lombok.Data;
+
+@Data
+public class RoomCreateRequest {
+
+    private String roomName;     // ops
+    private String ownerNick;    // admin
+    private String description;  // Operations team room
+    private int maxUsers = 50;
+
+    private boolean persistent = true;
+    private boolean isPublic = true;
+    private boolean membersOnly = false;
+    private boolean passwordProtected = false;
+    private boolean moderated = false;
+
+    private String password;
+}
+
+public List<RoomDto> listRooms() throws Exception {
+
+        MultiUserChatManager manager =
+                MultiUserChatManager.getInstanceFor(smackService.getConnection());
+
+        String mucDomain = "conference." + properties.getDomain();
+
+        DomainBareJid serviceJid = JidCreate.domainBareFrom(mucDomain);
+
+        Collection<HostedRoom> hostedRooms =
+                manager.getRoomsHostedBy(serviceJid);
+
+        List<RoomDto> response = new ArrayList<>();
+
+        for (HostedRoom hosted : hostedRooms) {
+
+            try {
+
+                EntityBareJid roomJid =
+                        JidCreate.entityBareFrom(hosted.getJid().toString());
+
+                MultiUserChat muc = manager.getMultiUserChat(roomJid);
+
+                Form form = muc.getConfigurationForm();
+
+                RoomDto dto = RoomDto.builder()
+                        .jid(hosted.getJid().toString())
+                        .name(hosted.getName())
+                        .description(hosted.getName()) // fallback if desc missing
+                        .persistent(getBoolean(form, "muc#roomconfig_persistentroom"))
+                        .isPublic(getBoolean(form, "muc#roomconfig_publicroom"))
+                        .membersOnly(getBoolean(form, "muc#roomconfig_membersonly"))
+                        .passwordProtected(
+                                getBoolean(form, "muc#roomconfig_passwordprotectedroom"))
+                        .moderated(getBoolean(form, "muc#roomconfig_moderatedroom"))
+                        .occupants(hosted.getOccupantsCount())
+                        .maxUsers(getInt(form, "muc#roomconfig_maxusers", 50))
+                        .createdAt(Instant.now().toString()) // if not stored elsewhere
+                        .build();
+
+                response.add(dto);
+
+            } catch (Exception ex) {
+                log.warn("Unable to read room {}", hosted.getJid(), ex);
+            }
+        }
+
+        return response;
+    }
+
+    public RoomDto createRoom(RoomCreateRequest request) throws Exception {
+
+            MultiUserChatManager manager =
+                    MultiUserChatManager.getInstanceFor(smackService.getConnection());
+
+            String roomJidString =
+                    request.getRoomName() + "@conference." + properties.getDomain();
+
+            EntityBareJid roomJid =
+                    JidCreate.entityBareFrom(roomJidString);
+
+            MultiUserChat muc = manager.getMultiUserChat(roomJid);
+
+            // create room
+            muc.create(Resourcepart.from(request.getOwnerNick()));
+
+            // load config form
+            Form configForm = muc.getConfigurationForm();
+            Form submitForm = configForm.createAnswerForm();
+
+            // copy defaults for hidden fields
+            for (FormField field : configForm.getFields()) {
+                if (!FormField.Type.hidden.equals(field.getType())
+                        || field.getVariable() == null) {
+                    continue;
+                }
+                submitForm.setDefaultAnswer(field.getVariable());
+            }
+
+            // set room config
+            submitForm.setAnswer("muc#roomconfig_roomname", request.getRoomName());
+            submitForm.setAnswer("muc#roomconfig_roomdesc", request.getDescription());
+            submitForm.setAnswer("muc#roomconfig_maxusers",
+                    String.valueOf(request.getMaxUsers()));
+
+            submitForm.setAnswer("muc#roomconfig_persistentroom",
+                    request.isPersistent());
+
+            submitForm.setAnswer("muc#roomconfig_publicroom",
+                    request.isPublic());
+
+            submitForm.setAnswer("muc#roomconfig_membersonly",
+                    request.isMembersOnly());
+
+            submitForm.setAnswer("muc#roomconfig_moderatedroom",
+                    request.isModerated());
+
+            submitForm.setAnswer("muc#roomconfig_passwordprotectedroom",
+                    request.isPasswordProtected());
+
+            if (request.isPasswordProtected()
+                    && request.getPassword() != null
+                    && !request.getPassword().isBlank()) {
+
+                submitForm.setAnswer("muc#roomconfig_roomsecret",
+                        request.getPassword());
+            }
+
+            muc.sendConfigurationForm(submitForm);
+
+            return RoomDto.builder()
+                    .jid(roomJidString)
+                    .name(request.getRoomName())
+                    .description(request.getDescription())
+                    .persistent(request.isPersistent())
+                    .isPublic(request.isPublic())
+                    .membersOnly(request.isMembersOnly())
+                    .passwordProtected(request.isPasswordProtected())
+                    .moderated(request.isModerated())
+                    .occupants(1) // creator joined
+                    .maxUsers(request.getMaxUsers())
+                    .createdAt(Instant.now().toString())
+                    .build();
+        }
+
+    private boolean getBoolean(Form form, String field) {
+        try {
+            String value = form.getField(field).getFirstValue();
+            return "1".equals(value) || "true".equalsIgnoreCase(value);
+        } catch (Exception ex) {
+            return false;
+        }
+    }
+
+    private int getInt(Form form, String field, int defaultValue) {
+        try {
+            return Integer.parseInt(form.getField(field).getFirstValue());
+        } catch (Exception ex) {
+            return defaultValue;
+        }
+    }
+
+
+    ==============
+
+    // RoomController.java
+    package com.example.chat.controller;
+
+    import com.example.chat.dto.RoomDto;
+    import com.example.chat.service.RoomService;
+    import lombok.RequiredArgsConstructor;
+    import org.springframework.web.bind.annotation.GetMapping;
+    import org.springframework.web.bind.annotation.RequestMapping;
+    import org.springframework.web.bind.annotation.RestController;
+
+    import java.util.List;
+
+    @RestController
+    @RequiredArgsConstructor
+    @RequestMapping("/xmpp/rooms")
+    public class RoomController {
+
+        private final RoomService roomService;
+
+        @PostMapping("/create")
+            public RoomDto createRoom(@RequestBody RoomCreateRequest request)
+                    throws Exception {
+
+                return roomService.createRoom(request);
+            }
+
+        @GetMapping("/list")
+        public List<RoomDto> listRooms() throws Exception {
+            return roomService.listRooms();
+        }
+    }
+
+
+bruno
+
+# rooms/Create Room.bru
+
+meta {
+  name: Create Room
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/xmpp/rooms/create
+  body: json
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "roomName": "{{roomName}}",
+    "ownerNick": "{{ownerNick}}",
+    "description": "Operations team room",
+    "maxUsers": 50,
+    "persistent": true,
+    "public": true,
+    "membersOnly": false,
+    "passwordProtected": false,
+    "moderated": false
+  }
+}
+
+
+
+# rooms/List Rooms.bru
+
+meta {
+  name: List Rooms
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/xmpp/rooms/list
+}
+
+
+# rooms/Join Room.bru
+
+meta {
+  name: Join Room
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/xmpp/rooms/join?room={{roomName}}@conference.{{domain}}&nick={{ownerNick}}
+}
+
+
+# rooms/Send Room Message.bru
+
+meta {
+  name: Send Room Message
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/xmpp/rooms/send?room={{roomName}}@conference.{{domain}}&message=Hello%20Team
+}
+
+
+
+# rooms/Destroy Room.bru
+
+meta {
+  name: Destroy Room
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/xmpp/rooms/destroy?room={{roomName}}@conference.{{domain}}
+}
