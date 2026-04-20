@@ -82,3 +82,140 @@ Access-Control-Allow-Origin = *
 Access-Control-Allow-Methods = GET, POST, OPTIONS
 Access-Control-Allow-Headers = *
 Access-Control-Allow-Credentials = true
+
+
+
+============================
+
+
+commands:
+
+  create-room:
+    description: Create a new multi-user chat room in the specified XMPP service. Returns the newly created room metadata and configuration.
+
+    arguments:
+      roomName:
+        name: roomName
+        description: Unique room identifier used in the room JID (example: ops, support, engineering).
+        type: PropertyString
+
+      serviceName:
+        name: serviceName
+        description: Multi-user chat service/subdomain where the room will be created (example: conference).
+        type: PropertyString
+
+      description:
+        name: description
+        description: Human-readable room description displayed to users.
+        type: PropertyString
+
+      public:
+        name: public
+        description: Defines whether the room is publicly discoverable. True = visible, False = private.
+        type: PropertyBoolean
+
+      maxUsers:
+        name: maxUsers
+        description: Maximum number of occupants allowed in the room.
+        type: PropertyInteger
+
+
+
+  delete-room:
+    description: Permanently delete an existing chat room from the specified XMPP service.
+
+    arguments:
+      roomName:
+        name: roomName
+        description: Unique room identifier to delete.
+        type: PropertyString
+
+      serviceName:
+        name: serviceName
+        description: Multi-user chat service/subdomain hosting the room.
+        type: PropertyString
+
+
+
+  list-rooms:
+    description: Retrieve all rooms available under the specified XMPP chat service.
+
+    arguments:
+      serviceName:
+        name: serviceName
+        description: Multi-user chat service/subdomain to query (example: conference).
+        type: PropertyString
+
+
+
+  get-room:
+    description: Retrieve detailed metadata and configuration for a specific room.
+
+    arguments:
+      roomName:
+        name: roomName
+        description: Unique room identifier to retrieve.
+        type: PropertyString
+
+      serviceName:
+        name: serviceName
+        description: Multi-user chat service/subdomain hosting the room.
+        type: PropertyString
+
+
+
+  join-room:
+    description: Join an existing room using the supplied nickname.
+
+    arguments:
+      roomName:
+        name: roomName
+        description: Room identifier to join.
+        type: PropertyString
+
+      serviceName:
+        name: serviceName
+        description: Multi-user chat service/subdomain hosting the room.
+        type: PropertyString
+
+      nickName:
+        name: nickName
+        description: Display nickname used inside the room.
+        type: PropertyString
+
+
+
+  send-room-message:
+    description: Send a group chat message to all occupants of a room.
+
+    arguments:
+      roomName:
+        name: roomName
+        description: Target room identifier.
+        type: PropertyString
+
+      serviceName:
+        name: serviceName
+        description: Multi-user chat service/subdomain hosting the room.
+        type: PropertyString
+
+      message:
+        name: message
+        description: Message text to broadcast to the room.
+        type: PropertyString
+
+
+
+  leave-room:
+    description: Leave a joined room and disconnect the current occupant session.
+
+    arguments:
+      roomName:
+        name: roomName
+        description: Room identifier to leave.
+        type: PropertyString
+
+      serviceName:
+        name: serviceName
+        description: Multi-user chat service/subdomain hosting the room.
+        type: PropertyString
