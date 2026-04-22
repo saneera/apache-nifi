@@ -439,3 +439,90 @@ class DeleteRoomCommandTest {
         }
     }
 }
+
+
+============
+
+@ExtendWith(MockitoExtension.class)
+class CreateRoomCommandTest {
+
+    @Mock
+    private SmackService service;
+
+    @Mock
+    private PropertyService propertyService;
+
+    @Mock
+    private PropertyHandlerFactory propertyHandlerFactory;
+
+    @Mock
+    private MultiUserChatManager manager;
+
+    @Mock
+    private MultiUserChat muc;
+
+    @Mock
+    private Form form;
+
+    @Mock
+    private FillableForm submitForm;
+
+    private CreateRoomCommand command;
+
+    @BeforeEach
+    void setup() {
+
+        ChatGatewayProperties config = new ChatGatewayProperties();
+        config.setServiceName("conference");
+        config.setDomain("example.com");
+        config.setMaxUsers(20);
+
+        when(service.getDriverConfig()).thenReturn(config);
+
+        // IMPORTANT: wrapper method in SmackService
+        when(service.getChatManager()).thenReturn(manager);
+
+        command = spy(new CreateRoomCommand(
+                service,
+                propertyService,
+                propertyHandlerFactory
+        ));
+    }
+
+    @Test
+    void executeCommand_success() throws Exception {
+
+        Map<String, Object> params = new HashMap<>();
+        params.put("roomName", "Test1");
+        params.put("description", "Test Room");
+
+        Rooms rooms = new Rooms();
+
+        doReturn(rooms).when(command)
+                .validateRoomExists(any(Rooms.class), eq("Test1"));
+
+        when(manager.getMultiUserChat(any())).thenReturn(muc);
+
+        when(muc.getConfigurationForm()).thenReturn(form);
+        when(form.getFillableForm()).thenReturn(submitForm);
+
+        RoomInfo roomInfo = mock(RoomInfo.class);
+        when(roomInfo.getName()).thenReturn("Test1");
+        when(roomInfo.getDescription()).thenReturn("Test Room");
+
+        when(manager.getRoomInfo(any())).thenReturn(roomInfo);
+
+        SmackAssetResponse response =
+                command.executeCommand("create-room", params);
+
+        assertNotNull(response);
+        assertEquals(1, rooms.getRooms().size());
+        assertEquals("Test1", rooms.getRooms().get(0).getRoomName());
+
+        verify(muc).create(any());
+        verify(muc).sendConfigurationForm(submitForm);
+
+        verify(propertyService)
+                .sendObjectToPropService("rooms", rooms);
+    }
+}
