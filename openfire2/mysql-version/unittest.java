@@ -526,3 +526,38 @@ class CreateRoomCommandTest {
                 .sendObjectToPropService("rooms", rooms);
     }
 }
+
+
+=====
+@ExtendWith(MockitoExtension.class)
+class DeleteRoomCommandTest {
+
+    @Mock
+    private SmackService service;
+
+    @Mock
+    private PropertyService propertyService;
+
+    @Mock
+    private PropertyHandlerFactory propertyHandlerFactory;
+
+    @Mock
+    private ChatGatewayProperties driverConfig;
+
+    @Mock
+    private MultiUserChat muc;
+
+    @Mock
+    private ChatManagerProvider provider;
+
+    private DeleteRoomCommand command;
+
+    @BeforeEach
+    void setup() {
+        command = new DeleteRoomCommand(
+                service,
+                propertyService,
+                propertyHandlerFactory
+        );
+    }
+}
