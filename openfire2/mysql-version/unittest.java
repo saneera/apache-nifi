@@ -561,3 +561,88 @@ class DeleteRoomCommandTest {
         );
     }
 }
+
+
+==========
+
+
+
+
+
+        import org.jivesoftware.smackx.muc.MultiUserChat;
+import org.jivesoftware.smackx.muc.MultiUserChatManager;
+import org.jivesoftware.smackx.muc.RoomInfo;
+import org.jivesoftware.smackx.xdata.Form;
+import org.jivesoftware.smackx.xdata.FillableForm;
+import org.jxmpp.jid.EntityBareJid;
+import org.jxmpp.jid.impl.JidCreate;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.MockedStatic;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.HashMap;
+import java.util.Map;
+
+import static org.mockito.ArgumentMatchers.*;
+        import static org.mockito.Mockito.*;
+        import static org.junit.jupiter.api.Assertions.*;
+
+@ExtendWith(MockitoExtension.class)
+class CreateRoomCommandTest {
+
+@Mock
+private YourServiceClass service; // The service in your image
+
+@Mock
+private MultiUserChatManager manager; // Mockito-inline handles this final class
+
+@Mock
+private MultiUserChat multiUserChat;
+
+@Mock
+private FillableForm fillableForm;
+
+@InjectMocks
+private CreateRoomCommand createRoomCommand;
+
+@Test
+void testExecuteCommand_FullFlow() throws Exception {
+// 1. Prepare Mock Data
+Map<String, Object> params = new HashMap<>();
+params.put("roomName", "dev-room");
+params.put("description", "Development Chat");
+
+ChatGatewayProperties props = mock(ChatGatewayProperties.class);
+Form mockForm = mock(Form.class);
+RoomInfo mockRoomInfo = mock(RoomInfo.class);
+EntityBareJid mockJid = mock(EntityBareJid.class);
+
+// 2. Setup Stubs
+when(service.getDriverConfig()).thenReturn(props);
+when(service.getManager()).thenReturn(manager);
+when(props.getServiceName()).thenReturn("conference.localhost");
+
+// Use try-with-resources for the static JidCreate mock
+try (MockedStatic<JidCreate> jidStatic = mockStatic(JidCreate.class)) {
+jidStatic.when(() -> JidCreate.entityBareFrom(anyString())).thenReturn(mockJid);
+
+when(manager.getMultiUserChat(mockJid)).thenReturn(multiUserChat);
+when(multiUserChat.getConfigurationForm()).thenReturn(mockForm);
+when(mockForm.getFillableForm()).thenReturn(fillableForm);
+when(manager.getRoomInfo(mockJid)).thenReturn(mockRoomInfo);
+when(mockRoomInfo.getName()).thenReturn("dev-room");
+
+// 3. Execute
+SmackAssetResponse response = createRoomCommand.executeCommand("CreateRoom", params);
+
+// 4. Verify
+assertNotNull(response);
+verify(multiUserChat).create(any());
+verify(fillableForm).setAnswer(eq("muc#roomconfig_roomname"), eq("dev-room"));
+verify(multiUserChat).sendConfigurationForm(fillableForm);
+}
+}
+}
