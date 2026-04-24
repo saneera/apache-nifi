@@ -646,3 +646,32 @@ verify(multiUserChat).sendConfigurationForm(fillableForm);
 }
 }
 }
+
+
+
+
+------------
+
+
+} catch (MucAlreadyJoinedException e) {
+   throw new IllegalArgumentException("Room already exists", e);
+
+} catch (XMPPErrorException e) {
+        throw new IllegalArgumentException("Openfire rejected room creation", e);
+
+} catch (NotConnectedException e) {
+        throw new IllegalStateException("Not connected to chat server", e);
+
+} catch (MissingMucCreationAcknowledgeException e) {
+        throw new RuntimeException("Room creation not acknowledged by server", e);
+
+} catch (NoResponseException e) {
+        throw new RuntimeException("Timeout creating room", e);
+
+} catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+    throw new RuntimeException("Thread interrupted", e);
+
+} catch (NotAMucServiceException e) {
+        throw new IllegalArgumentException("Invalid MUC service domain", e);
+}
