@@ -1,0 +1,41 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ensure-muc-service
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: mysql-check
+          image: mysql:8
+          command:
+            - sh
+            - -c
+            - |
+              until mysql -h mysql -u$MYSQL_USER -p$MYSQL_PASSWORD -e "SELECT 1" $MYSQL_DB; do
+                echo waiting for mysql...
+                sleep 5
+              done
+              
+              COUNT=$(mysql -N -h mysql -u$MYSQL_USER -p$MYSQL_PASSWORD $MYSQL_DB -e \
+                "SELECT COUNT(*) FROM ofMucService WHERE subdomain='conference';")
+              
+              if [ "$COUNT" = "0" ]; then
+                mysql -h mysql -u$MYSQL_USER -p$MYSQL_PASSWORD $MYSQL_DB -e "
+                INSERT INTO ofMucService (subdomain, description, isHidden)
+                VALUES ('conference','Default chat service',0);"
+              fi
+          env:
+            - name: MYSQL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-secret
+                  key: username
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-secret
+                  key: password
+            - name: MYSQL_DB
+              value: openfire
