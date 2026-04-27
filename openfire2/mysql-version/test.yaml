@@ -23,8 +23,13 @@ spec:
               
               if [ "$COUNT" = "0" ]; then
                 mysql -h mysql -u$MYSQL_USER -p$MYSQL_PASSWORD $MYSQL_DB -e "
-                INSERT INTO ofMucService (subdomain, description, isHidden)
-                VALUES ('conference','Default chat service',0);"
+                INSERT INTO ofMucService(serviceID, subdomain, description, isHidden)
+                VALUES (
+                (SELECT COALESCE(MAX(serviceID),0)+1 FROM ofMucService),
+                '${OPENFIRE_SERVICE}',
+                'Default chat service',
+                0
+                );"
               fi
           env:
             - name: MYSQL_USER
