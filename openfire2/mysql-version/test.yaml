@@ -44,3 +44,31 @@ spec:
                   key: password
             - name: MYSQL_DB
               value: openfire
+
+
+
+  - |
+    COUNT=$(mysql -N -h openfire-mysql -u$MYSQL_USER -p$MYSQL_PASSWORD $MYSQL_DATABASE -e \
+    "SELECT COUNT(*) FROM ofMucService WHERE subdomain='${OPENFIRE_SERVICE}';")
+    
+    echo count $COUNT
+    
+    if [ "$COUNT" = "0" ]; then
+    
+      NEXT_ID=$(mysql -N -h openfire-mysql -u$MYSQL_USER -p$MYSQL_PASSWORD $MYSQL_DATABASE -e \
+      "SELECT COALESCE(MAX(serviceID),0)+1 FROM ofMucService;")
+    
+      echo next serviceID $NEXT_ID
+    
+      mysql -h openfire-mysql -u$MYSQL_USER -p$MYSQL_PASSWORD $MYSQL_DATABASE -e "
+      INSERT INTO ofMucService
+      (serviceID, subdomain, description, isHidden)
+      VALUES
+      ($NEXT_ID, '${OPENFIRE_SERVICE}', 'Default chat service', 0);
+      "
+    
+      echo inserted ${OPENFIRE_SERVICE}
+    
+    else
+      echo service already exists
+    fi
