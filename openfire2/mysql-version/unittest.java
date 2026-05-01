@@ -718,3 +718,105 @@ name: mysql-secret
 key: password
         - name: MYSQL_DB
 value: openfire
+
+
+
+
+//==========
+
+
+public List<ParticipantDto> getAllParticipants() throws Exception {
+
+    Rooms rooms = listRoomFromServer();
+
+    return rooms.getRooms().stream().flatMap(room -> {
+        try {
+            EntityBareJid roomJid = JidCreate.entityBareFrom(
+                    buildEntityBareJid(room.getRoomName(),
+                            chatGatewayProperties.getServiceName(),
+                            chatGatewayProperties.getDomain())
+            );
+
+            MultiUserChat muc = manager.getMultiUserChat(roomJid);
+
+            if (!muc.isJoined()) {
+                muc.join(Resourcepart.from("admin"));
+            }
+
+            return muc.getMembers().stream()
+                    .map(member -> new ParticipantDto(
+                            room.getRoomName(),
+                            member.getJid().asBareJid().toString()
+                    ));
+
+        } catch (Exception e) {
+            return Stream.empty();
+        }
+    }).collect(Collectors.toList());
+}
+
+
+=======
+
+public List<ParticipantDto> getAllParticipants() throws Exception {
+
+    Rooms rooms = listRoomFromServer();
+
+    List<ParticipantDto> result = new ArrayList<>();
+
+    for (Room room : rooms.getRooms()) {
+
+        String roomJidStr = buildEntityBareJid(
+                room.getRoomName(),
+                chatGatewayProperties.getServiceName(),
+                chatGatewayProperties.getDomain()
+        );
+
+        EntityBareJid roomJid = JidCreate.entityBareFrom(roomJidStr);
+
+        MultiUserChat muc = manager.getMultiUserChat(roomJid);
+
+        // Join if needed
+        if (!muc.isJoined()) {
+            muc.join(Resourcepart.from("admin"));
+        }
+
+        // Get members
+        List<Affiliate> members = muc.getMembers();
+
+        for (Affiliate member : members) {
+
+            String user = member.getJid().asBareJid().toString();
+
+            result.add(new ParticipantDto(
+                    room.getRoomName(),
+                    user
+            ));
+        }
+    }
+
+    return result;
+}
+
+
+
+=====
+
+public class ParticipantDto {
+
+    private String roomName;
+    private String participant;
+
+    public ParticipantDto(String roomName, String participant) {
+        this.roomName = roomName;
+        this.participant = participant;
+    }
+
+    public String getRoomName() {
+        return roomName;
+    }
+
+    public String getParticipant() {
+        return participant;
+    }
+}
