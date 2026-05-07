@@ -1001,3 +1001,109 @@ class DeleteParticipantCommandTest {
         );
     }
 }
+
+
+=================
+
+
+
+    @Mock
+    private PropertyService propertyService;
+
+    @Mock
+    private ObjectMapper mapper;
+
+    private ParticipantsProperty participantsProperty;
+
+    @BeforeEach
+    void setUp() {
+
+        MockitoAnnotations.openMocks(this);
+
+        participantsProperty = spy(new ParticipantsProperty());
+
+        participantsProperty.propertyService = propertyService;
+        participantsProperty.mapper = mapper;
+    }
+
+    @Test
+    void shouldReturnParticipantsFromServer() throws Exception {
+
+        // given
+        Participants participants = new Participants();
+
+        participants.setParticipants(
+                new ArrayList<>(
+                        List.of(
+                                new Participant("Saneera1"),
+                                new Participant("Saneera2")
+                        )
+                )
+        );
+
+        Object propServiceResponse = participants;
+
+        when(participantsProperty.getPropertyValueFromPropService("participants"))
+                .thenReturn(propServiceResponse);
+
+        when(mapper.convertValue(
+                eq(propServiceResponse),
+                any(com.fasterxml.jackson.core.type.TypeReference.class)
+        )).thenReturn(participants);
+
+        when(propertyService.getPropName("participants"))
+                .thenReturn("assets.test.props.participants");
+
+        // when
+        ChatAssetResponse response =
+                participantsProperty.getPropertyFromServer("participants");
+
+        // then
+        assertNotNull(response);
+        assertTrue(response.getData() instanceof ParticipantsPropResponse);
+
+        ParticipantsPropResponse data =
+                (ParticipantsPropResponse) response.getData();
+
+        assertEquals(2, data.getParticipants().size());
+
+        assertEquals(
+                "Saneera1",
+                data.getParticipants().get(0).getParticipantName()
+        );
+
+        verify(propertyService.getStore(), times(1))
+                .setPropertyValue(
+                        eq("assets.test.props.participants"),
+                        anyString()
+                );
+    }
+
+    @Test
+    void shouldHandleNullParticipants() throws Exception {
+
+        // given
+        when(participantsProperty.getPropertyValueFromPropService("participants"))
+                .thenReturn(null);
+
+        when(mapper.convertValue(
+                isNull(),
+                any(com.fasterxml.jackson.core.type.TypeReference.class)
+        )).thenReturn(null);
+
+        when(propertyService.getPropName("participants"))
+                .thenReturn("assets.test.props.participants");
+
+        // when
+        ChatAssetResponse response =
+                participantsProperty.getPropertyFromServer("participants");
+
+        // then
+        assertNotNull(response);
+
+        ParticipantsPropResponse data =
+                (ParticipantsPropResponse) response.getData();
+
+        assertNotNull(data.getParticipants());
+        assertTrue(data.getParticipants().isEmpty());
+    }
