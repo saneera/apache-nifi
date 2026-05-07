@@ -808,3 +808,196 @@ class AddParticipantCommandTest {
         );
     }
 }
+
+
+
+
+
+=====================
+
+package com.babcock.inspire.openfire.commandhandlers.commands;
+
+import com.babcock.inspire.openfire.constants.Constants;
+import com.babcock.inspire.openfire.models.Participant;
+import com.babcock.inspire.openfire.models.Participants;
+import com.babcock.inspire.openfire.propertyhandlers.PropertyHandler;
+import com.babcock.inspire.openfire.response.ChatAssetResponse;
+import com.babcock.inspire.openfire.response.properties.DeletedResponse;
+import com.babcock.inspire.openfire.response.properties.ParticipantsPropResponse;
+import com.babcock.inspire.openfire.services.ChatService;
+import com.babcock.inspire.openfire.services.PropertyService;
+import com.babcock.inspire.openfire.factories.CommandHandlerFactory;
+import com.babcock.inspire.openfire.factories.PropertyHandlerFactory;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+class DeleteParticipantCommandTest {
+
+    @Mock
+    private ChatService chatService;
+
+    @Mock
+    private PropertyService propertyService;
+
+    @Mock
+    private PropertyHandlerFactory propertyHandlerFactory;
+
+    @Mock
+    private CommandHandlerFactory commandHandlerFactory;
+
+    @Mock
+    private PropertyHandler propertyHandler;
+
+    private DeleteParticipantCommand deleteParticipantCommand;
+
+    @BeforeEach
+    void setUp() {
+
+        MockitoAnnotations.openMocks(this);
+
+        deleteParticipantCommand = spy(
+                new DeleteParticipantCommand(
+                        chatService,
+                        propertyService,
+                        propertyHandlerFactory,
+                        commandHandlerFactory
+                )
+        );
+    }
+
+    @Test
+    void shouldDeleteParticipantSuccessfully() {
+
+        // given
+        Map<String, Object> commandParams = new HashMap<>();
+        commandParams.put("participantName", "Saneera1");
+
+        ParticipantsPropResponse propResponse =
+                ParticipantsPropResponse.builder()
+                        .participants(
+                                new ArrayList<>(
+                                        List.of(
+                                                new Participant("Saneera1"),
+                                                new Participant("Saneera2")
+                                        )
+                                )
+                        )
+                        .build();
+
+        ChatAssetResponse response = new ChatAssetResponse();
+        response.setResponse(propResponse);
+
+        when(deleteParticipantCommand.getPropertyHandler(Constants.PARTICIPANTS))
+                .thenReturn(propertyHandler);
+
+        when(propertyHandler.getPropertyValueFromCache(Constants.PARTICIPANTS))
+                .thenReturn(response);
+
+        // when
+        ChatAssetResponse result =
+                deleteParticipantCommand.executeCommand(
+                        "delete-participant",
+                        commandParams
+                );
+
+        // then
+        verify(propertyService, times(1))
+                .sendObjectToPropService(
+                        eq(Constants.PARTICIPANTS),
+                        any(Participants.class)
+                );
+
+        assertNotNull(result);
+        assertTrue(result.getData() instanceof DeletedResponse);
+
+        DeletedResponse deletedResponse =
+                (DeletedResponse) result.getData();
+
+        assertEquals(
+                "Participant Saneera1 deleted",
+                deletedResponse.getMessage()
+        );
+    }
+
+    @Test
+    void shouldThrowExceptionWhenParticipantDoesNotExist() {
+
+        // given
+        Map<String, Object> commandParams = new HashMap<>();
+        commandParams.put("participantName", "UnknownUser");
+
+        ParticipantsPropResponse propResponse =
+                ParticipantsPropResponse.builder()
+                        .participants(
+                                new ArrayList<>(
+                                        List.of(
+                                                new Participant("Saneera1"),
+                                                new Participant("Saneera2")
+                                        )
+                                )
+                        )
+                        .build();
+
+        ChatAssetResponse response = new ChatAssetResponse();
+        response.setResponse(propResponse);
+
+        when(deleteParticipantCommand.getPropertyHandler(Constants.PARTICIPANTS))
+                .thenReturn(propertyHandler);
+
+        when(propertyHandler.getPropertyValueFromCache(Constants.PARTICIPANTS))
+                .thenReturn(response);
+
+        // when + then
+        IllegalArgumentException exception =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> deleteParticipantCommand.executeCommand(
+                                "delete-participant",
+                                commandParams
+                        )
+                );
+
+        assertEquals(
+                "Participant does not exist: UnknownUser",
+                exception.getMessage()
+        );
+
+        verify(propertyService, never())
+                .sendObjectToPropService(any(), any());
+    }
+
+    @Test
+    void shouldThrowExceptionWhenParticipantNameIsBlank() {
+
+        // given
+        Map<String, Object> commandParams = new HashMap<>();
+        commandParams.put("participantName", "");
+
+        // when + then
+        IllegalArgumentException exception =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> deleteParticipantCommand.executeCommand(
+                                "delete-participant",
+                                commandParams
+                        )
+                );
+
+        assertEquals(
+                "Participant Name cannot be null or empty",
+                exception.getMessage()
+        );
+    }
+}
