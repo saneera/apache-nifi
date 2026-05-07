@@ -649,3 +649,162 @@ meta {
 post {
   url: {{baseUrl}}/xmpp/rooms/destroy?room={{roomName}}@conference.{{domain}}
 }
+
+
+========================
+
+package com.babcock.inspire.openfire.commandhandlers.commands;
+
+import com.babcock.inspire.openfire.constants.Constants;
+import com.babcock.inspire.openfire.models.Participant;
+import com.babcock.inspire.openfire.models.Participants;
+import com.babcock.inspire.openfire.response.ChatAssetResponse;
+import com.babcock.inspire.openfire.response.properties.ParticipantResponse;
+import com.babcock.inspire.openfire.response.properties.ParticipantsPropResponse;
+import com.babcock.inspire.openfire.services.PropertyService;
+import com.babcock.inspire.openfire.propertyhandlers.PropertyHandler;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+class AddParticipantCommandTest {
+
+    @Mock
+    private PropertyService propertyService;
+
+    @Mock
+    private PropertyHandler propertyHandler;
+
+    @InjectMocks
+    private AddParticipantCommand addParticipantCommand;
+
+    @BeforeEach
+    void setUp() {
+        MockitoAnnotations.openMocks(this);
+    }
+
+    @Test
+    void shouldAddParticipantSuccessfully() {
+
+        // given
+        Map<String, Object> commandParams = new HashMap<>();
+        commandParams.put("participantName", "Saneera3");
+
+        ParticipantsPropResponse propResponse =
+                ParticipantsPropResponse.builder()
+                        .participants(
+                                List.of(
+                                        new Participant("Saneera1"),
+                                        new Participant("Saneera2")
+                                )
+                        )
+                        .build();
+
+        ChatAssetResponse response = new ChatAssetResponse();
+        response.setResponse(propResponse);
+
+        when(addParticipantCommand.getPropertyHandler(Constants.PARTICIPANTS))
+                .thenReturn(propertyHandler);
+
+        when(propertyHandler.getPropertyValueFromCache(Constants.PARTICIPANTS))
+                .thenReturn(response);
+
+        // when
+        ChatAssetResponse result =
+                addParticipantCommand.executeCommand(
+                        "add-participant",
+                        commandParams
+                );
+
+        // then
+        verify(propertyService, times(1))
+                .sendObjectToPropService(
+                        eq(Constants.PARTICIPANTS),
+                        any(Participants.class)
+                );
+
+        assertNotNull(result);
+        assertTrue(result.getData() instanceof ParticipantResponse);
+
+        ParticipantResponse participantResponse =
+                (ParticipantResponse) result.getData();
+
+        assertEquals("Saneera3", participantResponse.getParticipantName());
+    }
+
+    @Test
+    void shouldThrowExceptionWhenParticipantAlreadyExists() {
+
+        // given
+        Map<String, Object> commandParams = new HashMap<>();
+        commandParams.put("participantName", "Saneera1");
+
+        ParticipantsPropResponse propResponse =
+                ParticipantsPropResponse.builder()
+                        .participants(
+                                List.of(
+                                        new Participant("Saneera1")
+                                )
+                        )
+                        .build();
+
+        ChatAssetResponse response = new ChatAssetResponse();
+        response.setResponse(propResponse);
+
+        when(addParticipantCommand.getPropertyHandler(Constants.PARTICIPANTS))
+                .thenReturn(propertyHandler);
+
+        when(propertyHandler.getPropertyValueFromCache(Constants.PARTICIPANTS))
+                .thenReturn(response);
+
+        // when + then
+        IllegalArgumentException exception =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> addParticipantCommand.executeCommand(
+                                "add-participant",
+                                commandParams
+                        )
+                );
+
+        assertEquals(
+                "Participant already exists : Saneera1",
+                exception.getMessage()
+        );
+
+        verify(propertyService, never())
+                .sendObjectToPropService(any(), any());
+    }
+
+    @Test
+    void shouldThrowExceptionWhenParticipantNameIsBlank() {
+
+        // given
+        Map<String, Object> commandParams = new HashMap<>();
+        commandParams.put("participantName", "");
+
+        // when + then
+        IllegalArgumentException exception =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> addParticipantCommand.executeCommand(
+                                "add-participant",
+                                commandParams
+                        )
+                );
+
+        assertEquals(
+                "Participants name cannot be null or empty",
+                exception.getMessage()
+        );
+    }
+}
