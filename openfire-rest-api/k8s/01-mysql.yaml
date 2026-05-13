@@ -1,0 +1,111 @@
+---
+# ── MYSQL CREDENTIALS SECRET ──────────────────────────────────────────────────
+# Keep passwords in sync with openfire-secret above.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mysql-secret
+  namespace: openfire
+type: Opaque
+data:
+  MYSQL_ROOT_PASSWORD: cm9vdHBhc3M=   # rootpass   ← CHANGE
+  MYSQL_DATABASE:      b3BlbmZpcmU=   # openfire
+  MYSQL_USER:          b3BlbmZpcmU=   # openfire   ← CHANGE
+  MYSQL_PASSWORD:      b3BlbmZpcmU=   # openfire   ← CHANGE
+
+---
+# ── MYSQL PVC ─────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mysql-data
+  namespace: openfire
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: standard      # ← set your StorageClass
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+# ── MYSQL STATEFULSET ─────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql
+  namespace: openfire
+  labels:
+    app: mysql
+spec:
+  serviceName: mysql
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: mysql
+          image: mysql:8.0
+          args:
+            - "--character-set-server=utf8mb4"
+            - "--collation-server=utf8mb4_unicode_ci"
+            - "--default-authentication-plugin=mysql_native_password"
+          ports:
+            - name: mysql
+              containerPort: 3306
+          envFrom:
+            - secretRef:
+                name: mysql-secret
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          volumeMounts:
+            - name: mysql-data
+              mountPath: /var/lib/mysql
+          livenessProbe:
+            exec:
+              command: ["mysqladmin", "ping", "-h", "localhost"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - bash
+                - "-c"
+                - "mysql -u$MYSQL_USER -p$MYSQL_PASSWORD -e 'SELECT 1'"
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            timeoutSeconds: 3
+      volumes:
+        - name: mysql-data
+          persistentVolumeClaim:
+            claimName: mysql-data
+
+---
+# ── MYSQL SERVICE (headless — stable DNS: mysql.openfire.svc.cluster.local) ───
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+  namespace: openfire
+  labels:
+    app: mysql
+spec:
+  clusterIP: None    # headless
+  selector:
+    app: mysql
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: 3306

@@ -126,7 +126,7 @@ Property Service -> CTG -> cmdDelegate -> Client
 
 ![add_participant.pnq](...)
 
-
+Ï
 `DELETE /delete-participant`
 
 When a request (`DELETE /delete-participant`) is sent from the HTTP client, the `cmdDelegate` acts as the entry point and forwards the request to the Chat Traffic Gateway Service (CTG).
