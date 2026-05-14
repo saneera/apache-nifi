@@ -692,3 +692,616 @@ public class XmppConnectionManager {
 
         return connection;
     }
+
+
+    ========
+
+========
+
+
+            package com.babcock.inspire.openfire.connection;
+
+import com.babcock.inspire.openfire.config.ChatGatewayProperties;
+import com.babcock.inspire.openfire.config.PollingConfig;
+import com.babcock.inspire.openfire.enums.AssetState;
+import com.babcock.inspire.openfire.services.PropertyService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.jivesoftware.smack.ConnectionConfiguration;
+import org.jivesoftware.smack.ConnectionListener;
+import org.jivesoftware.smack.XMPPConnection;
+import org.jivesoftware.smack.tcp.XMPPTCPConnection;
+import org.jivesoftware.smack.tcp.XMPPTCPConnectionConfiguration;
+import org.jivesoftware.smackx.ping.PingManager;
+import org.springframework.stereotype.Component;
+
+import javax.annotation.PreDestroy;
+import java.util.Map;
+import java.util.concurrent.*;
+
+    @Slf4j
+    @Component
+    @RequiredArgsConstructor
+    public class XmppConnectionManager {
+
+        private final ChatGatewayProperties chatGatewayProperties;
+
+        private final PollingConfig pollingConfig;
+
+        private final PropertyService propertyService;
+
+        /**
+         * System/Admin connection
+         */
+        private XMPPTCPConnection systemConnection;
+
+        /**
+         * Participant connections
+         */
+        private final Map<String, XMPPTCPConnection>
+                participantConnections = new ConcurrentHashMap<>();
+
+        private boolean connected = false;
+
+        private AssetState state = AssetState.OFFLINE;
+
+        private final ScheduledExecutorService scheduler =
+                Executors.newScheduledThreadPool(2);
+
+        private ScheduledFuture<?> pingTask;
+
+        private ScheduledFuture<?> reconnectTask;
+
+        /**
+         * =========================================================
+         * SYSTEM CONNECTION
+         * =========================================================
+         */
+
+        public synchronized XMPPTCPConnection getSystemConnection() {
+
+            try {
+
+                if (isSystemConnectionAlive()) {
+                    return systemConnection;
+                }
+
+                connectSystem();
+
+                return systemConnection;
+
+            } catch (Exception ex) {
+
+                throw new RuntimeException(ex);
+            }
+        }
+
+        public synchronized void connectSystem() {
+
+            try {
+
+                if (isSystemConnectionAlive()) {
+                    return;
+                }
+
+                log.info("Connecting system user to Openfire...");
+
+                XMPPTCPConnectionConfiguration config = buildConfig();
+
+                systemConnection = new XMPPTCPConnection(config);
+
+                registerSystemListeners(systemConnection);
+
+                systemConnection.connect();
+
+                systemConnection.login(
+                        chatGatewayProperties.getUsername(),
+                        chatGatewayProperties.getPassword()
+                );
+
+                updateConnected(true);
+
+                updateState(AssetState.OPERATIONAL);
+
+                stopReconnectTask();
+
+                startPingTask();
+
+            } catch (Exception ex) {
+
+                log.error("Failed to connect system user", ex);
+
+                handleDisconnect();
+            }
+        }
+
+        /**
+         * =========================================================
+         * PARTICIPANT CONNECTIONS
+         * =========================================================
+         */
+
+        public synchronized XMPPTCPConnection getParticipantConnection(
+                String username,
+                String password
+        ) {
+
+            try {
+
+                XMPPTCPConnection connection =
+                        participantConnections.get(username);
+
+                if (connection != null
+                        && connection.isConnected()
+                        && connection.isAuthenticated()) {
+
+                    return connection;
+                }
+
+                connection =
+                        createParticipantConnection(
+                                username,
+                                password
+                        );
+
+                participantConnections.put(username, connection);
+
+                return connection;
+
+            } catch (Exception ex) {
+
+                throw new RuntimeException(ex);
+            }
+        }
+
+        private XMPPTCPConnection createParticipantConnection(
+                String username,
+                String password
+        ) {
+
+            try {
+
+                log.info("Creating participant connection: {}", username);
+
+                XMPPTCPConnection connection =
+                        new XMPPTCPConnection(buildConfig());
+
+                connection.connect();
+
+                connection.login(username, password);
+
+                registerParticipantListeners(
+                        username,
+                        connection
+                );
+
+                return connection;
+
+            } catch (Exception ex) {
+
+                log.error(
+                        "Failed creating participant connection: {}",
+                        username,
+                        ex
+                );
+
+                throw new RuntimeException(ex);
+            }
+        }
+
+        public void disconnectParticipant(String username) {
+
+            try {
+
+                XMPPTCPConnection connection =
+                        participantConnections.remove(username);
+
+                if (connection != null) {
+
+                    log.info(
+                            "Disconnecting participant: {}",
+                            username
+                    );
+
+                    connection.disconnect();
+                }
+
+            } catch (Exception ex) {
+
+                log.warn(
+                        "Failed disconnecting participant: {}",
+                        username,
+                        ex
+                );
+            }
+        }
+
+        /**
+         * =========================================================
+         * CONNECTION LISTENERS
+         * =========================================================
+         */
+
+        private void registerSystemListeners(
+                XMPPTCPConnection connection
+        ) {
+
+            connection.addConnectionListener(
+                    new ConnectionListener() {
+
+                        @Override
+                        public void connected(XMPPConnection connection) {
+
+                            log.info("System socket connected");
+                        }
+
+                        @Override
+                        public void authenticated(
+                                XMPPConnection connection,
+                                boolean resumed
+                        ) {
+
+                            log.info("System authenticated");
+
+                            updateConnected(true);
+
+                            updateState(AssetState.OPERATIONAL);
+
+                            stopReconnectTask();
+
+                            startPingTask();
+                        }
+
+                        @Override
+                        public void connectionClosed() {
+
+                            log.warn("System connection closed");
+
+                            handleDisconnect();
+                        }
+
+                        @Override
+                        public void connectionClosedOnError(
+                                Exception e
+                        ) {
+
+                            log.error(
+                                    "System connection closed on error",
+                                    e
+                            );
+
+                            handleDisconnect();
+                        }
+                    }
+            );
+        }
+
+        private void registerParticipantListeners(
+                String username,
+                XMPPTCPConnection connection
+        ) {
+
+            connection.addConnectionListener(
+                    new ConnectionListener() {
+
+                        @Override
+                        public void connected(XMPPConnection connection) {
+
+                            log.info(
+                                    "Participant connected: {}",
+                                    username
+                            );
+                        }
+
+                        @Override
+                        public void authenticated(
+                                XMPPConnection connection,
+                                boolean resumed
+                        ) {
+
+                            log.info(
+                                    "Participant authenticated: {}",
+                                    username
+                            );
+                        }
+
+                        @Override
+                        public void connectionClosed() {
+
+                            log.warn(
+                                    "Participant disconnected: {}",
+                                    username
+                            );
+
+                            participantConnections.remove(username);
+                        }
+
+                        @Override
+                        public void connectionClosedOnError(
+                                Exception e
+                        ) {
+
+                            log.error(
+                                    "Participant error: {}",
+                                    username,
+                                    e
+                            );
+
+                            participantConnections.remove(username);
+                        }
+                    }
+            );
+        }
+
+        /**
+         * =========================================================
+         * PING TASK
+         * =========================================================
+         */
+
+        private synchronized void startPingTask() {
+
+            if (pingTask != null
+                    && !pingTask.isCancelled()
+                    && !pingTask.isDone()) {
+
+                return;
+            }
+
+            log.info("Starting ping task");
+
+            long interval =
+                    pollingConfig.getPollingIntervalMillis();
+
+            pingTask = scheduler.scheduleAtFixedRate(
+                    () -> {
+
+                        boolean pingOk = pingServer();
+
+                        if (pingOk) {
+
+                            updateConnected(true);
+
+                            updateState(AssetState.OPERATIONAL);
+
+                        } else {
+
+                            log.warn("Ping failed");
+
+                            handleDisconnect();
+                        }
+
+                    },
+                    interval,
+                    interval,
+                    TimeUnit.MILLISECONDS
+            );
+        }
+
+        private synchronized void stopPingTask() {
+
+            log.info("Stopping ping task");
+
+            if (pingTask != null) {
+
+                pingTask.cancel(false);
+
+                pingTask = null;
+            }
+        }
+
+        /**
+         * =========================================================
+         * RECONNECT TASK
+         * =========================================================
+         */
+
+        private synchronized void startReconnectTask() {
+
+            if (reconnectTask != null
+                    && !reconnectTask.isCancelled()
+                    && !reconnectTask.isDone()) {
+
+                return;
+            }
+
+            log.info("Starting reconnect task");
+
+            long interval =
+                    pollingConfig.getPollingIntervalMillis();
+
+            reconnectTask = scheduler.scheduleAtFixedRate(
+                    () -> {
+
+                        if (isSystemConnectionAlive()) {
+
+                            stopReconnectTask();
+
+                            startPingTask();
+
+                            return;
+                        }
+
+                        log.info("Trying reconnect...");
+
+                        connectSystem();
+
+                    },
+                    interval,
+                    interval,
+                    TimeUnit.MILLISECONDS
+            );
+        }
+
+        private synchronized void stopReconnectTask() {
+
+            log.info("Stopping reconnect task");
+
+            if (reconnectTask != null) {
+
+                reconnectTask.cancel(false);
+
+                reconnectTask = null;
+            }
+        }
+
+        /**
+         * =========================================================
+         * DISCONNECT HANDLER
+         * =========================================================
+         */
+
+        private synchronized void handleDisconnect() {
+
+            updateConnected(false);
+
+            updateState(AssetState.NON_OPERATIONAL);
+
+            stopPingTask();
+
+            startReconnectTask();
+        }
+
+        /**
+         * =========================================================
+         * PING
+         * =========================================================
+         */
+
+        public boolean pingServer() {
+
+            try {
+
+                if (!isSystemConnectionAlive()) {
+                    return false;
+                }
+
+                PingManager pingManager =
+                        PingManager.getInstanceFor(systemConnection);
+
+                return pingManager.pingMyServer();
+
+            } catch (Exception ex) {
+
+                log.warn("Ping failed", ex);
+
+                return false;
+            }
+        }
+
+        /**
+         * =========================================================
+         * STATUS
+         * =========================================================
+         */
+
+        public boolean isSystemConnectionAlive() {
+
+            return systemConnection != null
+                    && systemConnection.isConnected()
+                    && systemConnection.isAuthenticated();
+        }
+
+        private void updateConnected(boolean newValue) {
+
+            if (connected != newValue) {
+
+                connected = newValue;
+
+                propertyService.sendBooleanToPropService(
+                        "connected",
+                        newValue
+                );
+
+                log.info(
+                        "Connected changed: {}",
+                        newValue
+                );
+            }
+        }
+
+        private void updateState(AssetState newState) {
+
+            if (state != newState) {
+
+                state = newState;
+
+                propertyService.sendEnumValToPropService(
+                        "state",
+                        AssetState.class,
+                        newState
+                );
+
+                log.info(
+                        "State changed: {}",
+                        newState
+                );
+            }
+        }
+
+        /**
+         * =========================================================
+         * CONFIG
+         * =========================================================
+         */
+
+        private XMPPTCPConnectionConfiguration buildConfig() {
+
+            return XMPPTCPConnectionConfiguration.builder()
+                    .setHost(chatGatewayProperties.getHost())
+                    .setPort(chatGatewayProperties.getPort())
+                    .setXmppDomain(chatGatewayProperties.getDomain())
+                    .setSecurityMode(
+                            ConnectionConfiguration.SecurityMode.disabled
+                    )
+                    .build();
+        }
+
+        /**
+         * =========================================================
+         * DISCONNECT
+         * =========================================================
+         */
+
+        public synchronized void disconnect() {
+
+            stopPingTask();
+
+            stopReconnectTask();
+
+            try {
+
+                if (systemConnection != null) {
+
+                    log.info("Disconnecting system connection");
+
+                    systemConnection.disconnect();
+                }
+
+                participantConnections.values()
+                        .forEach(connection -> {
+
+                            try {
+
+                                connection.disconnect();
+
+                            } catch (Exception ignored) {
+                            }
+                        });
+
+                participantConnections.clear();
+
+            } catch (Exception ex) {
+
+                log.warn("Disconnect failed", ex);
+            }
+        }
+
+        @PreDestroy
+        public void shutdown() {
+
+            disconnect();
+
+            scheduler.shutdown();
+        }
+    }
