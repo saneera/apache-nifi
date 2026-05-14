@@ -400,3 +400,295 @@ public class ChatController {
         );
     }
 }
+============================
+
+
+
+
+
+@Component
+@Slf4j
+@RequiredArgsConstructor
+public class XmppConnectionManager {
+
+    private final ChatGatewayProperties chatGatewayProperties;
+    private final PollingConfig pollingConfig;
+    private final PropertyService propertyService;
+
+    private XMPPTCPConnection connection;
+
+    private boolean connected = false;
+
+    private AssetState state = AssetState.OFFLINE;
+
+    private final ScheduledExecutorService scheduler =
+            Executors.newScheduledThreadPool(2);
+
+    private ScheduledFuture<?> pingTask;
+
+    private ScheduledFuture<?> reconnectTask;
+
+    public synchronized void connect() {
+
+        try {
+
+            if (isConnectionAlive()) {
+                return;
+            }
+
+            log.info("Connecting to Openfire...");
+
+            XMPPTCPConnectionConfiguration config =
+                    XMPPTCPConnectionConfiguration.builder()
+                            .setHost(chatGatewayProperties.getHost())
+                            .setPort(chatGatewayProperties.getPort())
+                            .setXmppDomain(chatGatewayProperties.getDomain())
+                            .setSecurityMode(
+                                    ConnectionConfiguration.SecurityMode.disabled
+                            )
+                            .build();
+
+            connection = new XMPPTCPConnection(config);
+
+            registerConnectionListeners();
+
+            connection.connect();
+
+            connection.login(
+                    chatGatewayProperties.getUsername(),
+                    chatGatewayProperties.getPassword()
+            );
+
+        } catch (Exception ex) {
+
+            log.error("Failed to connect", ex);
+
+            handleDisconnect();
+        }
+    }
+
+
+    private void registerConnectionListeners() {
+
+        connection.addConnectionListener(
+                new ConnectionListener() {
+
+                    @Override
+                    public void connected(XMPPConnection connection) {
+
+                        log.info("Socket connected");
+                    }
+
+                    @Override
+                    public void authenticated(
+                            XMPPConnection connection,
+                            boolean resumed
+                    ) {
+
+                        log.info("Authenticated");
+
+                        updateConnected(true);
+
+                        updateState(AssetState.OPERATIONAL);
+
+                        stopReconnectTask();
+
+                        startPingTask();
+                    }
+
+                    @Override
+                    public void connectionClosed() {
+
+                        log.warn("Connection closed");
+
+                        handleDisconnect();
+                    }
+
+                    @Override
+                    public void connectionClosedOnError(Exception e) {
+
+                        log.error("Connection closed on error", e);
+
+                        handleDisconnect();
+                    }
+                }
+        );
+    }
+
+
+    private synchronized void startPingTask() {
+
+        if (pingTask != null
+                && !pingTask.isCancelled()
+                && !pingTask.isDone()) {
+
+            return;
+        }
+
+        long interval =
+                pollingConfig.getPollingIntervalMillis();
+
+        pingTask = scheduler.scheduleAtFixedRate(
+                () -> {
+
+                    boolean pingOk = pingServer();
+
+                    if (pingOk) {
+
+                        updateConnected(true);
+
+                        updateState(AssetState.OPERATIONAL);
+
+                    } else {
+
+                        log.warn("Ping failed");
+
+                        handleDisconnect();
+                    }
+
+                },
+                interval,
+                interval,
+                TimeUnit.MILLISECONDS
+        );
+    }
+
+
+    private synchronized void startReconnectTask() {
+
+        if (reconnectTask != null
+                && !reconnectTask.isCancelled()
+                && !reconnectTask.isDone()) {
+
+            return;
+        }
+
+        long interval =
+                pollingConfig.getPollingIntervalMillis();
+
+        reconnectTask = scheduler.scheduleAtFixedRate(
+                () -> {
+
+                    if (isConnectionAlive()) {
+
+                        stopReconnectTask();
+
+                        startPingTask();
+
+                        return;
+                    }
+
+                    log.info("Trying reconnect...");
+
+                    connect();
+
+                },
+                interval,
+                interval,
+                TimeUnit.MILLISECONDS
+        );
+    }
+
+
+    private synchronized void handleDisconnect() {
+
+        updateConnected(false);
+
+        updateState(AssetState.NON_OPERATIONAL);
+
+        stopPingTask();
+
+        startReconnectTask();
+    }
+
+    public boolean pingServer() {
+
+        try {
+
+            if (!isConnectionAlive()) {
+                return false;
+            }
+
+            PingManager pingManager =
+                    PingManager.getInstanceFor(connection);
+
+            return pingManager.pingMyServer();
+
+        } catch (Exception ex) {
+
+            log.warn("Ping failed", ex);
+
+            return false;
+        }
+    }
+
+    public boolean isConnectionAlive() {
+
+        return connection != null
+                && connection.isConnected()
+                && connection.isAuthenticated();
+    }
+
+
+    public synchronized void disconnect() {
+
+        stopPingTask();
+
+        stopReconnectTask();
+
+        try {
+
+            if (connection != null) {
+
+                log.info("Disconnecting");
+
+                connection.disconnect();
+            }
+
+        } catch (Exception ex) {
+
+            log.warn("Disconnect failed", ex);
+        }
+    }
+
+
+    private void updateConnected(boolean newValue) {
+
+        if (connected != newValue) {
+
+            connected = newValue;
+
+            propertyService.sendBooleanToPropService(
+                    "connected",
+                    newValue
+            );
+
+            log.info("Connected changed {}", newValue);
+        }
+    }
+
+    private void updateState(AssetState newState) {
+
+        if (state != newState) {
+
+            state = newState;
+
+            propertyService.sendEnumValToPropService(
+                    "state",
+                    AssetState.class,
+                    newState
+            );
+
+            log.info("State changed {}", newState);
+        }
+    }
+
+
+    public XMPPTCPConnection getConnection() {
+
+        if (!isConnectionAlive()) {
+            connect();
+        }
+
+        return connection;
+    }
