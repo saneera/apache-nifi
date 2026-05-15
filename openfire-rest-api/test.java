@@ -1305,3 +1305,60 @@ import java.util.concurrent.*;
             scheduler.shutdown();
         }
     }
+
+
+
+
+
+    private void processRoomMessage(
+            String roomName,
+            String userName,
+            Message message
+    ) {
+
+        log.info(
+                "Processing message for participant {} in room {}",
+                userName,
+                roomName
+        );
+
+        // Ignore empty messages
+        if (message.getBody() == null || message.getBody().isBlank()) {
+            return;
+        }
+
+        // Sender JID
+        String sender =
+                message.getFrom() != null
+                        ? message.getFrom().toString()
+                        : "unknown";
+
+        // Build event
+        ChatMessageEvent event = ChatMessageEvent.builder()
+                .roomName(roomName)
+                .receiver(userName)
+                .sender(sender)
+                .message(message.getBody())
+                .timestamp(Instant.now())
+                .build();
+
+        // Nice logging
+        log.info(
+                """
+                Room Message Received
+                Room      : {}
+                Receiver  : {}
+                Sender    : {}
+                Message   : {}
+                Timestamp : {}
+                """,
+                event.getRoomName(),
+                event.getReceiver(),
+                event.getSender(),
+                event.getMessage(),
+                event.getTimestamp()
+        );
+
+        // Publish Spring event
+        publisher.publishEvent(event);
+    }
