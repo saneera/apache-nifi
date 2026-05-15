@@ -1,0 +1,1 @@
+<template><div><div v-for='p in participants' @click='$emit(`select`,p)'>{{p}}</div></div></template><script setup>defineProps(['participants'])</script>
