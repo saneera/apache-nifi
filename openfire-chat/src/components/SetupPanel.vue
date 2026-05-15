@@ -62,7 +62,7 @@
             :key="room.roomName"
             :value="room.roomName"
         >
-          {{ room.roomName }}
+          {{room.roomName}}
         </option>
 
       </select>
@@ -82,7 +82,7 @@
             :key="participant"
             :value="participant"
         >
-          {{ participant }}
+          {{participant}}
         </option>
 
       </select>
