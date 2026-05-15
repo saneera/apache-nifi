@@ -17,6 +17,7 @@ import ParticipantSidebar from './components/ParticipantSidebar.vue';
 import ChatPanel from './components/ChatPanel.vue';
 import * as api from './services/api';
 
+const selectedParticipant=ref('')
 const participants = ref([]), rooms = ref([]), selected = ref(''), messages = ref({});
 const load = async () => {
 
