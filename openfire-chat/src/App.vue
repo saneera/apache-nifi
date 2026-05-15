@@ -14,15 +14,19 @@ import ChatPanel from './components/ChatPanel.vue';
 import * as api from './services/api';
 
 const participants = ref([]), rooms = ref([]), selected = ref(''), messages = ref({});
-const load = async () => {
-  participants.value = (await api.getParticipants()).data;
-  rooms.value = (await api.getRooms()).data;
-  participants.value.forEach(x => {
-    let n = x.participantName || x;
-    if (!messages.value[n]) messages.value[n] = []
-  });
-  if (participants.value.length) selected.value = participants.value[0].participantName || participants.value[0]
-};
+const load = async()=>{
+
+  participants.value=
+      (await api.getParticipants()).data
+
+  rooms.value=
+      (await api.getRooms()).data
+
+  if(participants.value.length){
+    selected.value=participants.value[0]
+  }
+
+}
 const create = async (r) => {
   await api.createRoom(r);
   load()
