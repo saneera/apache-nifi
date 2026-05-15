@@ -2,7 +2,11 @@
   <div class='bg-slate-100 min-h-screen p-6'><h1 class='text-3xl font-bold mb-4'>🚀 Openfire Chat Console</h1>
     <div class='grid grid-cols-[320px_220px_1fr] gap-4'>
       <SetupPanel :rooms='rooms' :participants='participants' @create='create' @add='addUser' @join='join'/>
-      <ParticipantSidebar :participants='participants' @select='selected=$event'/>
+      <ParticipantSidebar
+          :participants="participants"
+          :selected="selectedParticipant"
+          @select="selectedParticipant=$event"
+      />
       <ChatPanel :selected='selected' :messages='messages[selected]||[]' @send='send'/>
     </div>
   </div>
