@@ -19,13 +19,13 @@ export const addParticipant = (participantName) =>
 
 export const addParticipantToRoom = (roomName, participantName) =>
     api.put('/commands/add-participant-to-room', {
-    roomName,
-    participantName
-});
+        roomName,
+        participantName
+    });
 
 export const sendMessage = (roomName, participantName, message) =>
     api.put('/commands/send-message', {
-    roomName,
-    participantName,
-    message
-});
+        roomName,
+        participantName,
+        message
+    });

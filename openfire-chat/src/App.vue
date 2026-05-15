@@ -1,16 +1,13 @@
 <template>
-  <div class='bg-slate-100 min-h-screen p-6'>
-    <HeaderBar/>
-    <div class='grid grid-cols-[320px_220px_1fr] gap-4 mt-4'>
-      <SetupPanel @create='create' @add='addUser'/>
+  <div class='bg-slate-100 min-h-screen p-6'><h1 class='text-3xl font-bold mb-4'>🚀 Openfire Chat Console</h1>
+    <div class='grid grid-cols-[320px_220px_1fr] gap-4'>
+      <SetupPanel :rooms='rooms' :participants='participants' @create='create' @add='addUser' @join='join'/>
       <ParticipantSidebar :participants='participants' @select='selected=$event'/>
       <ChatPanel :selected='selected' :messages='messages[selected]||[]' @send='send'/>
     </div>
   </div>
 </template>
-<script setup>
-import {ref, onMounted} from 'vue';
-import HeaderBar from './components/HeaderBar.vue';
+<script setup>import {ref, onMounted} from 'vue';
 import SetupPanel from './components/SetupPanel.vue';
 import ParticipantSidebar from './components/ParticipantSidebar.vue';
 import ChatPanel from './components/ChatPanel.vue';
@@ -34,9 +31,9 @@ const addUser = async (u) => {
   await api.addParticipant(u);
   load()
 };
+const join = async (x) => await api.addParticipantToRoom(x.room, x.user);
 const send = async (m) => {
   await api.sendMessage(rooms.value[0]?.roomName || '', selected.value, m);
   messages.value[selected.value].push({message: m, mine: true})
 };
-onMounted(load)
-</script>
+onMounted(load)</script>
