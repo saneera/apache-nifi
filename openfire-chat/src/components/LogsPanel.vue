@@ -3,4 +3,6 @@
     <div v-for='l in logs'>{{ l }}</div>
   </div>
 </template>
-<script setup>defineProps(['logs'])</script>
+<script setup>
+defineProps(['logs'])
+</script>

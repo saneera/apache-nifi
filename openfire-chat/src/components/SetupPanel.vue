@@ -1,24 +1,18 @@
 <template>
-  <div>
-    <div class='card'><h3>Create Room</h3><input v-model='room'>
-      <button @click="$emit(`create`,room)">Create</button>
+  <div class='space-y-4'>
+    <div class='bg-white rounded-2xl shadow p-4'><h3>Create Room</h3>
+      <input v-model='room' class='border p-2 w-full rounded'>
+      <button class='bg-blue-600 text-white px-4 py-2 rounded mt-2' @click='$emit(`create`,room)'>Create</button>
     </div>
-    <div class='card'><h3>Add Participant</h3><input v-model='user'>
-      <button @click="$emit(`add`,user)">Add</button>
-    </div>
-    <div class='card'><h3>Join Room</h3><select v-model='r'>
-      <option v-for='x in rooms'>{{ x.roomName || x }}</option>
-    </select><select v-model='u'>
-      <option v-for='x in participants'>{{ x.participantName || x }}</option>
-    </select>
-      <button @click="$emit(`join`,{room:r,user:u})">Join</button>
+    <div class='bg-white rounded-2xl shadow p-4'><h3>Add Participant</h3>
+      <input v-model='user' class='border p-2 w-full rounded'>
+      <button class='bg-green-600 text-white px-4 py-2 rounded mt-2' @click='$emit(`add`,user)'>Add</button>
     </div>
   </div>
 </template>
-<script setup>import {ref} from 'vue';
+  <script setup>
+    import {ref} from 'vue';
 
-defineProps(['rooms', 'participants']);
-const room = ref('');
-const user = ref('');
-const r = ref('');
-const u = ref('')</script>
+    const room = ref('');
+    const user = ref('')
+  </script>
