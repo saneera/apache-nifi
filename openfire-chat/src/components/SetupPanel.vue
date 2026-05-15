@@ -82,9 +82,7 @@
             :key="participant"
             :value="participant"
         >
-
           {{ participant }}
-
         </option>
 
       </select>
