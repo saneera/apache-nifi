@@ -1,1 +1,24 @@
-<template><div><h2>Setup</h2><input v-model='room'><button @click='cr'>Create Room</button><input v-model='user'><button @click='ap'>Add Participant</button><button @click='jr'>Add To Room</button></div></template><script setup>import {ref} from 'vue';import api from '../api';const room=ref('TestMessage');const user=ref('participant1');const cr=()=>api.put('/create-room',{roomName:room.value});const ap=()=>api.put('/add-participant',{participantName:user.value});const jr=()=>api.put('/add-participant-to-room',{roomName:room.value,participantName:user.value});</script>
+<template>
+  <div>
+    <div class='card'><h3>Create Room</h3><input v-model='room'>
+      <button @click="$emit(`create`,room)">Create</button>
+    </div>
+    <div class='card'><h3>Add Participant</h3><input v-model='user'>
+      <button @click="$emit(`add`,user)">Add</button>
+    </div>
+    <div class='card'><h3>Join Room</h3><select v-model='r'>
+      <option v-for='x in rooms'>{{ x.roomName || x }}</option>
+    </select><select v-model='u'>
+      <option v-for='x in participants'>{{ x.participantName || x }}</option>
+    </select>
+      <button @click="$emit(`join`,{room:r,user:u})">Join</button>
+    </div>
+  </div>
+</template>
+<script setup>import {ref} from 'vue';
+
+defineProps(['rooms', 'participants']);
+const room = ref('');
+const user = ref('');
+const r = ref('');
+const u = ref('')</script>

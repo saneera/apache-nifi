@@ -1,1 +1,19 @@
-<template><div><h2>{{participant}}</h2><div v-for='m in messages'>{{m.message}}</div><input v-model='txt'><button @click='s'>Send</button></div></template><script setup>import {ref} from 'vue';const txt=ref('');const p=defineProps(['participant','messages']);const e=defineEmits(['send']);const s=()=>{e('send',{participant:p.participant,message:txt.value});txt.value='';}</script>
+<template>
+  <div class='chat'><h2>{{ selected }}</h2>
+    <div style='height:420px;overflow:auto'>
+      <div v-for='m in messages' :class="['msg',m.mine?'mine':'']">{{ m.message }}</div>
+    </div>
+    <div style='display:flex'><input v-model='txt'>
+      <button @click='send'>Send</button>
+    </div>
+  </div>
+</template>
+<script setup>import {ref} from 'vue';
+
+const txt = ref('');
+const p = defineProps(['selected', 'messages']);
+const e = defineEmits(['send']);
+const send = () => {
+  e('send', txt.value);
+  txt.value = '';
+}</script>
