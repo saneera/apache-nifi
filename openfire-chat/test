@@ -1,0 +1,200 @@
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class ChatStore {
+
+    @Builder.Default
+    private List<RoomStore> rooms =
+            new ArrayList<>();
+}
+
+
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class RoomStore {
+
+    private String roomName;
+
+    @Builder.Default
+    private List<ParticipantStore> participants =
+            new ArrayList<>();
+}
+
+
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class ParticipantStore {
+
+    private String participantName;
+
+    @Builder.Default
+    private List<ChatMessage> messages =
+            new ArrayList<>();
+}
+
+
+
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class ChatMessage {
+
+    private String messageId;
+
+    private String sender;
+
+    private String senderJid;
+
+    private String body;
+
+    private Instant timestamp;
+}
+
+
+
+@Component
+@RequiredArgsConstructor
+@Slf4j
+public class ChatMessageListener {
+
+    private final PropertyService propertyService;
+
+    @EventListener
+    public void handleIncomingMessage(
+            ChatMessageEvent event
+    ) {
+
+        ChatStore store =
+                Optional.ofNullable(
+                        propertyService.getObjectFromPropService(
+                                "/properties/messages",
+                                ChatStore.class
+                        )
+                ).orElse(
+                        ChatStore.builder()
+                                .build()
+                );
+
+        RoomStore room =
+                store.getRooms()
+                        .stream()
+                        .filter(r ->
+                                r.getRoomName()
+                                        .equals(
+                                                event.getRoomName()
+                                        )
+                        )
+                        .findFirst()
+                        .orElseGet(() -> {
+
+                            RoomStore newRoom =
+                                    RoomStore.builder()
+                                            .roomName(
+                                                    event.getRoomName()
+                                            )
+                                            .build();
+
+                            store.getRooms()
+                                    .add(newRoom);
+
+                            return newRoom;
+                        });
+
+        ParticipantStore participant =
+                room.getParticipants()
+                        .stream()
+                        .filter(p ->
+                                p.getParticipantName()
+                                        .equals(
+                                                event.getReceiver()
+                                        )
+                        )
+                        .findFirst()
+                        .orElseGet(() -> {
+
+                            ParticipantStore p =
+                                    ParticipantStore.builder()
+                                            .participantName(
+                                                    event.getReceiver()
+                                            )
+                                            .build();
+
+                            room.getParticipants()
+                                    .add(p);
+
+                            return p;
+                        });
+
+        participant.getMessages()
+                .add(
+                        ChatMessage.builder()
+                                .messageId(
+                                        UUID.randomUUID()
+                                                .toString()
+                                )
+                                .sender(
+                                        extractParticipant(
+                                                event.getSender()
+                                        )
+                                )
+                                .senderJid(
+                                        event.getSender()
+                                )
+                                .body(
+                                        event.getMessage()
+                                )
+                                .timestamp(
+                                        event.getTimestamp()
+                                )
+                                .build()
+                );
+
+        propertyService.save(
+                "/properties/messages",
+                store
+        );
+
+        log.info(
+                "Saved message for participant {} in room {}",
+                event.getReceiver(),
+                event.getRoomName()
+        );
+    }
+
+    private String extractParticipant(
+            String jid
+    ) {
+
+        if (jid == null) {
+            return "";
+        }
+
+        String[] parts =
+                jid.split("/");
+
+        return parts.length > 1
+                ? parts[1]
+                : jid;
+    }
+}
+
+
+{
+  "rooms":[
+    {
+      "roomName":"TestMessage",
+      "participants":[
+        {
+          "participantName":"participant1",
+          "messages":[]
+        }
+      ]
+    }
+  ]
+}
