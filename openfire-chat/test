@@ -667,3 +667,152 @@ public class ChatMessage {
 
     private String timestamp;
 }
+
+
+
+@Slf4j
+public class ChatMessageEventListener {
+
+    private final ReentrantLock roomMessageLock =
+            new ReentrantLock(true);
+
+    protected final ObjectMapper mapper = new ObjectMapper();
+
+    @EventListener
+    public void handleIncomingMessage(ChatMessageEvent event) {
+
+        roomMessageLock.lock();
+
+        try {
+
+            Map<String,Object> map =
+                    (Map<String,Object>)
+                            propertyService.getPropertyValue(
+                                    Constants.ROOM_MESSAGES
+                            );
+
+            String propName =
+                    propertyService.getPropName(
+                            Constants.ROOM_MESSAGES
+                    );
+
+            Object storeValue = map.get(propName);
+
+            List<RoomStore> roomMessages =
+                    storeValue == null
+                            ? new ArrayList<>()
+                            : mapper.convertValue(
+                                    storeValue,
+                                    new TypeReference<List<RoomStore>>() {}
+                            );
+
+            //----------------------------------------
+            // ROOM
+            //----------------------------------------
+
+            RoomStore room =
+                    roomMessages.stream()
+                            .filter(r ->
+                                    r.getRoomName()
+                                     .equals(event.getRoomName()))
+                            .findFirst()
+                            .orElseGet(() -> {
+
+                                RoomStore newRoom =
+                                        RoomStore.builder()
+                                                .roomName(event.getRoomName())
+                                                .build();
+
+                                roomMessages.add(newRoom);
+
+                                return newRoom;
+                            });
+
+            //----------------------------------------
+            // PARTICIPANT
+            //----------------------------------------
+
+            ParticipantStore participant =
+                    room.getParticipants()
+                            .stream()
+                            .filter(p ->
+                                    p.getParticipantName()
+                                     .equals(event.getReceiver()))
+                            .findFirst()
+                            .orElseGet(() -> {
+
+                                ParticipantStore p =
+                                        ParticipantStore.builder()
+                                                .participantName(
+                                                        event.getReceiver())
+                                                .build();
+
+                                room.getParticipants().add(p);
+
+                                return p;
+                            });
+
+            //----------------------------------------
+            // DUPLICATE CHECK
+            //----------------------------------------
+
+            boolean exists =
+                    participant.getMessages()
+                            .stream()
+                            .anyMatch(m ->
+                                    event.getMessageId()
+                                         .equals(m.getMessageId()));
+
+            if (exists) {
+
+                log.info(
+                        "Duplicate ignored {}",
+                        event.getMessageId()
+                );
+
+                return;
+            }
+
+            //----------------------------------------
+            // ADD MESSAGE
+            //----------------------------------------
+
+            participant.getMessages().add(
+                    ChatMessage.builder()
+                            .messageId(event.getMessageId())
+                            .sender(
+                                    extractParticipant(
+                                            event.getSender()))
+                            .senderJid(event.getSender())
+                            .receiver(event.getReceiver())
+                            .body(event.getMessage())
+                            .timestamp(
+                                    event.getTimestamp()
+                                         .toString())
+                            .build()
+            );
+
+            propertyService.sendObjectToPropService(
+                    Constants.ROOM_MESSAGES,
+                    roomMessages
+            );
+
+        } finally {
+
+            roomMessageLock.unlock();
+        }
+    }
+
+    private String extractParticipant(String jid) {
+
+        if (jid == null) {
+            return "";
+        }
+
+        String[] parts = jid.split("/");
+
+        return parts.length > 1
+                ? parts[1]
+                : jid;
+    }
+}
