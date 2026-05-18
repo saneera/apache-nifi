@@ -333,3 +333,97 @@ protected: true
     }
   ]
 }
+
+
+
+@EventListener
+public void handleIncomingMessage(ChatMessageEvent event) {
+
+    Map<String, Object> map =
+            (Map<String, Object>) propertyService
+                    .getPropertyValue(Constants.ROOM_MESSAGES);
+
+    String propName =
+            propertyService.getPropName(Constants.ROOM_MESSAGES);
+
+    Object storeValue = map.get(propName);
+
+    List<RoomStore> roomMessages =
+            storeValue == null
+                    ? new ArrayList<>()
+                    : mapper.convertValue(
+                            storeValue,
+                            new TypeReference<List<RoomStore>>() {});
+
+    // find room
+    RoomStore room =
+            roomMessages.stream()
+                    .filter(r ->
+                            r.getRoomName()
+                                    .equals(event.getRoomName()))
+                    .findFirst()
+                    .orElseGet(() -> {
+
+                        RoomStore newRoom =
+                                RoomStore.builder()
+                                        .roomName(event.getRoomName())
+                                        .participants(new ArrayList<>()) // IMPORTANT
+                                        .build();
+
+                        roomMessages.add(newRoom);
+
+                        return newRoom;
+                    });
+
+    // safety for old records
+    if (room.getParticipants() == null) {
+        room.setParticipants(new ArrayList<>());
+    }
+
+    // find participant
+    ParticipantStore participant =
+            room.getParticipants()
+                    .stream()
+                    .filter(p ->
+                            p.getParticipantName()
+                                    .equals(event.getReceiver()))
+                    .findFirst()
+                    .orElseGet(() -> {
+
+                        ParticipantStore p =
+                                ParticipantStore.builder()
+                                        .participantName(
+                                                event.getReceiver())
+                                        .messages(new ArrayList<>()) // IMPORTANT
+                                        .build();
+
+                        room.getParticipants().add(p);
+
+                        return p;
+                    });
+
+    // safety for old records
+    if (participant.getMessages() == null) {
+        participant.setMessages(new ArrayList<>());
+    }
+
+    participant.getMessages().add(
+            ChatMessage.builder()
+                    .messageId(UUID.randomUUID().toString())
+                    .sender(extractParticipant(event.getSender()))
+                    .senderJid(event.getSender())
+                    .receiver(event.getReceiver())
+                    .body(event.getMessage())
+                    .timestamp(event.getTimestamp().toString())
+                    .build()
+    );
+
+    propertyService.sendObjectToPropService(
+            Constants.ROOM_MESSAGES,
+            roomMessages);
+
+    log.info(
+            "Saved message for {} in room {}",
+            event.getReceiver(),
+            event.getRoomName());
+}
