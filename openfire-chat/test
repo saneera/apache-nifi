@@ -198,3 +198,138 @@ public class ChatMessageListener {
     }
   ]
 }
+
+
+
+
+
+
+roomMessages:
+  property:
+    type: PropertyArray
+    name: roomMessages
+    description: List of room messages
+    items:
+      type: PropertyObject
+      name: roomMessages
+      description: Hold room participants and messages
+      properties:
+
+        roomName:
+          name: roomName
+          type: PropertyString
+          description: Room name
+
+        participants:
+          type: PropertyArray
+          name: participants
+          description: List of participants in room
+          items:
+            type: PropertyObject
+            name: participant
+            properties:
+
+              participantName:
+                name: participantName
+                type: PropertyString
+                description: Participant name
+
+              messages:
+                type: PropertyArray
+                name: messages
+                description: Messages received by participant
+
+                items:
+                  type: PropertyObject
+                  name: message
+                  properties:
+
+                    messageId:
+                      name: messageId
+                      type: PropertyString
+                      description: Unique message id
+
+                    sender:
+                      name: sender
+                      type: PropertyString
+                      description: Sender participant
+
+                    senderJid:
+                      name: senderJid
+                      type: PropertyString
+                      description: Full sender JID
+
+                    body:
+                      name: body
+                      type: PropertyString
+                      description: Message content
+
+                    timestamp:
+                      name: timestamp
+                      type: PropertyString
+                      description: Message timestamp
+
+protected: true
+
+
+
+{
+  "roomMessages":[
+    {
+      "roomName":"TestMessage",
+      "participants":[
+        {
+          "participantName":"participant1",
+          "messages":[
+            {
+              "messageId":"123",
+              "sender":"participant1",
+              "senderJid":"testmessage@conference.openfire/participant1",
+              "body":"Hellooo From Participant1",
+              "timestamp":"2026-05-17T23:42:39Z"
+            },
+            {
+              "messageId":"456",
+              "sender":"participant3",
+              "senderJid":"testmessage@conference.openfire/participant3",
+              "body":"Hellooo From Participant3",
+              "timestamp":"2026-05-17T23:45:12Z"
+            }
+          ]
+        },
+
+        {
+          "participantName":"participant2",
+          "messages":[
+            {
+              "messageId":"123",
+              "sender":"participant1",
+              "body":"Hellooo From Participant1"
+            },
+            {
+              "messageId":"456",
+              "sender":"participant3",
+              "body":"Hellooo From Participant3"
+            }
+          ]
+        },
+
+        {
+          "participantName":"participant3",
+          "messages":[
+            {
+              "messageId":"123",
+              "sender":"participant1",
+              "body":"Hellooo From Participant1"
+            },
+            {
+              "messageId":"456",
+              "sender":"participant3",
+              "body":"Hellooo From Participant3"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
