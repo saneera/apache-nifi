@@ -427,3 +427,243 @@ public void handleIncomingMessage(ChatMessageEvent event) {
             event.getReceiver(),
             event.getRoomName());
 }
+
+
+
+
+======
+
+package com.babcock.inspire.openfire.services;
+
+import com.babcock.inspire.openfire.models.ChatMessage;
+import com.babcock.inspire.openfire.models.ParticipantStore;
+import com.babcock.inspire.openfire.models.RoomStore;
+import com.babcock.inspire.openfire.models.ChatMessageEvent;
+import com.babcock.inspire.openfire.util.Constants;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.event.EventListener;
+import org.springframework.stereotype.Component;
+
+@Slf4j
+@Component
+@RequiredArgsConstructor
+public class ChatMessageEventListener {
+
+    private final PropertyService propertyService;
+
+    private final ObjectMapper mapper = new ObjectMapper();
+
+    @EventListener
+    public void handleIncomingMessage(ChatMessageEvent event) {
+
+        Map<String,Object> map =
+                (Map<String,Object>)
+                        propertyService.getPropertyValue(
+                                Constants.ROOM_MESSAGES);
+
+        String propName =
+                propertyService.getPropName(
+                        Constants.ROOM_MESSAGES);
+
+        Object storeValue = map.get(propName);
+
+        List<RoomStore> roomMessages =
+                storeValue == null
+                        ? new ArrayList<>()
+                        : mapper.convertValue(
+                                storeValue,
+                                new TypeReference<List<RoomStore>>() {});
+
+        RoomStore room =
+                roomMessages.stream()
+                        .filter(r ->
+                                normalize(r.getRoomName())
+                                        .equals(
+                                                normalize(
+                                                        event.getRoomName())))
+                        .findFirst()
+                        .orElseGet(() -> {
+
+                            RoomStore newRoom =
+                                    RoomStore.builder()
+                                            .roomName(event.getRoomName())
+                                            .participants(
+                                                    new ArrayList<>())
+                                            .build();
+
+                            roomMessages.add(newRoom);
+
+                            return newRoom;
+                        });
+
+        if(room.getParticipants()==null){
+            room.setParticipants(
+                    new ArrayList<>());
+        }
+
+        String receiver =
+                normalize(event.getReceiver());
+
+        ParticipantStore participant =
+                room.getParticipants()
+                        .stream()
+                        .filter(p ->
+                                normalize(
+                                        p.getParticipantName())
+                                        .equals(receiver))
+                        .findFirst()
+                        .orElseGet(() -> {
+
+                            log.info(
+                                    "creating participant {}",
+                                    receiver);
+
+                            ParticipantStore p =
+                                    ParticipantStore.builder()
+                                            .participantName(receiver)
+                                            .messages(
+                                                    new ArrayList<>())
+                                            .build();
+
+                            room.getParticipants()
+                                    .add(p);
+
+                            return p;
+                        });
+
+        if(participant.getMessages()==null){
+            participant.setMessages(
+                    new ArrayList<>());
+        }
+
+        participant.getMessages()
+                .add(
+                        ChatMessage.builder()
+                                .messageId(
+                                        UUID.randomUUID().toString())
+                                .sender(
+                                        extractParticipant(
+                                                event.getSender()))
+                                .senderJid(
+                                        event.getSender())
+                                .receiver(
+                                        receiver)
+                                .body(
+                                        event.getMessage())
+                                .timestamp(
+                                        event.getTimestamp()
+                                                .toString())
+                                .build()
+                );
+
+        propertyService.sendObjectToPropService(
+                Constants.ROOM_MESSAGES,
+                roomMessages);
+
+        log.info(
+                "Saved message for {} room {}",
+                receiver,
+                event.getRoomName());
+    }
+
+    private String extractParticipant(
+            String jid){
+
+        if(jid==null){
+            return "";
+        }
+
+        if(jid.contains("/")){
+            return jid.substring(
+                    jid.lastIndexOf("/")+1);
+        }
+
+        return jid;
+    }
+
+    private String normalize(
+            String value){
+
+        if(value==null){
+            return "";
+        }
+
+        if(value.contains("/")){
+            value=
+                    value.substring(
+                            value.lastIndexOf("/")+1);
+        }
+
+        return value.trim();
+    }
+}
+
+package com.babcock.inspire.openfire.models;
+
+import java.util.ArrayList;
+import java.util.List;
+import lombok.*;
+
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class RoomStore {
+
+    private String roomName;
+
+    @Builder.Default
+    private List<ParticipantStore> participants =
+            new ArrayList<>();
+}
+
+
+package com.babcock.inspire.openfire.models;
+
+import java.util.ArrayList;
+import java.util.List;
+import lombok.*;
+
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class ParticipantStore {
+
+    private String participantName;
+
+    @Builder.Default
+    private List<ChatMessage> messages =
+            new ArrayList<>();
+}
+
+
+package com.babcock.inspire.openfire.models;
+
+import lombok.*;
+
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class ChatMessage {
+
+    private String messageId;
+
+    private String sender;
+
+    private String senderJid;
+
+    private String receiver;
+
+    private String body;
+
+    private String timestamp;
+}
