@@ -816,3 +816,533 @@ public class ChatMessageEventListener {
                 : jid;
     }
 }
+
+
+=======================
+
+@ExtendWith(MockitoExtension.class)
+class SendMessageToRoomCommandTest {
+
+    @InjectMocks
+    private SendMessageToRoomCommand command;
+
+    @Mock
+    private ChatService service;
+
+    @Test
+    void shouldSendMessageSuccessfully() {
+
+        Map<String,Object> params = new HashMap<>();
+
+        params.put("roomName","TestRoom");
+        params.put("userName","participant1");
+        params.put("message","hello");
+
+        ChatAssetResponse response =
+                command.executeCommand(
+                        "send-message",
+                        params);
+
+        verify(service)
+                .sendMessageToRoom(
+                        "TestRoom",
+                        "participant1",
+                        "hello");
+
+        assertNotNull(response);
+    }
+
+    @Test
+    void shouldThrowWhenRoomBlank(){
+
+        Map<String,Object> params =
+                new HashMap<>();
+
+        params.put("roomName","");
+        params.put("userName","participant1");
+        params.put("message","hello");
+
+        assertThrows(
+                IllegalArgumentException.class,
+                ()->command.executeCommand(
+                        "send-message",
+                        params));
+    }
+
+    @Test
+    void shouldThrowWhenUserBlank(){
+
+        Map<String,Object> params =
+                new HashMap<>();
+
+        params.put("roomName","TestRoom");
+        params.put("userName","");
+        params.put("message","hello");
+
+        assertThrows(
+                IllegalArgumentException.class,
+                ()->command.executeCommand(
+                        "send-message",
+                        params));
+    }
+
+    @Test
+    void shouldThrowWhenMessageBlank(){
+
+        Map<String,Object> params =
+                new HashMap<>();
+
+        params.put("roomName","TestRoom");
+        params.put("userName","participant1");
+        params.put("message","");
+
+        assertThrows(
+                IllegalArgumentException.class,
+                ()->command.executeCommand(
+                        "send-message",
+                        params));
+    }
+}
+
+@ExtendWith(MockitoExtension.class)
+class ChatServiceTest {
+
+    @Spy
+    @InjectMocks
+    private ChatService service;
+
+    @Mock
+    MultiUserChat muc;
+
+    @Test
+    void shouldSendMessage()
+            throws Exception {
+
+        doReturn(muc)
+                .when(service)
+                .joinParticipantToTheRoom(
+                        "TestRoom",
+                        "participant1");
+
+        service.sendMessageToRoom(
+                "TestRoom",
+                "participant1",
+                "hello");
+
+        verify(muc)
+                .sendMessage("hello");
+    }
+
+    @Test
+    void shouldThrowIfSendFails()
+            throws Exception {
+
+        doReturn(muc)
+                .when(service)
+                .joinParticipantToTheRoom(
+                        "TestRoom",
+                        "participant1");
+
+        doThrow(
+                new SmackException.NotConnectedException()
+        ).when(muc)
+                .sendMessage(any());
+
+        assertThrows(
+                IllegalArgumentException.class,
+                ()->service.sendMessageToRoom(
+                        "TestRoom",
+                        "participant1",
+                        "hello"));
+    }
+}
+
+
+
+@Test
+void shouldReturnFromCache()
+        throws Exception {
+
+    MultiUserChat muc =
+            mock(MultiUserChat.class);
+
+    service.getJoinedRooms()
+            .put(
+               "TestRoom:participant1",
+               muc);
+
+    MultiUserChat result =
+            service.joinParticipantToTheRoom(
+                "TestRoom",
+                "participant1");
+
+    assertEquals(
+            muc,
+            result);
+}
+
+
+
+@Mock
+XMPPTCPConnection connection;
+
+@Mock
+MultiUserChatManager manager;
+
+@Mock
+ChatManagerProvider provider;
+
+@Test
+void shouldJoinAndCache()
+        throws Exception {
+
+    when(
+            xmppConnectionManager
+                    .getParticipantConnection(
+                            any(),
+                            any()))
+            .thenReturn(connection);
+
+    when(
+            chatManagerProvider
+                    .getManager(connection))
+            .thenReturn(manager);
+
+    MultiUserChat muc =
+            mock(
+                    MultiUserChat.class);
+
+    when(
+            manager.getMultiUserChat(
+                    any()))
+            .thenReturn(muc);
+
+    MultiUserChat result =
+            service.joinParticipantToTheRoom(
+                    "TestRoom",
+                    "participant1");
+
+    verify(muc)
+            .join(any());
+
+    assertNotNull(result);
+}
+
+
+@Test
+void shouldRegisterListeners()
+        throws Exception {
+
+    MultiUserChat muc =
+            mock(
+                MultiUserChat.class);
+
+    service.registerRoomListener(
+            "TestRoom",
+            "participant1",
+            muc);
+
+    verify(muc)
+            .addMessageListener(any());
+
+    verify(muc)
+            .addParticipantListener(any());
+}
+
+
+===================
+
+
+import lombok.extern.slf4j.Slf4j;
+import org.jivesoftware.smack.packet.Message;
+import org.jivesoftware.smack.packet.Presence;
+import org.jivesoftware.smackx.muc.MultiUserChat;
+import org.jivesoftware.smackx.muc.MultiUserChatManager;
+import org.jivesoftware.smackx.muc.ParticipantStatusListener;
+import org.jivesoftware.smackx.xdata.Form;
+import org.jivesoftware.smackx.xdata.FormField;
+import org.jivesoftware.smackx.xdata.packet.DataForm;
+import org.jxmpp.jid.EntityBareJid;
+import org.jxmpp.jid.EntityFullJid;
+import org.jxmpp.jid.Jid;
+import org.jxmpp.jid.impl.JidCreate;
+import org.jxmpp.jid.parts.Resourcepart;
+
+@Slf4j
+public class ChatRoomService {
+
+    private final MultiUserChatManager manager;
+
+    private static final String MUC_ROOM_CONFIG =
+            "muc#roomconfig";
+
+    public ChatRoomService(
+            MultiUserChatManager manager) {
+
+        this.manager = manager;
+    }
+
+    public RoomInfo createRoom(
+            String roomName,
+            String roomDescription,
+            DriverConfig driverConfig)
+            throws Exception {
+
+        try {
+
+            String roomJidString =
+                    roomName +
+                    "@conference.openfire-xmpp-dev";
+
+            EntityBareJid roomJid =
+                    JidCreate.entityBareFrom(
+                            roomJidString);
+
+            MultiUserChat muc =
+                    manager.getMultiUserChat(roomJid);
+
+            //-----------------------------------------
+            // Create room
+            //-----------------------------------------
+
+            muc.create(
+                    Resourcepart.from(roomName));
+
+            //-----------------------------------------
+            // Configure room
+            //-----------------------------------------
+
+            Form form =
+                    muc.getConfigurationForm();
+
+            Form submitForm =
+                    form.createAnswerForm();
+
+            submitForm.setAnswer(
+                    MUC_ROOM_CONFIG + "_roomname",
+                    roomName);
+
+            submitForm.setAnswer(
+                    MUC_ROOM_CONFIG + "_roomdesc",
+                    roomDescription);
+
+            submitForm.setAnswer(
+                    MUC_ROOM_CONFIG +
+                    "_persistentroom",
+                    true);
+
+            submitForm.setAnswer(
+                    MUC_ROOM_CONFIG +
+                    "_publicroom",
+                    true);
+
+            submitForm.setAnswer(
+                    MUC_ROOM_CONFIG +
+                    "_passwordprotectedroom",
+                    false);
+
+            if (driverConfig.getMaxUsers()
+                    != null) {
+
+                submitForm.setAnswer(
+                        MUC_ROOM_CONFIG +
+                        "_maxusers",
+                        driverConfig
+                                .getMaxUsers()
+                                .toString());
+            }
+
+            muc.sendConfigurationForm(
+                    submitForm);
+
+            //-----------------------------------------
+            // Register listeners
+            //-----------------------------------------
+
+            registerRoomListeners(muc);
+
+            //-----------------------------------------
+            // Get room info
+            //-----------------------------------------
+
+            RoomInfo roomInfo =
+                    manager.getRoomInfo(roomJid);
+
+            log.info(
+                    "Room {} created",
+                    roomName);
+
+            return roomInfo;
+
+        } catch (Exception ex) {
+
+            log.error(
+                    "Error creating room {}",
+                    roomName,
+                    ex);
+
+            throw ex;
+        }
+    }
+
+    private void registerRoomListeners(
+            MultiUserChat muc) {
+
+        //------------------------------------
+        // Join / Leave
+        //------------------------------------
+
+        muc.addParticipantListener(
+                presence -> {
+
+            log.info(
+                "Presence {} {}",
+                presence.getType(),
+                presence.getFrom()
+            );
+
+            if (presence.getType()
+                    == Presence.Type.available) {
+
+                log.info(
+                    "Participant joined {}",
+                    presence.getFrom()
+                );
+            }
+
+            if (presence.getType()
+                    == Presence.Type.unavailable) {
+
+                log.info(
+                    "Participant left {}",
+                    presence.getFrom()
+                );
+            }
+        });
+
+        //------------------------------------
+        // Message listener
+        //------------------------------------
+
+        muc.addMessageListener(
+                (Message message) -> {
+
+            if(message.getBody()==null){
+                return;
+            }
+
+            log.info(
+                "Room message [{}] from {}",
+                message.getBody(),
+                message.getFrom()
+            );
+
+            log.info(
+                "Stanza id {}",
+                message.getStanzaId()
+            );
+        });
+
+        //------------------------------------
+        // Participant status
+        //------------------------------------
+
+        muc.addParticipantStatusListener(
+                new ParticipantStatusListener() {
+
+            @Override
+            public void joined(
+                    EntityFullJid participant) {
+
+                log.info(
+                    "{} joined room",
+                    participant);
+            }
+
+            @Override
+            public void left(
+                    EntityFullJid participant) {
+
+                log.info(
+                    "{} left room",
+                    participant);
+            }
+
+            @Override
+            public void kicked(
+                    EntityFullJid participant,
+                    Jid actor,
+                    String reason) {
+
+                log.info(
+                    "{} kicked by {}",
+                    participant,
+                    actor);
+            }
+
+            @Override
+            public void banned(
+                    EntityFullJid participant,
+                    Jid actor,
+                    String reason) {}
+
+            @Override
+            public void voiceGranted(
+                    EntityFullJid participant){}
+
+            @Override
+            public void voiceRevoked(
+                    EntityFullJid participant){}
+
+            @Override
+            public void membershipGranted(
+                    EntityFullJid participant){}
+
+            @Override
+            public void membershipRevoked(
+                    EntityFullJid participant){}
+
+            @Override
+            public void moderatorGranted(
+                    EntityFullJid participant){}
+
+            @Override
+            public void moderatorRevoked(
+                    EntityFullJid participant){}
+
+            @Override
+            public void ownershipGranted(
+                    EntityFullJid participant){}
+
+            @Override
+            public void ownershipRevoked(
+                    EntityFullJid participant){}
+
+            @Override
+            public void adminGranted(
+                    EntityFullJid participant){}
+
+            @Override
+            public void adminRevoked(
+                    EntityFullJid participant){}
+
+            @Override
+            public void nicknameChanged(
+                    EntityFullJid participant,
+                    Resourcepart newNickname){}
+        });
+
+        //------------------------------------
+        // Subject updates
+        //------------------------------------
+
+        muc.addSubjectUpdatedListener(
+                (subject, from) -> {
+
+            log.info(
+                    "Subject updated {} by {}",
+                    subject,
+                    from);
+        });
+    }
+}
