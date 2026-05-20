@@ -286,3 +286,57 @@ This structure allows:
 * Participant-specific message history
 * Read/open tracking extension later
 * Duplicate message prevention using messageId or stanzaId
+
+
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant ChatService
+    participant Openfire
+    participant MessageListener
+    participant PropertyService
+
+    Client->>API: Send message(room,user,message)
+
+    API->>ChatService: sendMessageToRoom()
+
+    ChatService->>Openfire: Send message to MUC room
+    Openfire-->>ChatService: Message delivered
+
+    Note over Openfire: Openfire distributes message to room participants
+
+    Openfire->>MessageListener: Receive message event
+
+    MessageListener->>MessageListener: Extract stanzaId/messageId
+
+    MessageListener->>PropertyService: Fetch roomMessages
+
+    MessageListener->>MessageListener: Check duplicate messageId
+
+    alt Message not already stored
+        MessageListener->>PropertyService: Add message to participant message list
+        PropertyService-->>MessageListener: Saved
+    else Duplicate message
+        MessageListener->>MessageListener: Ignore message
+    end
+
+    API-->>Client: Success
+
+```
+
+
+Flow Description
+
+1. Client sends a request to send a message to a room.
+2. API calls sendMessageToRoom().
+3. ChatService sends the message to the Openfire MUC room.
+4. Openfire distributes the message to all participants.
+5. Registered listeners receive message events.
+6. Listener extracts stanzaId / messageId.
+7. Existing roomMessages are fetched from Property Service.
+8. Duplicate checks prevent storing the same message multiple times.
+9. If the message is new:
+   * Store under the appropriate participant in roomMessages.
+10. Return success.
