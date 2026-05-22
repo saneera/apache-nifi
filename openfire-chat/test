@@ -1346,3 +1346,171 @@ public class ChatRoomService {
         });
     }
 }
+
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.event.EventListener;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
+
+@Slf4j
+public class ChatMessageEventListener {
+
+    private final ObjectMapper mapper = new ObjectMapper();
+
+    private final ReentrantLock roomMessageLock =
+            new ReentrantLock(true);
+
+    /**
+     * Prevent duplicate message counting
+     */
+    private final Set<String> processedMessages =
+            ConcurrentHashMap.newKeySet();
+
+    @EventListener
+    public void handleIncomingMessage(ChatMessageEvent event) {
+
+        String roomName = normalize(event.getRoomName());
+
+        String messageId =
+                roomName + ":" + normalize(event.getMessageId());
+
+        /**
+         * Ignore duplicate messages
+         */
+        if (!processedMessages.add(messageId)) {
+            log.info("Duplicate message ignored: {}", messageId);
+            return;
+        }
+
+        roomMessageLock.lock();
+
+        try {
+
+            Map<String, Object> map =
+                    (Map<String, Object>) propertyService
+                            .getPropertyValue(Constants.ROOM_MESSAGES);
+
+            String propName =
+                    propertyService.getPropName(
+                            Constants.ROOM_MESSAGES
+                    );
+
+            Object storeValue = map.get(propName);
+
+            List<RoomMessageCount> rooms =
+                    storeValue == null
+                            ? new ArrayList<>()
+                            : mapper.convertValue(
+                                    storeValue,
+                                    new TypeReference<List<RoomMessageCount>>() {}
+                            );
+
+            RoomMessageCount room =
+                    rooms.stream()
+                            .filter(r ->
+                                    normalize(r.getRoomName())
+                                            .equals(roomName))
+                            .findFirst()
+                            .orElseGet(() -> {
+
+                                RoomMessageCount newRoom =
+                                        RoomMessageCount.builder()
+                                                .roomName(roomName)
+                                                .messageCount(0)
+                                                .build();
+
+                                rooms.add(newRoom);
+
+                                return newRoom;
+                            });
+
+            /**
+             * Increment message count
+             */
+            room.setMessageCount(
+                    room.getMessageCount() + 1
+            );
+
+            /**
+             * Save updated counts
+             */
+            propertyService.saveProperty(
+                    Constants.ROOM_MESSAGES,
+                    rooms
+            );
+
+            log.info(
+                    "Room [{}] message count updated to {}",
+                    roomName,
+                    room.getMessageCount()
+            );
+
+        } catch (Exception e) {
+
+            log.error(
+                    "Error processing room message count",
+                    e
+            );
+
+        } finally {
+            roomMessageLock.unlock();
+        }
+    }
+
+    private String normalize(String value) {
+
+        return value == null
+                ? ""
+                : value.trim().toLowerCase();
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class RoomMessageCount {
+
+        private String roomName;
+
+        private int messageCount;
+    }
+}
+
+properties:
+
+  roomsMessageCount:
+    property:
+      type: PropertyArray
+      name: roomsMessageCount
+      description: List of room message counts
+
+      items:
+        type: PropertyObject
+        name: roomMessageCount
+        description: Room message count object
+
+        properties:
+
+          roomName:
+            name: roomName
+            type: PropertyString
+            description: Room name
+
+          messageCount:
+            name: messageCount
+            type: PropertyInteger
+            description: Total messages received in room
+
+      protected: true
