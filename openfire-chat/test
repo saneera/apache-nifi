@@ -1514,3 +1514,178 @@ properties:
             description: Total messages received in room
 
       protected: true
+
+
+
+
+
+
+==============
+
+
+private final Map<String, MessageListener> roomListeners =
+        new ConcurrentHashMap<>();
+
+/**
+ * Register room message listener
+ *
+ * @param roomName
+ * @param participantName
+ * @param muc
+ */
+public void registerRoomListener(
+        String roomName,
+        String participantName,
+        MultiUserChat muc
+) {
+
+    String roomKey = roomName + ":" + participantName;
+
+    /**
+     * Prevent duplicate listener registration
+     */
+    if (!registeredRooms.add(roomKey)) {
+        return;
+    }
+
+    log.info(
+            "Registering room listener for [{}] in room [{}]",
+            participantName,
+            roomName
+    );
+
+    MessageListener listener = message -> {
+
+        try {
+
+            /**
+             * Ignore delayed/history messages
+             */
+            DelayInformation delay =
+                    DelayInformation.from(message);
+
+            if (delay != null) {
+
+                log.info(
+                        "Ignoring delayed message for room [{}]",
+                        roomName
+                );
+
+                return;
+            }
+
+            messageListenerService.processRoomMessage(
+                    roomName,
+                    participantName,
+                    message
+            );
+
+        } catch (Exception ex) {
+
+            log.error(
+                    "Error processing room message",
+                    ex
+            );
+        }
+    };
+
+    /**
+     * Store listener reference
+     */
+    roomListeners.put(roomKey, listener);
+
+    /**
+     * Attach listener to room
+     */
+    muc.addMessageListener(listener);
+}
+
+
+
+public MultiUserChat removeParticipantFromTheRoom(
+        String roomName,
+        String userName
+) throws IllegalArgumentException {
+
+    String roomKey = roomName + ":" + userName;
+
+    try {
+
+        XMPPTCPConnection participantConnection =
+                xmppConnectionManager.getParticipantConnection(
+                        userName,
+                        chatGatewayProperties.getParticipantPassword()
+                );
+
+        MultiUserChatManager manager =
+                chatManagerProvider.getManager(
+                        participantConnection
+                );
+
+        String roomJidString =
+                buildEntityBareJid(
+                        roomName,
+                        chatGatewayProperties.getServiceName(),
+                        chatGatewayProperties.getDomain()
+                );
+
+        EntityBareJid roomJid =
+                JidCreate.entityBareFrom(
+                        roomJidString
+                );
+
+        MultiUserChat muc =
+                manager.getMultiUserChat(roomJid);
+
+        /**
+         * Remove listener before leaving room
+         */
+        MessageListener listener =
+                roomListeners.remove(roomKey);
+
+        if (listener != null) {
+
+            muc.removeMessageListener(listener);
+
+            log.info(
+                    "Removed message listener for [{}]",
+                    roomKey
+            );
+        }
+
+        /**
+         * Leave room
+         */
+        muc.leave();
+
+        registeredRooms.remove(roomKey);
+
+        joinedRooms.remove(roomKey);
+
+        xmppConnectionManager.disconnectParticipant(
+                userName
+        );
+
+        log.info(
+                "Participant [{}] left room [{}]",
+                userName,
+                roomName
+        );
+
+        return muc;
+
+    } catch (Exception e) {
+
+        log.error(
+                "Error leaving room [{}] for participant [{}]",
+                roomName,
+                userName,
+                e
+        );
+
+        throw new IllegalArgumentException(
+                "Error leaving participant from room",
+                e
+        );
+    }
+}
