@@ -1689,3 +1689,205 @@ public MultiUserChat removeParticipantFromTheRoom(
         );
     }
 }
+
+
+
+
+public List<RoomMessageResponse> readMessages(
+        ReadRoomMessagesCommand command
+) {
+
+    try {
+
+        XMPPTCPConnection connection =
+                xmppConnectionManager.getParticipantConnection(
+                        command.getParticipantName(),
+                        chatGatewayProperties.getParticipantPassword()
+                );
+
+        MultiUserChatManager manager =
+                chatManagerProvider.getManager(connection);
+
+        String roomJidString =
+                buildEntityBareJid(
+                        command.getRoomName(),
+                        chatGatewayProperties.getServiceName(),
+                        chatGatewayProperties.getDomain()
+                );
+
+        EntityBareJid roomJid =
+                JidCreate.entityBareFrom(roomJidString);
+
+        MultiUserChat muc =
+                manager.getMultiUserChat(roomJid);
+
+        MamManager mamManager =
+                MamManager.getInstanceFor(muc);
+
+        MamManager.MamQueryArgs mamQueryArgs =
+                MamManager.MamQueryArgs.builder()
+                        .querySince(
+                                Date.from(command.getSince())
+                        )
+                        .setResultPageSize(
+                                command.getLimit()
+                        )
+                        .build();
+
+        MamManager.MamQueryResult result =
+                mamManager.queryArchive(
+                        mamQueryArgs
+                );
+
+        List<RoomMessageResponse> responses =
+                new ArrayList<>();
+
+        for (Message message : result.forwardedMessages) {
+
+            if (message.getBody() == null) {
+                continue;
+            }
+
+            DelayInformation delay =
+                    DelayInformation.from(message);
+
+            Instant timestamp =
+                    delay != null
+                            ? delay.getStamp().toInstant()
+                            : Instant.now();
+
+            responses.add(
+                    RoomMessageResponse.builder()
+                            .messageId(
+                                    message.getStanzaId()
+                            )
+                            .sender(
+                                    message.getFrom().toString()
+                            )
+                            .body(
+                                    message.getBody()
+                            )
+                            .timestamp(timestamp)
+                            .build()
+            );
+        }
+
+        return responses;
+
+    } catch (Exception e) {
+
+        log.error(
+                "Error reading room messages",
+                e
+        );
+
+        throw new IllegalArgumentException(
+                "Error reading room messages",
+                e
+        );
+    }
+}
+
+
+@Data
+@Builder
+@AllArgsConstructor
+@NoArgsConstructor
+public class RoomMessageResponse {
+
+    private String messageId;
+
+    private String sender;
+
+    private String body;
+
+    private Instant timestamp;
+}
+
+
+@Data
+public class ReadRoomMessagesCommand {
+
+    private String roomName;
+
+    private String participantName;
+
+    /**
+     * ISO timestamp
+     */
+    private Instant since;
+
+    private Integer limit = 100;
+}
+
+
+
+{
+  "roomName": "room1",
+  "participantName": "participant1",
+  "since": "2026-05-24T10:00:00Z",
+  "limit": 100
+}
+
+
+commands:
+
+  room-messages:
+
+    request:
+      type: PropertyObject
+      name: ReadRoomMessagesCommand
+      description: Request to read room messages
+
+      properties:
+
+        roomName:
+          name: roomName
+          type: PropertyString
+          description: Room name
+
+        participantName:
+          name: participantName
+          type: PropertyString
+          description: Participant requesting messages
+
+        since:
+          name: since
+          type: PropertyString
+          description: ISO timestamp to fetch messages from
+
+        limit:
+          name: limit
+          type: PropertyInteger
+          description: Maximum number of messages to return
+
+    response:
+      type: PropertyArray
+      name: RoomMessageResponse
+      description: List of room messages
+
+      items:
+        type: PropertyObject
+        name: roomMessage
+
+        properties:
+
+          messageId:
+            name: messageId
+            type: PropertyString
+            description: Unique message id
+
+          sender:
+            name: sender
+            type: PropertyString
+            description: Message sender
+
+          body:
+            name: body
+            type: PropertyString
+            description: Message body
+
+          timestamp:
+            name: timestamp
+            type: PropertyString
+            description: Message timestamp
