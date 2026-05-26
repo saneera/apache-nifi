@@ -2243,3 +2243,785 @@ private final Map<String, ParticipantStatusListener>
 private final Map<String, UserStatusListener>
         roomUserStatusListener =
         new ConcurrentHashMap<>();
+
+
+
+
+
+
+
+ @Service
+ @Slf4j
+ @RequiredArgsConstructor
+ public class EventListenerService {
+
+     private final MessageListenerService
+             messageListenerService;
+
+     private final Map<String, MessageListener>
+             messageListeners =
+             new ConcurrentHashMap<>();
+
+     private final Map<String, ParticipantStatusListener>
+             participantListeners =
+             new ConcurrentHashMap<>();
+
+     private final Map<String, UserStatusListener>
+             userStatusListeners =
+             new ConcurrentHashMap<>();
+
+     public void registerListeners(
+             String roomName,
+             String participantName,
+             MultiUserChat muc
+     ) {
+
+         String roomKey =
+                 roomName + ":" + participantName;
+
+         /**
+          * Avoid duplicate registration
+          */
+         if (messageListeners.containsKey(roomKey)) {
+
+             log.info(
+                     "Listeners already registered [{}]",
+                     roomKey
+             );
+
+             return;
+         }
+
+         /**
+          * Message listener
+          */
+         MessageListener messageListener =
+                 message -> {
+
+                     try {
+
+                         log.info(
+                                 "ROOM MESSAGE room=[{}] from=[{}] body=[{}]",
+                                 roomName,
+                                 message.getFrom(),
+                                 message.getBody()
+                         );
+
+                         messageListenerService
+                                 .processRoomMessage(
+                                         roomName,
+                                         participantName,
+                                         message
+                                 );
+
+                     } catch (Exception e) {
+
+                         log.error(
+                                 "Error processing room message",
+                                 e
+                         );
+                     }
+                 };
+
+         /**
+          * Participant listener
+          */
+         ParticipantStatusListener participantListener =
+                 new ParticipantStatusListener() {
+
+                     @Override
+                     public void joined(
+                             EntityFullJid participant
+                     ) {
+
+                         log.info(
+                                 "PARTICIPANT JOINED room=[{}] participant=[{}]",
+                                 roomName,
+                                 participant
+                         );
+                     }
+
+                     @Override
+                     public void left(
+                             EntityFullJid participant
+                     ) {
+
+                         log.info(
+                                 "PARTICIPANT LEFT room=[{}] participant=[{}]",
+                                 roomName,
+                                 participant
+                         );
+                     }
+
+                     @Override
+                     public void kicked(
+                             EntityFullJid participant,
+                             Jid actor,
+                             String reason
+                     ) {
+
+                         log.info(
+                                 "PARTICIPANT KICKED room=[{}] participant=[{}]",
+                                 roomName,
+                                 participant
+                         );
+                     }
+
+                     @Override
+                     public void banned(
+                             EntityFullJid participant,
+                             Jid actor,
+                             String reason
+                     ) {}
+
+                     @Override
+                     public void nicknameChanged(
+                             EntityFullJid participant,
+                             Resourcepart newNickname
+                     ) {}
+
+                     @Override
+                     public void voiceGranted(EntityFullJid participant) {}
+
+                     @Override
+                     public void voiceRevoked(EntityFullJid participant) {}
+
+                     @Override
+                     public void membershipGranted(EntityFullJid participant) {}
+
+                     @Override
+                     public void membershipRevoked(EntityFullJid participant) {}
+
+                     @Override
+                     public void moderatorGranted(EntityFullJid participant) {}
+
+                     @Override
+                     public void moderatorRevoked(EntityFullJid participant) {}
+
+                     @Override
+                     public void ownershipGranted(EntityFullJid participant) {}
+
+                     @Override
+                     public void ownershipRevoked(EntityFullJid participant) {}
+
+                     @Override
+                     public void adminGranted(EntityFullJid participant) {}
+
+                     @Override
+                     public void adminRevoked(EntityFullJid participant) {}
+                 };
+
+         /**
+          * User status listener
+          */
+         UserStatusListener userStatusListener =
+                 new UserStatusListener() {
+
+                     @Override
+                     public void kicked(
+                             Jid actor,
+                             String reason
+                     ) {
+
+                         log.info(
+                                 "CURRENT USER KICKED room=[{}]",
+                                 roomName
+                         );
+                     }
+
+                     @Override
+                     public void roomDestroyed(
+                             MultiUserChat alternateMUC,
+                             String reason
+                     ) {
+
+                         log.info(
+                                 "ROOM DESTROYED room=[{}]",
+                                 roomName
+                         );
+                     }
+
+                     @Override
+                     public void banned(
+                             Jid actor,
+                             String reason
+                     ) {}
+
+                     @Override
+                     public void membershipGranted() {}
+
+                     @Override
+                     public void membershipRevoked() {}
+
+                     @Override
+                     public void moderatorGranted() {}
+
+                     @Override
+                     public void moderatorRevoked() {}
+
+                     @Override
+                     public void ownershipGranted() {}
+
+                     @Override
+                     public void ownershipRevoked() {}
+
+                     @Override
+                     public void adminGranted() {}
+
+                     @Override
+                     public void adminRevoked() {}
+
+                     @Override
+                     public void voiceGranted() {}
+
+                     @Override
+                     public void voiceRevoked() {}
+                 };
+
+         /**
+          * Store references
+          */
+         messageListeners.put(
+                 roomKey,
+                 messageListener
+         );
+
+         participantListeners.put(
+                 roomKey,
+                 participantListener
+         );
+
+         userStatusListeners.put(
+                 roomKey,
+                 userStatusListener
+         );
+
+         /**
+          * Attach listeners
+          */
+         muc.addMessageListener(
+                 messageListener
+         );
+
+         muc.addParticipantStatusListener(
+                 participantListener
+         );
+
+         muc.addUserStatusListener(
+                 userStatusListener
+         );
+
+         log.info(
+                 "Registered listeners [{}]",
+                 roomKey
+         );
+     }
+
+     public void removeListeners(
+             String roomName,
+             String participantName,
+             MultiUserChat muc
+     ) {
+
+         String roomKey =
+                 roomName + ":" + participantName;
+
+         MessageListener messageListener =
+                 messageListeners.remove(roomKey);
+
+         if (messageListener != null) {
+
+             muc.removeMessageListener(
+                     messageListener
+             );
+         }
+
+         ParticipantStatusListener participantListener =
+                 participantListeners.remove(roomKey);
+
+         if (participantListener != null) {
+
+             muc.removeParticipantStatusListener(
+                     participantListener
+             );
+         }
+
+         UserStatusListener userStatusListener =
+                 userStatusListeners.remove(roomKey);
+
+         if (userStatusListener != null) {
+
+             muc.removeUserStatusListener(
+                     userStatusListener
+             );
+         }
+
+         log.info(
+                 "Removed listeners [{}]",
+                 roomKey
+         );
+     }
+ }
+
+
+
+
+=============================
+
+
+@Service
+@Slf4j
+@RequiredArgsConstructor
+public class EventListenerService {
+
+    private final MessageListenerService
+            messageListenerService;
+
+    /**
+     * Prevent duplicate registration
+     */
+    private final Set<String> registeredRooms =
+            ConcurrentHashMap.newKeySet();
+
+    /**
+     * Message listeners
+     */
+    private final Map<String, MessageListener>
+            messageListeners =
+            new ConcurrentHashMap<>();
+
+    /**
+     * Participant listeners
+     */
+    private final Map<String, ParticipantStatusListener>
+            participantListeners =
+            new ConcurrentHashMap<>();
+
+    /**
+     * User status listeners
+     */
+    private final Map<String, UserStatusListener>
+            userStatusListeners =
+            new ConcurrentHashMap<>();
+
+    /**
+     * Register all room listeners
+     */
+    public void registerListeners(
+            String roomName,
+            String participantName,
+            MultiUserChat muc
+    ) {
+
+        String roomKey =
+                roomName + ":" + participantName;
+
+        /**
+         * Avoid duplicate registration
+         */
+        if (!registeredRooms.add(roomKey)) {
+
+            log.info(
+                    "Listeners already registered [{}]",
+                    roomKey
+            );
+
+            return;
+        }
+
+        log.info(
+                "Registering listeners [{}]",
+                roomKey
+        );
+
+        /**
+         * Message listener
+         */
+        MessageListener messageListener =
+                message -> {
+
+                    try {
+
+                        DelayInformation delay =
+                                DelayInformation.from(
+                                        message
+                                );
+
+                        /**
+                         * Ignore delayed/history messages
+                         */
+                        if (delay != null) {
+
+                            log.info(
+                                    "Ignoring delayed message room=[{}]",
+                                    roomName
+                            );
+
+                            return;
+                        }
+
+                        log.info(
+                                "ROOM MESSAGE room=[{}] from=[{}] body=[{}]",
+                                roomName,
+                                message.getFrom(),
+                                message.getBody()
+                        );
+
+                        messageListenerService
+                                .processRoomMessage(
+                                        roomName,
+                                        participantName,
+                                        message
+                                );
+
+                    } catch (Exception e) {
+
+                        log.error(
+                                "Error processing room message",
+                                e
+                        );
+                    }
+                };
+
+        /**
+         * Participant listener
+         */
+        ParticipantStatusListener participantListener =
+                new ParticipantStatusListener() {
+
+                    @Override
+                    public void joined(
+                            EntityFullJid participant
+                    ) {
+
+                        log.info(
+                                "PARTICIPANT JOINED room=[{}] participant=[{}]",
+                                roomName,
+                                participant
+                        );
+                    }
+
+                    @Override
+                    public void left(
+                            EntityFullJid participant
+                    ) {
+
+                        log.info(
+                                "PARTICIPANT LEFT room=[{}] participant=[{}]",
+                                roomName,
+                                participant
+                        );
+                    }
+
+                    @Override
+                    public void kicked(
+                            EntityFullJid participant,
+                            Jid actor,
+                            String reason
+                    ) {
+
+                        log.info(
+                                "PARTICIPANT KICKED room=[{}] participant=[{}] actor=[{}] reason=[{}]",
+                                roomName,
+                                participant,
+                                actor,
+                                reason
+                        );
+                    }
+
+                    @Override
+                    public void banned(
+                            EntityFullJid participant,
+                            Jid actor,
+                            String reason
+                    ) {
+
+                        log.info(
+                                "PARTICIPANT BANNED room=[{}] participant=[{}]",
+                                roomName,
+                                participant
+                        );
+                    }
+
+                    @Override
+                    public void nicknameChanged(
+                            EntityFullJid participant,
+                            Resourcepart newNickname
+                    ) {
+
+                        log.info(
+                                "NICKNAME CHANGED room=[{}] participant=[{}] newNick=[{}]",
+                                roomName,
+                                participant,
+                                newNickname
+                        );
+                    }
+
+                    /**
+                     * Required overrides
+                     */
+                    @Override
+                    public void voiceGranted(
+                            EntityFullJid participant
+                    ) {}
+
+                    @Override
+                    public void voiceRevoked(
+                            EntityFullJid participant
+                    ) {}
+
+                    @Override
+                    public void membershipGranted(
+                            EntityFullJid participant
+                    ) {}
+
+                    @Override
+                    public void membershipRevoked(
+                            EntityFullJid participant
+                    ) {}
+
+                    @Override
+                    public void moderatorGranted(
+                            EntityFullJid participant
+                    ) {}
+
+                    @Override
+                    public void moderatorRevoked(
+                            EntityFullJid participant
+                    ) {}
+
+                    @Override
+                    public void ownershipGranted(
+                            EntityFullJid participant
+                    ) {}
+
+                    @Override
+                    public void ownershipRevoked(
+                            EntityFullJid participant
+                    ) {}
+
+                    @Override
+                    public void adminGranted(
+                            EntityFullJid participant
+                    ) {}
+
+                    @Override
+                    public void adminRevoked(
+                            EntityFullJid participant
+                    ) {}
+                };
+
+        /**
+         * User status listener
+         */
+        UserStatusListener userStatusListener =
+                new UserStatusListener() {
+
+                    @Override
+                    public void kicked(
+                            Jid actor,
+                            String reason
+                    ) {
+
+                        log.info(
+                                "CURRENT USER KICKED room=[{}] actor=[{}] reason=[{}]",
+                                roomName,
+                                actor,
+                                reason
+                        );
+                    }
+
+                    @Override
+                    public void banned(
+                            Jid actor,
+                            String reason
+                    ) {
+
+                        log.info(
+                                "CURRENT USER BANNED room=[{}]",
+                                roomName
+                        );
+                    }
+
+                    @Override
+                    public void roomDestroyed(
+                            MultiUserChat alternateMUC,
+                            String reason
+                    ) {
+
+                        log.info(
+                                "ROOM DESTROYED room=[{}] reason=[{}]",
+                                roomName,
+                                reason
+                        );
+                    }
+
+                    /**
+                     * Required overrides
+                     */
+                    @Override
+                    public void membershipGranted() {}
+
+                    @Override
+                    public void membershipRevoked() {}
+
+                    @Override
+                    public void moderatorGranted() {}
+
+                    @Override
+                    public void moderatorRevoked() {}
+
+                    @Override
+                    public void ownershipGranted() {}
+
+                    @Override
+                    public void ownershipRevoked() {}
+
+                    @Override
+                    public void adminGranted() {}
+
+                    @Override
+                    public void adminRevoked() {}
+
+                    @Override
+                    public void voiceGranted() {}
+
+                    @Override
+                    public void voiceRevoked() {}
+                };
+
+        /**
+         * Store references
+         */
+        messageListeners.put(
+                roomKey,
+                messageListener
+        );
+
+        participantListeners.put(
+                roomKey,
+                participantListener
+        );
+
+        userStatusListeners.put(
+                roomKey,
+                userStatusListener
+        );
+
+        /**
+         * Register listeners
+         */
+        muc.addMessageListener(
+                messageListener
+        );
+
+        muc.addParticipantStatusListener(
+                participantListener
+        );
+
+        muc.addUserStatusListener(
+                userStatusListener
+        );
+
+        /**
+         * Subject updates
+         */
+        muc.addSubjectUpdatedListener(
+                (subject, from) -> {
+
+                    log.info(
+                            "ROOM SUBJECT UPDATED room=[{}] from=[{}] subject=[{}]",
+                            roomName,
+                            from,
+                            subject
+                    );
+                }
+        );
+
+        log.info(
+                "Successfully registered listeners [{}]",
+                roomKey
+        );
+    }
+
+    /**
+     * Remove all listeners
+     */
+    public void removeListeners(
+            String roomName,
+            String participantName,
+            MultiUserChat muc
+    ) {
+
+        String roomKey =
+                roomName + ":" + participantName;
+
+        /**
+         * Remove message listener
+         */
+        MessageListener messageListener =
+                messageListeners.remove(roomKey);
+
+        if (messageListener != null) {
+
+            muc.removeMessageListener(
+                    messageListener
+            );
+
+            log.info(
+                    "Removed message listener [{}]",
+                    roomKey
+            );
+        }
+
+        /**
+         * Remove participant listener
+         */
+        ParticipantStatusListener participantListener =
+                participantListeners.remove(
+                        roomKey
+                );
+
+        if (participantListener != null) {
+
+            muc.removeParticipantStatusListener(
+                    participantListener
+            );
+
+            log.info(
+                    "Removed participant listener [{}]",
+                    roomKey
+            );
+        }
+
+        /**
+         * Remove user status listener
+         */
+        UserStatusListener userStatusListener =
+                userStatusListeners.remove(
+                        roomKey
+                );
+
+        if (userStatusListener != null) {
+
+            muc.removeUserStatusListener(
+                    userStatusListener
+            );
+
+            log.info(
+                    "Removed user status listener [{}]",
+                    roomKey
+            );
+        }
+
+        /**
+         * Allow future registration
+         */
+        registeredRooms.remove(roomKey);
+
+        log.info(
+                "Successfully removed listeners [{}]",
+                roomKey
+        );
+    }
+}
