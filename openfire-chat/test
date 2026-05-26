@@ -1891,3 +1891,198 @@ commands:
             name: timestamp
             type: PropertyString
             description: Message timestamp
+
+
+
+
+
+public void registerRoomListener(
+        String roomName,
+        String participantName,
+        MultiUserChat muc
+) {
+
+    String roomKey =
+            roomName + ":" + participantName;
+
+    if (!registerRooms.add(roomKey)) {
+        return;
+    }
+
+    log.info(
+            "Registering room listener for [{}] in room [{}]",
+            participantName,
+            roomName
+    );
+
+    /**
+     * Message listener
+     */
+    MessageListener listener = message -> {
+
+        try {
+
+            log.info(
+                    "ROOM MESSAGE room=[{}] from=[{}] body=[{}]",
+                    roomName,
+                    message.getFrom(),
+                    message.getBody()
+            );
+
+            messageListenerService.processRoomMessage(
+                    roomName,
+                    participantName,
+                    message
+            );
+
+        } catch (Exception ex) {
+
+            log.error(
+                    "Error processing room message",
+                    ex
+            );
+        }
+    };
+
+    /**
+     * Store listener reference
+     */
+    roomParticipantMessageListener.put(
+            roomKey,
+            listener
+    );
+
+    /**
+     * Attach listener to room
+     */
+    muc.addMessageListener(listener);
+
+    /**
+     * Participant status listener
+     */
+    muc.addParticipantStatusListener(
+            new ParticipantStatusListener() {
+
+                @Override
+                public void joined(
+                        EntityFullJid participant
+                ) {
+
+                    log.info(
+                            "PARTICIPANT JOINED room=[{}] participant=[{}]",
+                            roomName,
+                            participant
+                    );
+                }
+
+                @Override
+                public void left(
+                        EntityFullJid participant
+                ) {
+
+                    log.info(
+                            "PARTICIPANT LEFT room=[{}] participant=[{}]",
+                            roomName,
+                            participant
+                    );
+                }
+
+                @Override
+                public void kicked(
+                        EntityFullJid participant,
+                        Jid actor,
+                        String reason
+                ) {
+
+                    log.info(
+                            "PARTICIPANT KICKED room=[{}] participant=[{}] actor=[{}] reason=[{}]",
+                            roomName,
+                            participant,
+                            actor,
+                            reason
+                    );
+                }
+
+                @Override
+                public void banned(
+                        EntityFullJid participant,
+                        Jid actor,
+                        String reason
+                ) {
+
+                    log.info(
+                            "PARTICIPANT BANNED room=[{}] participant=[{}]",
+                            roomName,
+                            participant
+                    );
+                }
+
+                @Override
+                public void nicknameChanged(
+                        EntityFullJid participant,
+                        Resourcepart newNickname
+                ) {
+
+                    log.info(
+                            "NICKNAME CHANGED room=[{}] participant=[{}] newNick=[{}]",
+                            roomName,
+                            participant,
+                            newNickname
+                    );
+                }
+
+                /**
+                 * Required overrides
+                 */
+                @Override
+                public void voiceGranted(EntityFullJid participant) {}
+
+                @Override
+                public void voiceRevoked(EntityFullJid participant) {}
+
+                @Override
+                public void membershipGranted(EntityFullJid participant) {}
+
+                @Override
+                public void membershipRevoked(EntityFullJid participant) {}
+
+                @Override
+                public void moderatorGranted(EntityFullJid participant) {}
+
+                @Override
+                public void moderatorRevoked(EntityFullJid participant) {}
+
+                @Override
+                public void ownershipGranted(EntityFullJid participant) {}
+
+                @Override
+                public void ownershipRevoked(EntityFullJid participant) {}
+
+                @Override
+                public void adminGranted(EntityFullJid participant) {}
+
+                @Override
+                public void adminRevoked(EntityFullJid participant) {}
+            }
+    );
+
+    /**
+     * Room subject updates
+     */
+    muc.addSubjectUpdatedListener(
+            (subject, from) -> {
+
+                log.info(
+                        "ROOM SUBJECT UPDATED room=[{}] from=[{}] subject=[{}]",
+                        roomName,
+                        from,
+                        subject
+                );
+            }
+    );
+
+    log.info(
+            "All room listeners registered for [{}]",
+            roomKey
+    );
+}
