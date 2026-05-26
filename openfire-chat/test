@@ -2086,3 +2086,83 @@ public void registerRoomListener(
             roomKey
     );
 }
+
+
+
+
+muc.addUserStatusListener(
+        new UserStatusListener() {
+
+            @Override
+            public void kicked(
+                    Jid actor,
+                    String reason
+            ) {
+
+                log.info(
+                        "CURRENT USER KICKED room=[{}] actor=[{}] reason=[{}]",
+                        roomName,
+                        actor,
+                        reason
+                );
+            }
+
+            @Override
+            public void banned(
+                    Jid actor,
+                    String reason
+            ) {
+
+                log.info(
+                        "CURRENT USER BANNED room=[{}]",
+                        roomName
+                );
+            }
+
+            @Override
+            public void roomDestroyed(
+                    MultiUserChat alternateMUC,
+                    String reason
+            ) {
+
+                log.info(
+                        "ROOM DESTROYED room=[{}] reason=[{}]",
+                        roomName,
+                        reason
+                );
+            }
+
+            /**
+             * Required overrides
+             */
+            @Override
+            public void membershipGranted() {}
+
+            @Override
+            public void membershipRevoked() {}
+
+            @Override
+            public void moderatorGranted() {}
+
+            @Override
+            public void moderatorRevoked() {}
+
+            @Override
+            public void ownershipGranted() {}
+
+            @Override
+            public void ownershipRevoked() {}
+
+            @Override
+            public void adminGranted() {}
+
+            @Override
+            public void adminRevoked() {}
+
+            @Override
+            public void voiceGranted() {}
+
+            @Override
+            public void voiceRevoked() {}
+        }
+);
