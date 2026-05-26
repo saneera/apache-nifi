@@ -2166,3 +2166,80 @@ muc.addUserStatusListener(
             public void voiceRevoked() {}
         }
 );
+
+
+
+
+
+/**
+ * Remove message listener
+ */
+MessageListener messageListener =
+        roomParticipantMessageListener.remove(
+                roomKey
+        );
+
+if (messageListener != null) {
+
+    muc.removeMessageListener(
+            messageListener
+    );
+
+    log.info(
+            "Removed message listener [{}]",
+            roomKey
+    );
+}
+
+/**
+ * Remove participant status listener
+ */
+ParticipantStatusListener participantListener =
+        roomParticipantStatusListener.remove(
+                roomKey
+        );
+
+if (participantListener != null) {
+
+    muc.removeParticipantStatusListener(
+            participantListener
+    );
+
+    log.info(
+            "Removed participant listener [{}]",
+            roomKey
+    );
+}
+
+/**
+ * Remove user status listener
+ */
+UserStatusListener userStatusListener =
+        roomUserStatusListener.remove(
+                roomKey
+        );
+
+if (userStatusListener != null) {
+
+    muc.removeUserStatusListener(
+            userStatusListener
+    );
+
+    log.info(
+            "Removed user status listener [{}]",
+            roomKey
+    );
+}
+
+
+private final Map<String, MessageListener>
+        roomParticipantMessageListener =
+        new ConcurrentHashMap<>();
+
+private final Map<String, ParticipantStatusListener>
+        roomParticipantStatusListener =
+        new ConcurrentHashMap<>();
+
+private final Map<String, UserStatusListener>
+        roomUserStatusListener =
+        new ConcurrentHashMap<>();
