@@ -1,342 +1,225 @@
+High-Level Flow
+
+NiFi A (ENMF Cluster)
+
+1. HandleHttpRequest
+2. UpdateAttribute
+3. Send request to Remote Process Group (NiFi B)
+
+NiFi B (TX Cluster)
+
+1. Input Port receives request from NiFi A
+2. RouteOnAttribute
+3. Route based on request type
+    * Path 1 → InvokeHTTP
+    * Path 2 → UpdateAttribute → InvokeHTTP
+4. Merge response path
+5. UpdateAttribute
+6. Output Port sends response back to NiFi A
+
+NiFi A (ENMF Cluster)
+
+1. Receive response from NiFi B
+2. UpdateAttribute
+3. HandleHttpResponse
+
+
+
+Wiki Documentation
+
+Circuit Manager Request Processing Flow
+
+Overview
+
+This flow enables ENMF NiFi to receive an incoming HTTP request, forward it to the TX Cluster for processing, and return the response back to the original caller.
+
+Components
+
+ENMF Cluster (NiFi A)
+
+
+Processor
+
+Purpose
+
+HandleHttpRequest
+
+Receives incoming HTTP request
+
+UpdateAttribute
+
+Adds required metadata and routing attributes
+
+Remote Process Group
+
+Transfers FlowFile to TX Cluster
+
+UpdateAttribute
+
+Processes returned response
+
+HandleHttpResponse
+
+Sends response back to client
+
+
+
+
+
+
+================
+
+
+
+Processing Sequence
+
+1. Client sends HTTP request to ENMF Cluster.
+2. HandleHttpRequest creates a FlowFile.
+3. Request attributes are updated using UpdateAttribute.
+4. FlowFile is transferred to TX Cluster through a Remote Process Group.
+5. TX Cluster receives the request via an Input Port.
+6. RouteOnAttribute determines the processing route.
+7. Appropriate InvokeHTTP processor calls the target backend service.
+8. Response is captured and enriched using UpdateAttribute.
+9. Response is sent back to ENMF Cluster via Output Port.
+10. ENMF Cluster receives the response.
+11. Final attributes are updated.
+12. HandleHttpResponse returns the response to the original client.
+
 ```mermaid
-sequenceDiagram
-    participant Client
-    participant API as RemoveParticipantCommand
-    participant ChatService
-    participant Openfire
-    participant PropertyStore
+flowchart LR
 
-    Client->>API: Remove participant request\n(roomName, participantName)
+subgraph A["ENMF Cluster (NiFi A)"]
+    HHR["HandleHttpRequest"]
+    UA1["UpdateAttribute"]
+    RPG["Remote Process Group<br/>Send to TX Cluster"]
 
-    API->>ChatService: removeParticipantFromRoom(roomName, participantName)
+    HHR --> UA1
+    UA1 --> RPG
+end
 
-    ChatService->>Openfire: Leave room / remove participant
-    Openfire-->>ChatService: Participant removed
+subgraph B["TX Cluster (NiFi B)"]
+    IN["Input Port"]
 
-    Note over ChatService: Remove local room cache if exists
+    ROUTE["RouteOnAttribute"]
 
-    ChatService->>PropertyStore: Fetch roomMessages
+    HTTP1["InvokeHTTP"]
+    UA2["UpdateAttribute"]
+    HTTP2["InvokeHTTP"]
 
-    alt Participant exists in room store
-        ChatService->>PropertyStore: Remove participant from room.participants
-        PropertyStore-->>ChatService: Updated store
-    else Participant not found
-        ChatService-->>API: Participant not found
-    end
+    RESP["UpdateAttribute"]
 
-    ChatService->>Openfire: deleteAccount(participantName)
-    Openfire-->>ChatService: Account deleted
+    OUT["Output Port"]
 
-    ChatService-->>API: Success response
-    API-->>Client: Participant removed successfully
+    IN --> ROUTE
+
+    ROUTE --> HTTP1
+    ROUTE --> UA2
+    UA2 --> HTTP2
+
+    HTTP1 --> RESP
+    HTTP2 --> RESP
+
+    RESP --> OUT
+end
+
+subgraph C["Response Processing"]
+    UA3["UpdateAttribute"]
+    HRESP["HandleHttpResponse"]
+end
+
+RPG --> IN
+OUT --> UA3
+UA3 --> HRESP
+
 ```
 
-
 ```mermaid
 
 sequenceDiagram
-    participant Client
-    participant API
-    participant ChatService
-    participant Openfire
-    participant StateStore
 
-    Client->>API: Remove participant(room, participant)
+participant Client
+participant ENMF as NiFi A (ENMF)
+participant TX as NiFi B (TX)
 
-    API->>ChatService: removeParticipant()
+Client->>ENMF: HTTP Request
+ENMF->>ENMF: HandleHttpRequest
+ENMF->>ENMF: UpdateAttribute
 
-    ChatService->>Openfire: leave MUC room
-    Openfire-->>ChatService: left room
+ENMF->>TX: Send FlowFile
 
-    ChatService->>ChatService: remove joinedRooms cache
+TX->>TX: RouteOnAttribute
+TX->>TX: InvokeHTTP
+TX->>TX: UpdateAttribute
 
-    ChatService->>StateStore: get roomMessages
+TX-->>ENMF: Return Response
 
-    alt participant exists
-        ChatService->>StateStore: remove participant entry
-        StateStore-->>ChatService: updated room store
-    end
-
-    ChatService->>Openfire: delete participant account
-    Openfire-->>ChatService: account removed
-
-    Note over Openfire: listeners automatically stop after user removed
-
-    ChatService-->>API: success
-    API-->>Client: 200 OK
-```
-
-
-
-```mermaid
-sequenceDiagram
-    participant Client
-    participant API
-    participant ChatService
-    participant PropertyService
-    participant Openfire
-    participant RoomListener
-
-    %% ADD PARTICIPANT
-    Client->>API: Add Participant(participantName)
-
-    API->>PropertyService: Get participant list
-    PropertyService-->>API: Existing participants
-
-    API->>API: Validate participant not exists
-
-    API->>Openfire: Create user(default password)
-    Openfire-->>API: User created
-
-    API->>PropertyService: Add participant to participant property
-    PropertyService-->>API: Updated participant list
-
-    API-->>Client: Participant created
-
-
-    %% ADD PARTICIPANT TO ROOM
-    Client->>API: Add participant to room(room, participant)
-
-    API->>Openfire: Check room exists
-    Openfire-->>API: Room found
-
-    API->>PropertyService: Check participant exists
-    PropertyService-->>API: Participant found
-
-    API->>ChatService: Join participant to room
-    ChatService->>Openfire: Join MUC room
-    Openfire-->>ChatService: Joined
-
-    ChatService->>Openfire: Register message listeners
-    Openfire-->>ChatService: Listener attached
-
-    Note over Openfire,RoomListener: Existing room history may arrive immediately
-
-    Openfire->>RoomListener: Existing messages
-
-    RoomListener->>PropertyService: Update roomMessages
-    PropertyService-->>RoomListener: Saved
-
-    ChatService-->>API: Success
-    API-->>Client: Participant added to room
-
-
-    %% SEND MESSAGE
-    Client->>API: Send message(room,user,message)
-
-    API->>ChatService: sendMessageToRoom()
-
-    ChatService->>Openfire: Send MUC message
-    Openfire-->>ChatService: Delivered
-
-    Openfire->>RoomListener: Message received for participants
-
-    RoomListener->>PropertyService: Update roomMessages property
-
-    Note over RoomListener: Ignore duplicate messageId/stanzaId
-
-    PropertyService-->>RoomListener: Saved
-
-    ChatService-->>API: Success
-    API-->>Client: Message sent
-
-
-    %% REMOVE PARTICIPANT FROM ROOM
-    Client->>API: Remove participant from room
-
-    API->>ChatService: removeParticipantFromRoom()
-
-    ChatService->>Openfire: Leave room
-    Openfire-->>ChatService: Removed
-
-    ChatService->>ChatService: Remove room cache/listeners
-
-    ChatService-->>API: Success
-    API-->>Client: Removed from room
-
-
-    %% DELETE PARTICIPANT
-    Client->>API: Remove participant
-
-    API->>PropertyService: Remove from participant property
-    PropertyService-->>API: Updated participant list
-
-    API->>Openfire: Delete user account
-    Openfire-->>API: User removed
-
-    API-->>Client: Participant deleted
+ENMF->>ENMF: UpdateAttribute
+ENMF-->>Client: HandleHttpResponse
 
 ```
 
 
-### Chat Room Message Flow Description
 
-This flow manages participants, room membership, message handling, and synchronization between Openfire and the Property Service.
 
-1. Add Participant
+===============
 
-When a new participant is created:
 
-1. The system retrieves the existing participant list from the Property Service.
-2. It validates whether the participant already exists.
-3. If the participant does not exist:
-    * A new Openfire user account is created using a default password.
-    * The participant is added to the participant property list in the Property Service.
-4. The updated participant list is saved.
-
-Result:
-
-* Participant exists in both Openfire and Property Service.
+This looks like a Property Synchronization Flow between two NiFi clusters using RabbitMQ/AMQP.
 
 ⸻
 
-2. Add Participant to Room
+Property Synchronization Architecture
 
-When a participant is added to a room:
+Overview
 
-1. Validate that the room exists in Openfire.
-2. Validate that the participant exists in Property Service.
-3. The participant joins the Openfire Multi-User Chat (MUC) room.
-4. Message listeners are registered for the participant.
-5. Openfire may immediately send existing room history messages.
-6. These messages are captured and synchronized into the roomMessages property.
+When a property is updated in the Property Service:
 
-Result:
-
-* Participant joins the room.
-* Listeners become active.
-* Existing room history becomes available.
-
-⸻
-
-3. Send Message to Room
-
-When a participant sends a message:
-
-1. The request calls sendMessageToRoom().
-2. The message is sent to the Openfire room.
-3. Openfire distributes the message to room participants.
-4. Registered listeners receive the message event.
-5. The listener updates the roomMessages property in Property Service.
-6. Duplicate prevention is applied using messageId or stanzaId.
-
-Result:
-
-* Message is delivered through Openfire.
-* Message history is stored in Property Service.
-
-⸻
-
-4. Remove Participant from Room
-
-When removing a participant from a room:
-
-1. The participant leaves the Openfire room.
-2. Room listeners are removed.
-3. Cached room references are cleared.
-
-Result:
-
-* Participant no longer receives room messages.
-* Memory/cache cleanup occurs.
-
-⸻
-
-5. Remove Participant
-
-When deleting a participant completely:
-
-1. Remove participant from Property Service.
-2. Delete the user account from Openfire.
-3. Save the updated participant list.
-
-Result:
-
-* Participant is fully removed from the system.
+1. The update event is published to a RabbitMQ queue.
+2. Black NiFi consumes the update event.
+3. Black NiFi forwards the event to Red NiFi using a Remote Process Group.
+4. Red NiFi receives the event and republishes it to its local RabbitMQ queue.
+5. Property Service consumes the message.
+6. Property Service updates Redis cache with the latest property data.
 
 
-### Message Storage Structure
-
-Messages are stored per room and participant:
+End-to-End Flow
 
 
-```
-{
-  "roomName": "TestMessage",
-  "participants": [
-    {
-      "participantName": "participant1",
-      "messages": [
-        {
-          "messageId": "XP8H8-4",
-          "sender": "participant2",
-          "receiver": "participant1",
-          "body": "Hello",
-          "timestamp": "2026-05-18T05:18:03Z"
-        }
-      ]
-    }
-  ]
-}
-```
-
-This structure allows:
-
-* Room-based storage
-* Participant-specific message history
-* Read/open tracking extension later
-* Duplicate message prevention using messageId or stanzaId
-
-
-
-```mermaid
-sequenceDiagram
-    participant Client
-    participant API
-    participant ChatService
-    participant Openfire
-    participant MessageListener
-    participant PropertyService
-
-    Client->>API: Send message(room,user,message)
-
-    API->>ChatService: sendMessageToRoom()
-
-    ChatService->>Openfire: Send message to MUC room
-    Openfire-->>ChatService: Message delivered
-
-    Note over Openfire: Openfire distributes message to room participants
-
-    Openfire->>MessageListener: Receive message event
-
-    MessageListener->>MessageListener: Extract stanzaId/messageId
-
-    MessageListener->>PropertyService: Fetch roomMessages
-
-    MessageListener->>MessageListener: Check duplicate messageId
-
-    alt Message not already stored
-        MessageListener->>PropertyService: Add message to participant message list
-        PropertyService-->>MessageListener: Saved
-    else Duplicate message
-        MessageListener->>MessageListener: Ignore message
-    end
-
-    API-->>Client: Success
-
-```
+Property Update
+│
+▼
+RabbitMQ Queue
+│
+▼
+Black NiFi
+(ConsumeAMQP)
+│
+▼
+Remote Process Group
+│
+▼
+Red NiFi
+(Input Port)
+│
+▼
+PublishAMQP
+│
+▼
+RabbitMQ Queue
+│
+▼
+Property Service
+│
+▼
+Redis Cache Update
 
 
-Flow Description
+Detailed Flow Description
 
-1. Client sends a request to send a message to a room.
-2. API calls sendMessageToRoom().
-3. ChatService sends the message to the Openfire MUC room.
-4. Openfire distributes the message to all participants.
-5. Registered listeners receive message events.
-6. Listener extracts stanzaId / messageId.
-7. Existing roomMessages are fetched from Property Service.
-8. Duplicate checks prevent storing the same message multiple times.
-9. If the message is new:
-   * Store under the appropriate participant in roomMessages.
-10. Return success.
+1. Black NiFi – Consuming Property Updates
+
+Purpose:
+Consume property update events from RabbitMQ and forward them to the remote NiFi cluster.
+
+Processors
