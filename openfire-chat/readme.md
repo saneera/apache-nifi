@@ -367,3 +367,50 @@ MQ2->>Service: Consume Update Event
 Service->>Redis: Update Cache
 
 ```
+
+
+
+import groovy.json.JsonOutput
+import java.time.Instant
+
+def flowFile = session.get()
+if (!flowFile) return
+
+// Read the FlowFile body content
+def content = ''
+session.read(flowFile, { inputStream ->
+content = inputStream.text
+} as InputStreamCallback)
+
+// Build OTLP JSON payload with content inside body.stringValue
+def payload = [
+resourceLogs: [[
+resource: [
+attributes: [[
+key  : 'service.name',
+value: [stringValue: flowFile.getAttribute('service.name') ?: 'nifi-pipeline']
+]]
+],
+scopeLogs: [[
+scope     : [name: 'nifi'],
+logRecords: [[
+timeUnixNano: (Instant.now().toEpochMilli() * 1_000_000L).toString(),
+severityText: 'INFO',
+body        : [stringValue: content],          // <-- FlowFile content here
+attributes  : [
+[key: 'nifi.flowfile.uuid',     value: [stringValue: flowFile.getAttribute('uuid')]],
+[key: 'nifi.flowfile.filename', value: [stringValue: flowFile.getAttribute('filename')]]
+]
+]]
+]]
+]]
+]
+
+// Write OTLP JSON as new FlowFile body
+flowFile = session.write(flowFile, { out ->
+out.write(JsonOutput.toJson(payload).getBytes('UTF-8'))
+} as OutputStreamCallback)
+
+flowFile = session.putAttribute(flowFile, 'mime.type', 'application/json')
+
+session.transfer(flowFile, REL_SUCCESS)
