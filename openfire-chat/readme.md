@@ -222,4 +222,148 @@ Detailed Flow Description
 Purpose:
 Consume property update events from RabbitMQ and forward them to the remote NiFi cluster.
 
+
 Processors
+
+
+Processor
+
+Purpose
+
+ConsumeAMQP
+
+Reads property update messages from RabbitMQ
+
+LogAttribute
+
+Logs message metadata for monitoring/troubleshooting
+
+Remote Process Group
+
+Sends messages to Red NiFi
+
+
+```
+RabbitMQ
+   │
+   ▼
+ConsumeAMQP
+   │
+   ▼
+LogAttribute
+   │
+   ▼
+Remote Process Group
+```
+
+
+
+2. Red NiFi – Publishing Property Updates
+
+Purpose:
+Receive property updates from Black NiFi and publish them into the local RabbitMQ queue.
+
+Processors
+
+
+Processor
+
+Purpose
+
+Input Port
+
+Receives FlowFiles from Black NiFi
+
+LogAttribute
+
+Logs received message details
+
+PublishAMQP
+
+Publishes message to RabbitMQ
+
+
+
+3. Property Service
+
+Purpose:
+Consume replicated property updates and refresh Redis cache.
+
+
+```
+RabbitMQ
+   │
+   ▼
+Property Service Consumer
+   │
+   ▼
+Redis Update
+```
+
+
+```mermaid
+flowchart LR
+
+subgraph BLACK["Black NiFi Cluster"]
+    Q1["RabbitMQ Queue"]
+    C["ConsumeAMQP"]
+    L1["LogAttribute"]
+    RPG["Remote Process Group"]
+
+    Q1 --> C
+    C --> L1
+    L1 --> RPG
+end
+
+subgraph RED["Red NiFi Cluster"]
+    IN["Input Port"]
+    L2["LogAttribute"]
+    P["PublishAMQP"]
+    Q2["RabbitMQ Queue"]
+
+    IN --> L2
+    L2 --> P
+    P --> Q2
+end
+
+subgraph PROPERTY["Property Service"]
+    PS["Property Service Consumer"]
+    REDIS["Redis Cache"]
+
+    PS --> REDIS
+end
+
+RPG --> IN
+Q2 --> PS
+
+```
+
+
+```mermaid
+sequenceDiagram
+
+participant Property as Property Update
+participant MQ1 as RabbitMQ
+participant Black as Black NiFi
+participant Red as Red NiFi
+participant MQ2 as RabbitMQ
+participant Service as Property Service
+participant Redis
+
+Property->>MQ1: Publish Property Update Event
+
+MQ1->>Black: ConsumeAMQP
+
+Black->>Black: LogAttribute
+
+Black->>Red: Send FlowFile via Remote Process Group
+
+Red->>Red: LogAttribute
+
+Red->>MQ2: PublishAMQP
+
+MQ2->>Service: Consume Update Event
+
+Service->>Redis: Update Cache
+
+```
