@@ -42,3 +42,131 @@ flowFile = session.write(flowFile, { out ->
 flowFile = session.putAttribute(flowFile, 'mime.type', 'application/json')
 
 session.transfer(flowFile, REL_SUCCESS)
+
+
+
+
+
+
+=========
+
+import groovy.json.JsonOutput
+import java.time.Instant
+
+def flowFile = session.get()
+if (!flowFile) return
+
+// Read FlowFile body content
+def content = ''
+session.read(flowFile, { inputStream ->
+    content = inputStream.text
+} as InputStreamCallback)
+
+// Grab ALL FlowFile attributes dynamically
+def allAttributes = flowFile.attributes.collect { key, value ->
+    [
+        key  : key,
+        value: [stringValue: value]
+    ]
+}
+
+// Build OTLP payload
+def payload = [
+    resourceLogs: [[
+        resource: [
+            attributes: [[
+                key  : 'service.name',
+                value: [stringValue: flowFile.getAttribute('service.name') ?: 'nifi-pipeline']
+            ]]
+        ],
+        scopeLogs: [[
+            scope     : [name: 'nifi'],
+            logRecords: [[
+                timeUnixNano: (Instant.now().toEpochMilli() * 1_000_000L).toString(),
+                severityText: flowFile.getAttribute('log.severity') ?: 'INFO',
+                body        : [stringValue: content],   // FlowFile content
+                attributes  : allAttributes             // ALL FlowFile attributes
+            ]]
+        ]]
+    ]]
+]
+
+// Write OTLP JSON as new FlowFile body
+flowFile = session.write(flowFile, { out ->
+    out.write(JsonOutput.toJson(payload).getBytes('UTF-8'))
+} as OutputStreamCallback)
+
+flowFile = session.putAttribute(flowFile, 'mime.type', 'application/json')
+
+session.transfer(flowFile, REL_SUCCESS)
+
+
+
+=======
+
+def excludeKeys = ['invokehttp.status.code', 'invokehttp.tx.id',
+                   'invokehttp.response.body', 'invokehttp.status.message',
+                   'invokehttp.response.url']
+
+def allAttributes = flowFile.attributes
+    .findAll { key, value -> !excludeKeys.contains(key) }
+    .collect { key, value ->
+        [
+            key  : key,
+            value: [stringValue: value]
+        ]
+    }
+
+
+    ==========
+
+
+
+
+import groovy.json.JsonOutput
+import java.time.Instant
+
+def flowFile = session.get()
+if (!flowFile) return
+
+def content = ''
+session.read(flowFile, { inputStream ->
+    content = inputStream.text
+} as InputStreamCallback)
+
+def excludeKeys = ['invokehttp.status.code', 'invokehttp.tx.id',
+                   'invokehttp.response.body', 'invokehttp.status.message',
+                   'invokehttp.response.url']
+
+def allAttributes = flowFile.attributes
+    .findAll { key, value -> !excludeKeys.contains(key) }
+    .collect { key, value ->
+        [key: key, value: [stringValue: value]]
+    }
+
+def payload = [
+    resourceLogs: [[
+        resource: [
+            attributes: [[
+                key  : 'service.name',
+                value: [stringValue: flowFile.getAttribute('source.process.group') ?: 'nifi-pipeline']
+            ]]
+        ],
+        scopeLogs: [[
+            scope     : [name: 'nifi'],
+            logRecords: [[
+                timeUnixNano: (Instant.now().toEpochMilli() * 1_000_000L).toString(),
+                severityText: flowFile.getAttribute('log.severity') ?: 'INFO',
+                body        : [stringValue: content],
+                attributes  : allAttributes
+            ]]
+        ]]
+    ]]
+]
+
+flowFile = session.write(flowFile, { out ->
+    out.write(JsonOutput.toJson(payload).getBytes('UTF-8'))
+} as OutputStreamCallback)
+
+flowFile = session.putAttribute(flowFile, 'mime.type', 'application/json')
+session.transfer(flowFile, REL_SUCCESS)
