@@ -414,3 +414,139 @@ out.write(JsonOutput.toJson(payload).getBytes('UTF-8'))
 flowFile = session.putAttribute(flowFile, 'mime.type', 'application/json')
 
 session.transfer(flowFile, REL_SUCCESS)
+
+
+
+===============
+
+My career aspiration is to progress into a Technical Lead role,
+where I can combine my software engineering expertise with leadership responsibilities.
+Over the coming year, I aim to strengthen my skills in technical leadership, solution design, 
+stakeholder engagement, and team mentoring. I want to take greater ownership of technical direction, 
+support the growth of team members, and help deliver high-quality solutions that align with 
+business objectives. By continuing to develop my leadership capabilities and architectural knowledge, 
+I hope to contribute more strategically to project and organizational success.
+
+
+
+Principled Leadership
+
+You could write something like:
+
+Be Curious
+
+* Explored and evaluated new technologies and architectural patterns to improve system scalability and maintainability.
+* Investigated opportunities to modernize existing applications through cloud-native solutions and automation.
+
+Be Kind
+
+* Supported team members through code reviews, knowledge sharing sessions, and mentoring activities.
+* Promoted a collaborative and inclusive working environment within the development team.
+
+Be Courageous
+
+* Challenged existing technical approaches when better solutions were identified.
+* Proactively raised risks and proposed mitigation strategies for critical projects.
+
+Think Outcomes
+
+* Focused on delivering business value through reliable, maintainable, and high-quality software solutions.
+* Improved system performance and reduced operational overhead through process and architecture improvements.
+
+Collaborate
+
+* Worked closely with product owners, architects, business analysts, and operations teams to deliver successful outcomes.
+* Contributed to cross-functional discussions and technical decision-making.
+
+Own & Deliver
+
+* Took ownership of key deliverables and ensured commitments were met within agreed timelines.
+* Resolved production issues and drove continuous improvements to system reliability.
+
+==================
+
+
+1. Driving Development Excellence
+
+Objective:
+Lead the adoption of engineering best practices, improve code quality, and contribute to architectural decisions that enhance system reliability, maintainability, and performance.
+
+Success Measures:
+
+* Lead at least one significant technical initiative or system improvement.
+* Promote coding standards and best practices through reviews and technical discussions.
+* Contribute to solution design and architecture reviews.
+
+⸻
+
+2. Mentorship
+
+Objective:
+Support the growth of team members by sharing knowledge, providing technical guidance, and fostering a culture of continuous learning.
+
+Success Measures:
+
+* Mentor junior and mid-level developers.
+* Conduct knowledge-sharing sessions on relevant technologies and practices.
+* Provide constructive feedback through code reviews.
+
+⸻
+
+3. Team Innovation and Continuous Improvement
+
+Objective:
+Identify opportunities to improve development processes, automation, and engineering efficiency while encouraging innovation within the team.
+
+Success Measures:
+
+* Propose and implement process improvements.
+* Drive automation initiatives that reduce manual effort.
+* Evaluate and introduce new tools or technologies where appropriate.
+
+⸻
+
+4. Cultural Improvement
+
+Objective:
+Promote collaboration, inclusivity, accountability, and positive team engagement aligned with company values and leadership principles.
+
+Success Measures:
+
+* Encourage open communication and knowledge sharing.
+* Support cross-functional collaboration.
+* Contribute positively to team culture and employee engagement activities.
+
+These objectives align well with a progression from Senior Software Developer to Technical Lead, as they demonstrate leadership, mentoring, technical ownership, and team influence.
+
+
+
+
+
+==========performance objectives
+
+
+. Technical Leadership
+
+Objective:
+Take greater ownership of technical decision-making and solution design while supporting the team’s technical growth.
+
+Success Measures:
+
+* Lead technical discussions and design reviews.
+* Provide guidance on architecture and implementation approaches.
+* Mentor team members and support knowledge sharing.
+
+⸻
+
+4. Operational Excellence
+
+Objective:
+Improve system reliability, monitoring, and operational efficiency through automation and continuous improvement initiatives.
+
+Success Measures:
+
+* Reduce manual operational effort through automation.
+* Improve observability and monitoring capabilities.
+* Support rapid identification and resolution of production issues.
+
+These objectives will show that you’re already operating beyond a typical senior developer level and moving toward a Technical Lead position.
