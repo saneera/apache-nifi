@@ -1,165 +1,106 @@
-# NiFi → OpenTelemetry — Single Input Port Pattern
+# OpenTelemetry Integration — Circuit Management Flow
 
-Forward FlowFile content and attributes from multiple process groups to an OpenTelemetry collector using a single shared input port in a dedicated OTel forwarder process group.
+Forwards HTTP response data from the Circuit Management Flow to an OpenTelemetry collector via OTLP/HTTP.
 
 ---
 
 ## Table of Contents
 
 - [Overview](#overview)
-- [Prerequisites](#prerequisites)
 - [Architecture](#architecture)
-- [Step-by-step Setup](#step-by-step-setup)
+- [Processor Setup](#processor-setup)
+- [UpdateAttribute Configuration](#updateattribute-configuration)
 - [ExecuteScript — Groovy](#executescript--groovy)
 - [InvokeHTTP Configuration](#invokehttp-configuration)
+- [Log Severity Mapping](#log-severity-mapping)
 - [OTLP Payload Reference](#otlp-payload-reference)
-- [Filtering in Your OTel Backend](#filtering-in-your-otel-backend)
 - [Troubleshooting](#troubleshooting)
 
 ---
 
 ## Overview
 
-This pattern lets multiple NiFi process groups (PGA, PGB, etc.) send their FlowFile content and attributes to a single dedicated process group (PGC) that packages and forwards them to an OpenTelemetry collector via OTLP/HTTP.
+After the HTTP request/response cycle completes in the Circuit Management Flow, a dedicated OTel tail is attached to the response path. It captures the response attributes and body, packages them as an OTLP log record, and forwards them to the OpenTelemetry collector.
 
-A `source.process.group` attribute stamped in each source group is used as `service.name` in the OTel payload — so you can filter logs in your backend by origin.
-
-> **When to use this pattern**
-> Use this when all process groups produce the same type of telemetry and don't need different transformations. If PGA and PGB need different log structures or different OTel endpoints, use separate input ports and processor chains instead.
-
----
-
-## Prerequisites
-
-- Apache NiFi 2.x
-- OpenTelemetry collector deployed and reachable (OTLP/HTTP port `4318`)
-- At least two source process groups (PGA, PGB) with flows producing FlowFiles
-- NiFi `nifi-groovy-nar` bundle available for `ExecuteScript`
-- Network connectivity from NiFi pods to OTel collector service
+The `log.severity` is set dynamically based on the HTTP status code — `INFO` for success responses and `ERROR` for failures.
 
 ---
 
 ## Architecture
 
-### High-level flow
-
-```mermaid
-flowchart LR
-    subgraph PGA["Process Group A"]
-        A1[Your Processors] --> A2[UpdateAttribute\nsource=PGA]
-        A2 --> A3([Output Port\nto-otel])
-    end
-
-    subgraph PGB["Process Group B"]
-        B1[Your Processors] --> B2[UpdateAttribute\nsource=PGB]
-        B2 --> B3([Output Port\nto-otel])
-    end
-
-    subgraph PGC["Process Group C — OTel Forwarder"]
-        C1([Input Port\nfrom-upstream]) --> C2[ExecuteScript\nBuild OTLP JSON]
-        C2 --> C3[InvokeHTTP\nPOST /v1/logs]
-    end
-
-    A3 -->|FlowFiles| C1
-    B3 -->|FlowFiles| C1
-
-    C3 -->|OTLP/HTTP :4318| OTEL[(OTel Collector)]
-
-    OTEL --> BACKEND[Grafana / Loki\nElasticsearch\netc.]
-```
-
-### Data flow inside PGC
+### Where OTel fits in the flow
 
 ```mermaid
 flowchart TD
-    IN([Input Port: from-upstream])
-    IN --> ES
+    REQ[HandleHttpRequest] --> UA1[UpdateAttribute]
+    UA1 --> RPG[NiFi Flow / RPG\nhttps://172.27.3.12:30074]
+    RPG --> RES[HandleHttpResponse]
 
-    ES["ExecuteScript (Groovy)\n─────────────────────\n1. Read FlowFile body\n2. Collect all attributes\n3. Build OTLP JSON\n4. Overwrite FlowFile body"]
+    RES --> UA2[UpdateAttribute\nSet log.severity\nSet source.process.group]
+    UA2 --> ES[ExecuteScript\nBuild OTLP JSON]
+    ES -->|success / failure| IH[InvokeHTTP\nPOST /v1/logs]
 
-    ES -->|success| IH
+    IH -->|2xx| OK[✅ Terminate]
+    IH -->|4xx / 5xx| ERR[🗑️ Log + Terminate]
 
-    IH["InvokeHTTP\n─────────────────────\nPOST /v1/logs\nContent-Type: application/json"]
+    INPUT([From Circuit Manager Black]) --> UA2
 
-    IH -->|2xx| SUCCESS[✅ Log attribute / terminate]
-    IH -->|5xx / timeout| RETRY[🔁 RetryFlowFile]
-    IH -->|4xx| DROP[🗑️ Log + terminate\nbad payload]
+    IH -->|OTLP/HTTP :30506| OTEL[(OTel Collector\n172.27.3.12:30506)]
 ```
 
-### Parent canvas connections
+### OTel tail only
 
 ```mermaid
 flowchart LR
-    PGA -->|to-otel → from-upstream| PGC
-    PGB -->|to-otel → from-upstream| PGC
-    PGC -->|OTLP/HTTP| OTEL[(OTel Collector)]
+    UA2[UpdateAttribute\n─────────────────\nlog.severity\nsource.process.group\nmime.type\nhttp.status.code]
+
+    UA2 --> ES[ExecuteScript\n─────────────────\nRead body\nCollect attributes\nBuild OTLP JSON]
+
+    ES -->|success| IH[InvokeHTTP\n─────────────────\nPOST /v1/logs\napplication/json]
+
+    IH -->|2xx| DONE[✅ Done]
+    IH -->|4xx| DROP[🗑️ Drop]
+    IH -->|5xx| RETRY[🔁 Retry]
+
+    IH --> OTEL[(OTel Collector\n:30506/v1/logs)]
 ```
 
 ---
 
-## Step-by-step Setup
+## Processor Setup
 
-### Step 1 — Add UpdateAttribute in PGA
+Three processors handle the OTel forwarding, attached after `HandleHttpResponse`:
 
-Inside **Process Group A**, add an `UpdateAttribute` processor before the output port.
-
-| Property | Value |
-|---|---|
-| `source.process.group` | `PGA` |
-| `log.severity` | `INFO` *(optional)* |
-| `service.name` | `my-service-a` *(optional override)* |
-
-Connect: `[Last Processor] → [UpdateAttribute] → [Output Port]`
-
----
-
-### Step 2 — Add Output Port in PGA
-
-Drag an **Output Port** onto the PGA canvas.
-
-- Name: `to-otel`
-
-> Use the **exact same name** in all source groups. This makes parent canvas connections easier to identify.
+```
+[HandleHttpResponse]
+        ↓
+[UpdateAttribute]       ← stamp severity, source group, mime type
+        ↓
+[ExecuteScript]         ← build OTLP JSON from body + attributes
+        ↓
+[InvokeHTTP]            ← POST to OTel collector
+```
 
 ---
 
-### Step 3 — Repeat for PGB
+## UpdateAttribute Configuration
 
-Inside PGB, add the same `UpdateAttribute` with `source.process.group = PGB` and an output port named `to-otel`.
+Add the following dynamic properties:
 
----
+| Property | Value | Notes |
+|---|---|---|
+| `log.severity` | `${invokehttp.status.code:toNumber():lt(400):ifElse('INFO','ERROR')}` | Dynamic — INFO for 2xx/3xx, ERROR for 4xx/5xx |
+| `source.process.group` | `Circuit Management Flow - TX Cluster` | Identifies origin in OTel backend |
+| `mime.type` | `application/json` | Required for InvokeHTTP |
+| `http.status.code` | `${invokehttp.status.code}` | Carries status code forward as attribute |
 
-### Step 4 — Create PGC with Input Port
-
-Create **Process Group C** (the OTel forwarder group).
-
-Inside PGC:
-
-1. Drag an **Input Port** → name it `from-upstream`
-2. Add `ExecuteScript` → configure with Groovy script (see below)
-3. Add `InvokeHTTP` → configure POST to OTel endpoint
-4. Connect: `[Input Port] → [ExecuteScript] → [InvokeHTTP]`
-
----
-
-### Step 5 — Connect on the Parent Canvas
-
-Go to the **root canvas** where all three process groups are visible.
-
-1. Hover over **PGA** → drag the connection arrow to **PGC**
-    - From output: `to-otel`
-    - To input: `from-upstream`
-2. Repeat for **PGB** → **PGC**
-    - From output: `to-otel`
-    - To input: `from-upstream`
-
-Both connections feed the same input port queue. NiFi processes them identically regardless of origin.
+> **Note:** `log.severity` uses NiFi Expression Language to evaluate the status code at runtime. No hardcoded value needed.
 
 ---
 
 ## ExecuteScript — Groovy
 
-In `ExecuteScript`, set **Script Engine** to `Groovy` and paste the following:
+Set **Script Engine** to `Groovy`. This script reads the FlowFile body and all attributes, then builds a valid OTLP log record.
 
 ```groovy
 import groovy.json.JsonOutput
@@ -168,27 +109,27 @@ import java.time.Instant
 def flowFile = session.get()
 if (!flowFile) return
 
-// Read FlowFile body content
+// Read FlowFile body (HTTP response body)
 def content = ''
 session.read(flowFile, { inputStream ->
     content = inputStream.text
 } as InputStreamCallback)
 
-// Exclude noisy NiFi internal attributes
+// Exclude noisy internal NiFi attributes
 def excludeKeys = [
     'invokehttp.status.code', 'invokehttp.tx.id',
     'invokehttp.response.body', 'invokehttp.status.message',
     'invokehttp.response.url'
 ]
 
-// Collect ALL FlowFile attributes dynamically
+// Collect all FlowFile attributes dynamically
 def allAttributes = flowFile.attributes
     .findAll { key, value -> !excludeKeys.contains(key) }
     .collect { key, value ->
         [key: key, value: [stringValue: value]]
     }
 
-// Use source.process.group as service name (set in PGA/PGB UpdateAttribute)
+// Read stamped values from UpdateAttribute
 def serviceName = flowFile.getAttribute('source.process.group') ?: 'nifi-pipeline'
 def severity    = flowFile.getAttribute('log.severity') ?: 'INFO'
 
@@ -206,8 +147,8 @@ def payload = [
             logRecords: [[
                 timeUnixNano: (Instant.now().toEpochMilli() * 1_000_000L).toString(),
                 severityText: severity,
-                body        : [stringValue: content],   // FlowFile body content
-                attributes  : allAttributes             // All FlowFile attributes
+                body        : [stringValue: content],  // HTTP response body
+                attributes  : allAttributes            // all FlowFile attributes
             ]]
         ]]
     ]]
@@ -222,52 +163,74 @@ flowFile = session.putAttribute(flowFile, 'mime.type', 'application/json')
 session.transfer(flowFile, REL_SUCCESS)
 ```
 
-### What this script does
-
-| Step | Description |
-|---|---|
-| Read body | Reads entire FlowFile content as a string |
-| Filter attributes | Excludes internal NiFi/InvokeHTTP noise attributes |
-| Collect all attributes | Maps every remaining attribute into OTLP `attributes[]` array |
-| Set service.name | Uses `source.process.group` (PGA or PGB) as OTel service name |
-| Build OTLP payload | Constructs a valid `resourceLogs` JSON structure |
-| Overwrite body | Replaces FlowFile content with OTLP JSON, ready for InvokeHTTP |
-
 ---
 
 ## InvokeHTTP Configuration
 
 | Property | Value | Note |
 |---|---|---|
-| **HTTP Method** | `POST` | ⚠️ Default is GET — must change |
-| **Remote URL** | `http://<collector>:4318/v1/logs` | See endpoint paths below |
+| **HTTP Method** | `POST` | ⚠️ Default is GET — must set explicitly |
+| **Remote URL** | `http://172.27.3.12:30506/v1/logs` | NodePort OTLP/HTTP endpoint |
 | **Content-Type** | `application/json` | Required |
 | Request Body Enabled | `true` | Default |
 | Connection Timeout | `5 secs` | |
 | Read Timeout | `15 secs` | |
-| SSL Context Service | Set if using HTTPS | Optional |
-
-### OTLP endpoint paths
-
-| Signal | Endpoint |
-|---|---|
-| Logs | `/v1/logs` |
-| Traces | `/v1/traces` |
-| Metrics | `/v1/metrics` |
 
 ### Relationship routing
 
-| Relationship | HTTP Status | Route to |
+| Relationship | Status | Route to |
 |---|---|---|
-| `Response` (success) | `2xx` | LogAttribute or terminate |
-| `Failure` | `5xx` / timeout | RetryFlowFile loop |
+| `Response` | `2xx` | Terminate |
+| `Failure` | `5xx` / timeout | RetryFlowFile or terminate |
 | `No Retry` | `4xx` | LogMessage + terminate |
+
+---
+
+## Log Severity Mapping
+
+`log.severity` is set dynamically in `UpdateAttribute` using:
+
+```
+${invokehttp.status.code:toNumber():lt(400):ifElse('INFO','ERROR')}
+```
+
+| HTTP Status | `log.severity` | Meaning |
+|---|---|---|
+| `200`, `201`, `204` | `INFO` | Successful response |
+| `301`, `302` | `INFO` | Redirect |
+| `400`, `404`, `405` | `ERROR` | Client error |
+| `500`, `502`, `503` | `ERROR` | Server error |
+
+### If you need WARN for 4xx and ERROR for 5xx
+
+Use `RouteOnAttribute` after `HandleHttpResponse` instead of a single expression:
+
+```mermaid
+flowchart TD
+    RES[HandleHttpResponse]
+    RES -->|status < 400| UA_INFO[UpdateAttribute\nlog.severity=INFO]
+    RES -->|400-499| UA_WARN[UpdateAttribute\nlog.severity=WARN]
+    RES -->|500+| UA_ERROR[UpdateAttribute\nlog.severity=ERROR]
+
+    UA_INFO --> ES[ExecuteScript]
+    UA_WARN --> ES
+    UA_ERROR --> ES
+    ES --> IH[InvokeHTTP]
+```
+
+`RouteOnAttribute` conditions:
+
+| Route name | Expression |
+|---|---|
+| `success` | `${invokehttp.status.code:toNumber():lt(400)}` |
+| `client_error` | `${invokehttp.status.code:toNumber():ge(400):and(${invokehttp.status.code:toNumber():lt(500)})}` |
+| `server_error` | `${invokehttp.status.code:toNumber():ge(500)}` |
 
 ---
 
 ## OTLP Payload Reference
 
-The FlowFile body after `ExecuteScript` and posted by `InvokeHTTP`:
+Example payload posted to the collector:
 
 ```json
 {
@@ -275,7 +238,7 @@ The FlowFile body after `ExecuteScript` and posted by `InvokeHTTP`:
     "resource": {
       "attributes": [{
         "key": "service.name",
-        "value": { "stringValue": "PGA" }
+        "value": { "stringValue": "Circuit Management Flow - TX Cluster" }
       }]
     },
     "scopeLogs": [{
@@ -284,13 +247,15 @@ The FlowFile body after `ExecuteScript` and posted by `InvokeHTTP`:
         "timeUnixNano": "1717200000000000000",
         "severityText": "INFO",
         "body": {
-          "stringValue": "<original FlowFile content>"
+          "stringValue": "<HTTP response body content>"
         },
         "attributes": [
-          { "key": "uuid",                 "value": { "stringValue": "abc-123" } },
-          { "key": "filename",             "value": { "stringValue": "orders.json" } },
-          { "key": "source.process.group", "value": { "stringValue": "PGA" } },
-          { "key": "path",                 "value": { "stringValue": "./" } }
+          { "key": "http.status.code",       "value": { "stringValue": "200" } },
+          { "key": "log.severity",            "value": { "stringValue": "INFO" } },
+          { "key": "source.process.group",    "value": { "stringValue": "Circuit Management Flow - TX Cluster" } },
+          { "key": "mime.type",               "value": { "stringValue": "application/json" } },
+          { "key": "uuid",                    "value": { "stringValue": "abc-123" } },
+          { "key": "filename",                "value": { "stringValue": "..." } }
         ]
       }]
     }]
@@ -300,83 +265,32 @@ The FlowFile body after `ExecuteScript` and posted by `InvokeHTTP`:
 
 ---
 
-## Filtering in Your OTel Backend
-
-Because `source.process.group` is mapped to `service.name` in the OTel resource, you can filter by origin in any OTel-compatible backend:
-
-**Grafana / Loki**
-```logql
-{service_name="PGA"}
-{service_name="PGB"}
-```
-
-**Elasticsearch / OpenSearch**
-```json
-{ "query": { "term": { "resource.attributes.service.name": "PGA" } } }
-```
-
-**Adding more process groups later**
-
-To add PGC, PGD, etc. as sources in the future:
-1. Add `UpdateAttribute` with `source.process.group = PGC` in the new group
-2. Add an output port named `to-otel`
-3. On the parent canvas connect to PGC's `from-upstream` input port
-4. No changes needed to the ExecuteScript or InvokeHTTP — they are source-agnostic
-
----
-
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `405 Method Not Allowed` | InvokeHTTP using GET instead of POST | Set **HTTP Method** to `POST` |
-| `400 Bad Request` | Malformed OTLP JSON | Check FlowFile body doesn't contain unescaped quotes or newlines |
-| Connection refused | Collector not reachable from NiFi pod | Verify collector service DNS + port. `kubectl exec` into NiFi pod and `curl` the endpoint |
+| `405 Method Not Allowed` | InvokeHTTP using GET | Set **HTTP Method** to `POST` |
+| `400 Bad Request` | Malformed OTLP JSON | Check response body doesn't contain unescaped characters |
+| `log.severity` always `ERROR` | `invokehttp.status.code` attribute missing | Ensure `http.status.code` is set in `UpdateAttribute` before `ExecuteScript` |
+| `service.name` shows `nifi-pipeline` | `source.process.group` not set | Check `UpdateAttribute` has `source.process.group` property |
+| No logs in OTel backend | Collector not receiving | Verify endpoint `172.27.3.12:30506` is reachable from NiFi pod |
 | FlowFile stuck in queue | ExecuteScript error | Check NiFi Bulletin Board for Groovy stack trace |
-| No logs in OTel backend | Collector not forwarding | Add `debug` exporter to collector config and tail pod logs |
-| `service.name` shows `nifi-pipeline` | `source.process.group` attribute not set | Check `UpdateAttribute` is connected before the output port in PGA/PGB |
 
-### Verify collector is receiving data
+### Verify collector is receiving
 
 ```bash
 # Tail OTel collector pod logs
 kubectl logs -n telemetry-stack -l app=opentelemetry-collector -f
 ```
 
-Add a `debug` exporter to your collector config to print full payloads:
-
-```yaml
-exporters:
-  debug:
-    verbosity: detailed
-
-service:
-  pipelines:
-    logs:
-      receivers: [otlp]
-      processors: [batch]
-      exporters: [debug]       # add alongside your existing exporter
-```
+### Test the endpoint directly from NiFi pod
 
 ```bash
-# Restart collector to pick up config
-kubectl rollout restart deployment/opentelemetry-collector -n telemetry-stack
+kubectl exec -it <nifi-pod> -n nifi -- \
+  curl -s -o /dev/null -w "%{http_code}" \
+  -X POST http://172.27.3.12:30506/v1/logs \
+  -H "Content-Type: application/json" \
+  -d '{"resourceLogs":[]}'
 ```
 
----
-
-## Summary
-
-```mermaid
-flowchart LR
-    A[PGA\nUpdateAttribute\nsource=PGA] -->|Output Port| C
-    B[PGB\nUpdateAttribute\nsource=PGB] -->|Output Port| C
-
-    subgraph C["PGC — OTel Forwarder"]
-        direction TB
-        IP([Input Port]) --> ES[ExecuteScript\nBuild OTLP JSON]
-        ES --> IH[InvokeHTTP\nPOST /v1/logs]
-    end
-
-    IH -->|OTLP/HTTP| OC[(OTel Collector\n:4318)]
-```
+Expected response: `200` or `204`
