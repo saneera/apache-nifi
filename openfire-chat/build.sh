@@ -386,48 +386,53 @@ update_flow_version() {
     "$NIFI_URL/nifi-api/process-groups/$PG_ID" \
     -H "$AUTH_HEADER")
 
-  # Extract and clean revision — force through arithmetic
   RAW_REV=$(echo "$PG_RESPONSE" | jq -r '.revision.version // 0')
   REVISION=$(to_int "$RAW_REV" 0)
   REVISION=$(( REVISION + 0 ))
 
-  log_info "Current revision: $REVISION"
+  log_info "Current revision: $REVISION  PG_ID: $PG_ID"
 
-  # Validate REVISION before --argjson
+  # Validate
   if ! echo "$REVISION" | grep -qE '^[0-9]+$'; then
-    log_warn "Invalid REVISION: '$REVISION' — PG Response: $PG_RESPONSE"
+    log_warn "Invalid REVISION: '$REVISION'"
     return 1
   fi
 
-  # Validate NEXT_VERSION before --argjson
   if ! echo "$NEXT_VERSION" | grep -qE '^[0-9]+$'; then
     log_warn "Invalid NEXT_VERSION: '$NEXT_VERSION'"
     return 1
   fi
 
-  # Build payload — no quotes on numeric argjson values
+  # NiFi 2.x payload — PG_ID goes inside the body
   PAYLOAD=$(jq -n \
+    --arg pgid "$PG_ID" \
     --argjson rev ${REVISION} \
     --arg reg "$REG_CLIENT_ID" \
     --arg bucket "$BUCKET_ID" \
     --arg flow "$FLOW_ID" \
     --argjson version ${NEXT_VERSION} \
     '{
-      processGroupRevision:{version:$rev},
-      versionControlInformation:{
-        registryId:$reg,
-        bucketId:$bucket,
-        flowId:$flow,
-        version:$version
-      }
+      processGroupId: $pgid,
+      processGroupRevision: {version: $rev},
+      versionControlInformation: {
+        registryId: $reg,
+        bucketId: $bucket,
+        flowId: $flow,
+        version: $version
+      },
+      disconnectedNodeAcknowledged: false
     }')
 
-  # Submit async update request
+  log_info "Payload: $PAYLOAD"
+
+  # NiFi 2.x endpoint — no PG_ID in URL
   RESPONSE=$(curl -k -s -X POST \
-    "$NIFI_URL/nifi-api/versions/update-requests/process-groups/$PG_ID" \
+    "$NIFI_URL/nifi-api/versions/update-requests/process-groups" \
     -H "$AUTH_HEADER" \
     -H "Content-Type: application/json" \
     -d "$PAYLOAD")
+
+  log_info "Response: $RESPONSE"
 
   REQUEST_ID=$(echo "$RESPONSE" | jq -r '.request.requestId // empty')
 
@@ -458,7 +463,7 @@ update_flow_version() {
         return 1
       fi
 
-      # Clean up completed request
+      # Clean up
       curl -k -s -X DELETE \
         "$NIFI_URL/nifi-api/versions/update-requests/$REQUEST_ID" \
         -H "$AUTH_HEADER" > /dev/null
@@ -470,7 +475,7 @@ update_flow_version() {
     sleep 3
   done
 
-  log_warn "Timed out waiting for canvas update — request: $REQUEST_ID"
+  log_warn "Timed out — request: $REQUEST_ID"
   return 1
 }
 
