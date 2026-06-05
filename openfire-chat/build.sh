@@ -381,6 +381,7 @@ import_flow() {
 update_flow_version() {
   log_info "Updating canvas to version $NEXT_VERSION..."
 
+  # Get current PG revision
   PG_RESPONSE=$(curl -k -s \
     "$NIFI_URL/nifi-api/process-groups/$PG_ID" \
     -H "$AUTH_HEADER")
@@ -401,27 +402,32 @@ update_flow_version() {
     return 1
   fi
 
-  PAYLOAD=$(jq -n \
-    --arg pgid "$PG_ID" \
+  # Step 1 — fetch the versioned flow snapshot from registry
+  log_info "Fetching snapshot version $NEXT_VERSION from registry..."
+  SNAPSHOT=$(curl -k -s \
+    "$REGISTRY_URL/nifi-registry-api/buckets/$BUCKET_ID/flows/$FLOW_ID/versions/$NEXT_VERSION")
+
+  SNAPSHOT_CHECK=$(echo "$SNAPSHOT" | jq -r '.snapshotMetadata.version // empty')
+  if [ -z "$SNAPSHOT_CHECK" ]; then
+    log_warn "Failed to fetch snapshot from registry"
+    log_warn "Response: $SNAPSHOT"
+    return 1
+  fi
+
+  log_info "✓ Snapshot fetched — version $SNAPSHOT_CHECK"
+
+  # Step 2 — build payload with full snapshot + revision
+  PAYLOAD=$(echo "$SNAPSHOT" | jq \
     --argjson rev ${REVISION} \
-    --arg reg "$REG_CLIENT_ID" \
-    --arg bucket "$BUCKET_ID" \
-    --arg flow "$FLOW_ID" \
-    --argjson version ${NEXT_VERSION} \
+    --arg pgid "$PG_ID" \
     '{
       processGroupRevision: {version: $rev},
-      versionControlInformation: {
-        registryId: $reg,
-        bucketId: $bucket,
-        flowId: $flow,
-        version: $version
-      },
-      disconnectedNodeAcknowledged: false
+      disconnectedNodeAcknowledged: false,
+      versionedFlowSnapshot: .
     }')
 
-  log_info "Submitting version update..."
-
-  # PUT — update to specific version from registry
+  # Step 3 — PUT to NiFi canvas to apply the snapshot
+  log_info "Applying snapshot to canvas..."
   RESPONSE=$(curl -k -s -X PUT \
     "$NIFI_URL/nifi-api/versions/process-groups/$PG_ID" \
     -H "$AUTH_HEADER" \
@@ -430,14 +436,12 @@ update_flow_version() {
 
   log_info "Response: $RESPONSE"
 
-  # Check for error in response
   ERROR=$(echo "$RESPONSE" | jq -r '.message // empty')
   if [ -n "$ERROR" ]; then
     log_warn "Version update failed: $ERROR"
     return 1
   fi
 
-  # Verify version was updated
   UPDATED_VER=$(echo "$RESPONSE" | \
     jq -r '.versionControlInformation.version // empty')
 
@@ -446,7 +450,6 @@ update_flow_version() {
     return 0
   fi
 
-  # If response has processGroupRevision it likely succeeded
   RESP_REV=$(echo "$RESPONSE" | jq -r '.processGroupRevision.version // empty')
   if [ -n "$RESP_REV" ]; then
     log_info "✓ Canvas updated successfully (revision: $RESP_REV)"
