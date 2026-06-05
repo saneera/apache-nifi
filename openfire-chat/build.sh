@@ -36,32 +36,23 @@ log_section() {
 }
 
 ####################################
-# Helpers
+# Helper — safe integer
+# Forces value through arithmetic
+# to strip whitespace/newlines/nulls
 ####################################
 
-# Validate a value is a plain integer
-assert_integer() {
+to_int() {
   local val="$1"
-  local name="$2"
-  if ! echo "$val" | grep -qE '^[0-9]+$'; then
-    log_warn "Invalid integer for $name: '$val'"
-    return 1
-  fi
-}
-
-# Safe jq integer extraction with fallback
-jq_int() {
-  local json="$1"
-  local path="$2"
-  local fallback="${3:-0}"
-  local val
-  val=$(echo "$json" | jq -r "${path} // ${fallback}" 2>/dev/null)
+  local fallback="${2:-0}"
+  # Strip all whitespace
   val=$(echo "$val" | tr -d '[:space:]')
-  if [ -z "$val" ] || [ "$val" = "null" ]; then
+  # If empty or non-numeric, use fallback
+  if ! echo "$val" | grep -qE '^[0-9]+$'; then
     echo "$fallback"
-  else
-    echo "$val"
+    return
   fi
+  # Force through arithmetic to guarantee clean integer
+  echo $(( val + 0 ))
 }
 
 ####################################
@@ -135,7 +126,7 @@ get_next_position() {
   if [ "$MAX_X" = "null" ] || [ -z "$MAX_X" ]; then
     POS_X=300
   else
-    POS_X=$MAX_X
+    POS_X=$(to_int "$MAX_X" 300)
   fi
 
   POS_X=$(( POS_X + POSITION_STEP ))
@@ -250,21 +241,14 @@ get_latest_version() {
   LATEST=$(curl -k -s \
     "$REGISTRY_URL/nifi-registry-api/buckets/$BUCKET_ID/flows/$FLOW_ID/versions/latest")
 
-  # Check for error in response
   ERROR=$(echo "$LATEST" | jq -r '.message // empty' 2>/dev/null)
   if [ -n "$ERROR" ]; then
     log_warn "Registry version check error: $ERROR — defaulting to 0"
     REG_VERSION=0
   elif echo "$LATEST" | jq . >/dev/null 2>&1; then
-    REG_VERSION=$(jq_int "$LATEST" '.snapshotMetadata.version' 0)
+    RAW=$(echo "$LATEST" | jq -r '.snapshotMetadata.version // 0')
+    REG_VERSION=$(to_int "$RAW" 0)
   else
-    REG_VERSION=0
-  fi
-
-  # Ensure clean integer
-  REG_VERSION=$(echo "$REG_VERSION" | tr -d '[:space:]')
-  if ! echo "$REG_VERSION" | grep -qE '^[0-9]+$'; then
-    log_warn "REG_VERSION not a valid integer: '$REG_VERSION' — defaulting to 0"
     REG_VERSION=0
   fi
 
@@ -275,15 +259,10 @@ get_latest_version() {
 upload_registry_version() {
   log_info "Uploading version $NEXT_VERSION to registry..."
 
-  # Guard: NEXT_VERSION must be integer
-  if ! assert_integer "$NEXT_VERSION" "NEXT_VERSION"; then
-    return 1
-  fi
-
   PAYLOAD=$(jq -n \
     --arg bucket "$BUCKET_ID" \
     --arg flow "$FLOW_ID" \
-    --argjson version "$NEXT_VERSION" \
+    --argjson version ${NEXT_VERSION} \
     '.snapshotMetadata.bucketIdentifier=$bucket |
      .snapshotMetadata.flowIdentifier=$flow |
      .snapshotMetadata.version=$version' "$FLOW_FILE")
@@ -333,9 +312,10 @@ stop_pg_and_wait() {
     > /dev/null
 
   for i in $(seq 1 20); do
-    RUNNING=$(curl -k -s \
+    RAW_RUNNING=$(curl -k -s \
       "$NIFI_URL/nifi-api/flow/process-groups/$PG_ID" \
       -H "$AUTH_HEADER" | jq -r '.runningCount // 0')
+    RUNNING=$(to_int "$RAW_RUNNING" 0)
 
     if [ "$RUNNING" = "0" ]; then
       log_info "✓ PG stopped"
@@ -356,11 +336,6 @@ stop_pg_and_wait() {
 import_flow() {
   log_info "Importing new flow: $FLOW_NAME"
 
-  # Guard: NEXT_VERSION must be integer
-  if ! assert_integer "$NEXT_VERSION" "NEXT_VERSION"; then
-    return 1
-  fi
-
   DEPLOY_TIME=$(date +"%Y-%m-%d %H:%M:%S")
   COMMENTS="version:$NEXT_VERSION | hash:$LOCAL_HASH | deployed:$DEPLOY_TIME"
 
@@ -370,9 +345,9 @@ import_flow() {
     --arg registry "$REG_CLIENT_ID" \
     --arg bucket "$BUCKET_ID" \
     --arg flow "$FLOW_ID" \
-    --argjson version "$NEXT_VERSION" \
-    --argjson x "$POS_X" \
-    --argjson y "$POS_Y" \
+    --argjson version ${NEXT_VERSION} \
+    --argjson x ${POS_X} \
+    --argjson y ${POS_Y} \
     '{
       revision:{version:0},
       component:{
@@ -406,33 +381,37 @@ import_flow() {
 update_flow_version() {
   log_info "Updating canvas to version $NEXT_VERSION..."
 
-  # Get current PG state
+  # Get current PG revision
   PG_RESPONSE=$(curl -k -s \
     "$NIFI_URL/nifi-api/process-groups/$PG_ID" \
     -H "$AUTH_HEADER")
 
-  # Safely extract revision as integer
-  REVISION=$(jq_int "$PG_RESPONSE" '.revision.version' 0)
-
-  # Guard: must be valid integer before passing to jq --argjson
-  if ! assert_integer "$REVISION" "REVISION"; then
-    log_warn "PG Response was: $PG_RESPONSE"
-    return 1
-  fi
-
-  # Guard: NEXT_VERSION must be integer
-  if ! assert_integer "$NEXT_VERSION" "NEXT_VERSION"; then
-    return 1
-  fi
+  # Extract and clean revision — force through arithmetic
+  RAW_REV=$(echo "$PG_RESPONSE" | jq -r '.revision.version // 0')
+  REVISION=$(to_int "$RAW_REV" 0)
+  REVISION=$(( REVISION + 0 ))
 
   log_info "Current revision: $REVISION"
 
+  # Validate REVISION before --argjson
+  if ! echo "$REVISION" | grep -qE '^[0-9]+$'; then
+    log_warn "Invalid REVISION: '$REVISION' — PG Response: $PG_RESPONSE"
+    return 1
+  fi
+
+  # Validate NEXT_VERSION before --argjson
+  if ! echo "$NEXT_VERSION" | grep -qE '^[0-9]+$'; then
+    log_warn "Invalid NEXT_VERSION: '$NEXT_VERSION'"
+    return 1
+  fi
+
+  # Build payload — no quotes on numeric argjson values
   PAYLOAD=$(jq -n \
-    --argjson rev "$REVISION" \
+    --argjson rev ${REVISION} \
     --arg reg "$REG_CLIENT_ID" \
     --arg bucket "$BUCKET_ID" \
     --arg flow "$FLOW_ID" \
-    --argjson version "$NEXT_VERSION" \
+    --argjson version ${NEXT_VERSION} \
     '{
       processGroupRevision:{version:$rev},
       versionControlInformation:{
@@ -507,15 +486,17 @@ update_pg_comments() {
     "$NIFI_URL/nifi-api/process-groups/$PG_ID" \
     -H "$AUTH_HEADER")
 
-  REVISION=$(jq_int "$PG_RESPONSE" '.revision.version' 0)
+  RAW_REV=$(echo "$PG_RESPONSE" | jq -r '.revision.version // 0')
+  REVISION=$(to_int "$RAW_REV" 0)
+  REVISION=$(( REVISION + 0 ))
 
-  if ! assert_integer "$REVISION" "REVISION (update_pg_comments)"; then
-    log_warn "Skipping comment update — invalid revision"
+  if ! echo "$REVISION" | grep -qE '^[0-9]+$'; then
+    log_warn "Skipping comment update — invalid revision: '$REVISION'"
     return 0
   fi
 
   PAYLOAD=$(jq -n \
-    --argjson rev "$REVISION" \
+    --argjson rev ${REVISION} \
     --arg id "$PG_ID" \
     --arg name "$FLOW_NAME" \
     --arg comments "$COMMENTS" \
@@ -549,7 +530,8 @@ enable_controller_services() {
     "$NIFI_URL/nifi-api/flow/process-groups/$PG_ID/controller-services" \
     -H "$AUTH_HEADER")
 
-  SERVICE_COUNT=$(echo "$SERVICES" | jq '.controllerServices | length')
+  RAW_COUNT=$(echo "$SERVICES" | jq '.controllerServices | length')
+  SERVICE_COUNT=$(to_int "$RAW_COUNT" 0)
   log_info "Found $SERVICE_COUNT controller service(s)"
 
   if [ "$SERVICE_COUNT" = "0" ]; then
@@ -557,7 +539,7 @@ enable_controller_services() {
     return 0
   fi
 
-  # Bulk enable
+  # Bulk enable all services in PG
   PAYLOAD=$(jq -n \
     --arg id "$PG_ID" \
     '{
@@ -579,10 +561,10 @@ enable_controller_services() {
       "$NIFI_URL/nifi-api/flow/process-groups/$PG_ID/controller-services" \
       -H "$AUTH_HEADER")
 
-    TOTAL=$(echo "$CURRENT"    | jq '.controllerServices | length')
-    ENABLED=$(echo "$CURRENT"  | jq '[.controllerServices[] | select(.component.state == "ENABLED")]  | length')
-    DISABLED=$(echo "$CURRENT" | jq '[.controllerServices[] | select(.component.state == "DISABLED")] | length')
-    ENABLING=$(echo "$CURRENT" | jq '[.controllerServices[] | select(.component.state == "ENABLING")] | length')
+    TOTAL=$(to_int "$(echo "$CURRENT"    | jq '.controllerServices | length')" 0)
+    ENABLED=$(to_int "$(echo "$CURRENT"  | jq '[.controllerServices[] | select(.component.state == "ENABLED")]  | length')" 0)
+    DISABLED=$(to_int "$(echo "$CURRENT" | jq '[.controllerServices[] | select(.component.state == "DISABLED")] | length')" 0)
+    ENABLING=$(to_int "$(echo "$CURRENT" | jq '[.controllerServices[] | select(.component.state == "ENABLING")] | length')" 0)
 
     log_info "Poll $i/30: enabled=$ENABLED enabling=$ENABLING disabled=$DISABLED total=$TOTAL"
 
@@ -591,7 +573,7 @@ enable_controller_services() {
       return 0
     fi
 
-    # Stuck check — nothing enabling but still disabled after 5 polls
+    # Stuck — nothing is enabling but some still disabled after 5 polls
     if [ "$ENABLING" = "0" ] && [ "$DISABLED" != "0" ] && [ "$i" -gt 5 ]; then
       log_warn "Some services stuck in DISABLED — listing:"
       echo "$CURRENT" | jq -r \
@@ -658,10 +640,12 @@ update_parameter_contexts() {
       "$NIFI_URL/nifi-api/parameter-contexts/$PC_ID" \
       -H "$AUTH_HEADER")
 
-    REVISION=$(jq_int "$CURRENT" '.revision.version' 0)
+    RAW_REV=$(echo "$CURRENT" | jq -r '.revision.version // 0')
+    REVISION=$(to_int "$RAW_REV" 0)
+    REVISION=$(( REVISION + 0 ))
 
-    if ! assert_integer "$REVISION" "REVISION (parameter context $PC_NAME)"; then
-      log_warn "Skipping parameter context: $PC_NAME"
+    if ! echo "$REVISION" | grep -qE '^[0-9]+$'; then
+      log_warn "Skipping parameter context $PC_NAME — invalid revision: '$REVISION'"
       continue
     fi
 
@@ -674,7 +658,7 @@ update_parameter_contexts() {
           end
       )')
 
-    PAYLOAD=$(echo "$UPDATED" | jq --argjson rev "$REVISION" \
+    PAYLOAD=$(echo "$UPDATED" | jq --argjson rev ${REVISION} \
       '{revision:{version:$rev},component:.component}')
 
     RESPONSE=$(curl -k -s -X PUT \
