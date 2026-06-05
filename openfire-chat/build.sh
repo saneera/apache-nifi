@@ -421,16 +421,16 @@ update_flow_version() {
   log_info "✓ Snapshot fetched — flow=$SNAPSHOT_CHECK version=$SNAPSHOT_VER"
 
   # Step 2 — build payload with full snapshot + revision
-  PAYLOAD=$(echo "$SNAPSHOT" | jq \
-              --argjson rev ${REVISION} \
-              --arg regid "$REG_CLIENT_ID" \
-              '{
-                processGroupRevision: {version: $rev},
-                disconnectedNodeAcknowledged: false,
-                versionedFlowSnapshot: (. + {
-                  snapshotMetadata: (.snapshotMetadata + {registryId: $regid})
-                })
-   }' > "$PAYLOAD_FILE")
+  echo "$SNAPSHOT" | jq \
+    --argjson rev ${REVISION} \
+    --arg regid "$REG_CLIENT_ID" \
+    '{
+      processGroupRevision: {version: $rev},
+      disconnectedNodeAcknowledged: false,
+      versionedFlowSnapshot: (. + {
+        snapshotMetadata: (.snapshotMetadata + {registryId: $regid})
+      })
+    }' > "$PAYLOAD_FILE"
 
   # Step 3 — PUT to NiFi canvas to apply the snapshot
   log_info "Applying snapshot to canvas..."
