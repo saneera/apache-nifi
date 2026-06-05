@@ -761,3 +761,40 @@ if [ -n "$FAILED_FLOWS" ]; then
 fi
 
 log_section "All flows deployed successfully"
+
+
+
+
+RESPONSE=$(curl -k -s -X POST \
+  "$NIFI_URL/nifi-api/versions/update-requests/process-groups/$PG_ID" \
+  -H "$AUTH_HEADER" \
+  -H "Content-Type: application/json" \
+  -d "$PAYLOAD"
+)
+
+REQUEST_ID=$(echo "$RESPONSE" | jq -r '.request.requestId')
+
+log_info "Version update request id: $REQUEST_ID"
+
+while true
+do
+  STATUS_RESPONSE=$(curl -k -s \
+    "$NIFI_URL/nifi-api/versions/update-requests/$REQUEST_ID" \
+    -H "$AUTH_HEADER")
+
+  COMPLETE=$(echo "$STATUS_RESPONSE" | jq -r '.request.complete')
+  FAILURE=$(echo "$STATUS_RESPONSE" | jq -r '.request.failureReason // empty')
+
+  if [ "$COMPLETE" = "true" ]; then
+    if [ -n "$FAILURE" ]; then
+      log_error "Flow version update failed: $FAILURE"
+      exit 1
+    fi
+
+    log_info "Flow version update completed successfully"
+    break
+  fi
+
+  log_info "Waiting for flow version update..."
+  sleep 5
+done
