@@ -25,14 +25,43 @@ POSITION_STEP=400
 ####################################
 
 timestamp() { date +"%Y-%m-%d %H:%M:%S"; }
-log_info()  { echo "[INFO]    $(timestamp)  $1"; }
-log_warn()  { echo "[WARN]    $(timestamp)  $1"; }
+log_info()  { echo "[INFO] $(timestamp) $1"; }
+log_warn()  { echo "[WARN] $(timestamp) $1"; }
 
 log_section() {
   echo ""
   echo "=================================================="
-  echo "[SECTION] $(timestamp)  $1"
+  echo "[SECTION] $(timestamp) $1"
   echo "=================================================="
+}
+
+####################################
+# Helpers
+####################################
+
+# Validate a value is a plain integer
+assert_integer() {
+  local val="$1"
+  local name="$2"
+  if ! echo "$val" | grep -qE '^[0-9]+$'; then
+    log_warn "Invalid integer for $name: '$val'"
+    return 1
+  fi
+}
+
+# Safe jq integer extraction with fallback
+jq_int() {
+  local json="$1"
+  local path="$2"
+  local fallback="${3:-0}"
+  local val
+  val=$(echo "$json" | jq -r "${path} // ${fallback}" 2>/dev/null)
+  val=$(echo "$val" | tr -d '[:space:]')
+  if [ -z "$val" ] || [ "$val" = "null" ]; then
+    echo "$fallback"
+  else
+    echo "$val"
+  fi
 }
 
 ####################################
@@ -64,6 +93,11 @@ authenticate() {
     -H "Content-Type: application/x-www-form-urlencoded" \
     -d "username=$NIFI_USER&password=$NIFI_PASSWORD")
 
+  if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+    log_warn "Authentication failed — empty token"
+    exit 1
+  fi
+
   AUTH_HEADER="Authorization: Bearer $TOKEN"
   log_info "Authenticated"
 }
@@ -77,6 +111,12 @@ get_root_pg() {
     "$NIFI_URL/nifi-api/flow/process-groups/root" \
     -H "$AUTH_HEADER" |
     jq -r '.processGroupFlow.id')
+
+  if [ -z "$ROOT_PG" ] || [ "$ROOT_PG" = "null" ]; then
+    log_warn "Could not get root PG ID"
+    exit 1
+  fi
+
   log_info "Root PG: $ROOT_PG"
 }
 
@@ -198,6 +238,11 @@ create_registry_flow() {
       \"description\":\"flow-hash:$LOCAL_HASH\"
     }" | jq -r '.identifier')
 
+  if [ -z "$FLOW_ID" ] || [ "$FLOW_ID" = "null" ]; then
+    log_warn "Failed to create registry flow"
+    return 1
+  fi
+
   log_info "Created registry flow: $FLOW_ID"
 }
 
@@ -205,18 +250,35 @@ get_latest_version() {
   LATEST=$(curl -k -s \
     "$REGISTRY_URL/nifi-registry-api/buckets/$BUCKET_ID/flows/$FLOW_ID/versions/latest")
 
-  if echo "$LATEST" | jq . >/dev/null 2>&1; then
-    REG_VERSION=$(echo "$LATEST" | jq '.snapshotMetadata.version')
+  # Check for error in response
+  ERROR=$(echo "$LATEST" | jq -r '.message // empty' 2>/dev/null)
+  if [ -n "$ERROR" ]; then
+    log_warn "Registry version check error: $ERROR — defaulting to 0"
+    REG_VERSION=0
+  elif echo "$LATEST" | jq . >/dev/null 2>&1; then
+    REG_VERSION=$(jq_int "$LATEST" '.snapshotMetadata.version' 0)
   else
     REG_VERSION=0
   fi
 
+  # Ensure clean integer
+  REG_VERSION=$(echo "$REG_VERSION" | tr -d '[:space:]')
+  if ! echo "$REG_VERSION" | grep -qE '^[0-9]+$'; then
+    log_warn "REG_VERSION not a valid integer: '$REG_VERSION' — defaulting to 0"
+    REG_VERSION=0
+  fi
+
   NEXT_VERSION=$(( REG_VERSION + 1 ))
-  log_info "Next version: $NEXT_VERSION"
+  log_info "REG_VERSION=$REG_VERSION → NEXT_VERSION=$NEXT_VERSION"
 }
 
 upload_registry_version() {
   log_info "Uploading version $NEXT_VERSION to registry..."
+
+  # Guard: NEXT_VERSION must be integer
+  if ! assert_integer "$NEXT_VERSION" "NEXT_VERSION"; then
+    return 1
+  fi
 
   PAYLOAD=$(jq -n \
     --arg bucket "$BUCKET_ID" \
@@ -294,6 +356,11 @@ stop_pg_and_wait() {
 import_flow() {
   log_info "Importing new flow: $FLOW_NAME"
 
+  # Guard: NEXT_VERSION must be integer
+  if ! assert_integer "$NEXT_VERSION" "NEXT_VERSION"; then
+    return 1
+  fi
+
   DEPLOY_TIME=$(date +"%Y-%m-%d %H:%M:%S")
   COMMENTS="version:$NEXT_VERSION | hash:$LOCAL_HASH | deployed:$DEPLOY_TIME"
 
@@ -333,15 +400,32 @@ import_flow() {
 }
 
 ####################################
-# Update version — with async poll
+# Update version — async poll
 ####################################
 
 update_flow_version() {
   log_info "Updating canvas to version $NEXT_VERSION..."
 
-  REVISION=$(curl -k -s \
+  # Get current PG state
+  PG_RESPONSE=$(curl -k -s \
     "$NIFI_URL/nifi-api/process-groups/$PG_ID" \
-    -H "$AUTH_HEADER" | jq -r '.revision.version')
+    -H "$AUTH_HEADER")
+
+  # Safely extract revision as integer
+  REVISION=$(jq_int "$PG_RESPONSE" '.revision.version' 0)
+
+  # Guard: must be valid integer before passing to jq --argjson
+  if ! assert_integer "$REVISION" "REVISION"; then
+    log_warn "PG Response was: $PG_RESPONSE"
+    return 1
+  fi
+
+  # Guard: NEXT_VERSION must be integer
+  if ! assert_integer "$NEXT_VERSION" "NEXT_VERSION"; then
+    return 1
+  fi
+
+  log_info "Current revision: $REVISION"
 
   PAYLOAD=$(jq -n \
     --argjson rev "$REVISION" \
@@ -366,7 +450,7 @@ update_flow_version() {
     -H "Content-Type: application/json" \
     -d "$PAYLOAD")
 
-  REQUEST_ID=$(echo "$RESPONSE" | jq -r '.request.requestId')
+  REQUEST_ID=$(echo "$RESPONSE" | jq -r '.request.requestId // empty')
 
   if [ -z "$REQUEST_ID" ] || [ "$REQUEST_ID" = "null" ]; then
     log_warn "Failed to submit update request"
@@ -382,21 +466,20 @@ update_flow_version() {
       "$NIFI_URL/nifi-api/versions/update-requests/$REQUEST_ID" \
       -H "$AUTH_HEADER")
 
-    COMPLETE=$(echo "$POLL" | jq -r '.request.complete')
-    STATE=$(echo "$POLL"   | jq -r '.request.state')
+    COMPLETE=$(echo "$POLL" | jq -r '.request.complete // false')
+    STATE=$(echo "$POLL"   | jq -r '.request.state // "UNKNOWN"')
     PERCENT=$(echo "$POLL" | jq -r '.request.percentCompleted // 0')
 
     log_info "Poll $i/30: state=$STATE complete=$COMPLETE ($PERCENT%)"
 
     if [ "$COMPLETE" = "true" ]; then
-      # Check for failure
       FAILED=$(echo "$POLL" | jq -r '.request.failureReason // empty')
       if [ -n "$FAILED" ]; then
         log_warn "Update failed: $FAILED"
         return 1
       fi
 
-      # Clean up the completed request
+      # Clean up completed request
       curl -k -s -X DELETE \
         "$NIFI_URL/nifi-api/versions/update-requests/$REQUEST_ID" \
         -H "$AUTH_HEADER" > /dev/null
@@ -420,9 +503,16 @@ update_pg_comments() {
   DEPLOY_TIME=$(date +"%Y-%m-%d %H:%M:%S")
   COMMENTS="version:$NEXT_VERSION | hash:$LOCAL_HASH | deployed:$DEPLOY_TIME"
 
-  REVISION=$(curl -k -s \
+  PG_RESPONSE=$(curl -k -s \
     "$NIFI_URL/nifi-api/process-groups/$PG_ID" \
-    -H "$AUTH_HEADER" | jq -r '.revision.version')
+    -H "$AUTH_HEADER")
+
+  REVISION=$(jq_int "$PG_RESPONSE" '.revision.version' 0)
+
+  if ! assert_integer "$REVISION" "REVISION (update_pg_comments)"; then
+    log_warn "Skipping comment update — invalid revision"
+    return 0
+  fi
 
   PAYLOAD=$(jq -n \
     --argjson rev "$REVISION" \
@@ -455,7 +545,6 @@ update_pg_comments() {
 enable_controller_services() {
   log_info "Enabling controller services for $FLOW_NAME..."
 
-  # Get all controller services in the PG
   SERVICES=$(curl -k -s \
     "$NIFI_URL/nifi-api/flow/process-groups/$PG_ID/controller-services" \
     -H "$AUTH_HEADER")
@@ -468,7 +557,7 @@ enable_controller_services() {
     return 0
   fi
 
-  # Enable all at once using bulk endpoint
+  # Bulk enable
   PAYLOAD=$(jq -n \
     --arg id "$PG_ID" \
     '{
@@ -485,7 +574,6 @@ enable_controller_services() {
 
   log_info "Enable request sent — polling..."
 
-  # Poll until all enabled
   for i in $(seq 1 30); do
     CURRENT=$(curl -k -s \
       "$NIFI_URL/nifi-api/flow/process-groups/$PG_ID/controller-services" \
@@ -503,7 +591,7 @@ enable_controller_services() {
       return 0
     fi
 
-    # If nothing is enabling and some are still disabled after a few polls — something is wrong
+    # Stuck check — nothing enabling but still disabled after 5 polls
     if [ "$ENABLING" = "0" ] && [ "$DISABLED" != "0" ] && [ "$i" -gt 5 ]; then
       log_warn "Some services stuck in DISABLED — listing:"
       echo "$CURRENT" | jq -r \
@@ -570,7 +658,12 @@ update_parameter_contexts() {
       "$NIFI_URL/nifi-api/parameter-contexts/$PC_ID" \
       -H "$AUTH_HEADER")
 
-    REVISION=$(echo "$CURRENT" | jq -r '.revision.version')
+    REVISION=$(jq_int "$CURRENT" '.revision.version' 0)
+
+    if ! assert_integer "$REVISION" "REVISION (parameter context $PC_NAME)"; then
+      log_warn "Skipping parameter context: $PC_NAME"
+      continue
+    fi
 
     UPDATED=$(echo "$CURRENT" | jq --argjson params "$PARAM_JSON" \
       '.component.parameters |= map(
@@ -605,10 +698,10 @@ update_parameter_contexts() {
 ####################################
 
 log_section "NiFi Deployment Started"
-log_info "NIFI_URL    : $NIFI_URL"
-log_info "REGISTRY    : $REGISTRY_URL"
-log_info "BUCKET      : $BUCKET_ID"
-log_info "START_FLOW  : $START_FLOW"
+log_info "NIFI_URL   : $NIFI_URL"
+log_info "REGISTRY   : $REGISTRY_URL"
+log_info "BUCKET     : $BUCKET_ID"
+log_info "START_FLOW : $START_FLOW"
 
 FAILED_FLOWS=""
 SKIPPED_FLOWS=0
@@ -655,23 +748,16 @@ for ORIGINAL_FLOW in /flows/*.json; do
   update_registry_hash
 
   if [ -z "$PG_ID" ]; then
-    # New flow — import from registry
     import_flow
     find_pg
   else
-    # Existing flow — stop → update canvas → poll until done
     stop_pg_and_wait
     update_flow_version
     # update_pg_comments
   fi
 
-  # Enable controller services before starting
   enable_controller_services
-
-  # Update parameter contexts
   update_parameter_contexts
-
-  # Start or stop based on START_FLOW flag
   control_pg_state
 
   DEPLOYED_FLOWS=$(( DEPLOYED_FLOWS + 1 ))
