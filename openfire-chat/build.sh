@@ -422,21 +422,23 @@ update_flow_version() {
 
   # Step 2 — build payload with full snapshot + revision
   PAYLOAD=$(echo "$SNAPSHOT" | jq \
-    --argjson rev ${REVISION} \
-    --arg pgid "$PG_ID" \
-    '{
-      processGroupRevision: {version: $rev},
-      disconnectedNodeAcknowledged: false,
-      versionedFlowSnapshot: .
-    }')
+              --argjson rev ${REVISION} \
+              --arg regid "$REG_CLIENT_ID" \
+              '{
+                processGroupRevision: {version: $rev},
+                disconnectedNodeAcknowledged: false,
+                versionedFlowSnapshot: (. + {
+                  snapshotMetadata: (.snapshotMetadata + {registryId: $regid})
+                })
+   }' > "$PAYLOAD_FILE")
 
   # Step 3 — PUT to NiFi canvas to apply the snapshot
   log_info "Applying snapshot to canvas..."
-  RESPONSE=$(curl -k -s -X PUT \
-    "$NIFI_URL/nifi-api/versions/process-groups/$PG_ID" \
+  RESPONSE=$(curl -k -s -X POST \
+    "$NIFI_URL/nifi-api/versions/update-requests/process-groups/$PG_ID" \
     -H "$AUTH_HEADER" \
     -H "Content-Type: application/json" \
-    -d "$PAYLOAD")
+    --data-binary "@$PAYLOAD_FILE")
 
   log_info "Response: $RESPONSE"
 
