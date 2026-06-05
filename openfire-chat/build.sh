@@ -381,7 +381,13 @@ import_flow() {
 update_flow_version() {
   log_info "Updating canvas to version $NEXT_VERSION..."
 
-  # Get current PG revision
+  # Guard PG_ID first
+  if [ -z "$PG_ID" ]; then
+    log_warn "PG_ID is empty"
+    return 1
+  fi
+
+  # Get revision
   PG_RESPONSE=$(curl -k -s \
     "$NIFI_URL/nifi-api/process-groups/$PG_ID" \
     -H "$AUTH_HEADER")
@@ -390,7 +396,7 @@ update_flow_version() {
   REVISION=$(to_int "$RAW_REV" 0)
   REVISION=$(( REVISION + 0 ))
 
-  log_info "Current revision: $REVISION  PG_ID: $PG_ID"
+  log_info "Current revision: $REVISION"
 
   if ! echo "$REVISION" | grep -qE '^[0-9]+$'; then
     log_warn "Invalid REVISION: '$REVISION'"
@@ -402,25 +408,25 @@ update_flow_version() {
     return 1
   fi
 
-  # Step 1 — fetch the versioned flow snapshot from registry
-  # Fetch latest snapshot from registry
+  # Fetch snapshot
   log_info "Fetching latest snapshot from registry..."
   SNAPSHOT=$(curl -k -s \
     "$REGISTRY_URL/nifi-registry-api/buckets/$BUCKET_ID/flows/$FLOW_ID/versions/latest")
 
-  # Check flowContents exists — that's the real indicator of a valid snapshot
   SNAPSHOT_CHECK=$(echo "$SNAPSHOT" | jq -r '.flowContents.name // empty')
-
   if [ -z "$SNAPSHOT_CHECK" ]; then
     log_warn "Invalid snapshot — flowContents missing"
-    log_warn "Raw response: $SNAPSHOT"
+    log_warn "Raw: $SNAPSHOT"
     return 1
   fi
 
   SNAPSHOT_VER=$(echo "$SNAPSHOT" | jq -r '.snapshotMetadata.version // empty')
   log_info "✓ Snapshot fetched — flow=$SNAPSHOT_CHECK version=$SNAPSHOT_VER"
 
-  # Step 2 — build payload with full snapshot + revision
+  # Define PAYLOAD_FILE before using it
+  PAYLOAD_FILE="/tmp/payload_${PG_ID}.json"
+
+  # Build payload into file
   echo "$SNAPSHOT" | jq \
     --argjson rev ${REVISION} \
     --arg regid "$REG_CLIENT_ID" \
@@ -432,15 +438,16 @@ update_flow_version() {
       })
     }' > "$PAYLOAD_FILE"
 
-  # Step 3 — PUT to NiFi canvas to apply the snapshot
-  log_info "Applying snapshot to canvas..."
-  RESPONSE=$(curl -k -s -X POST \
-    "$NIFI_URL/nifi-api/versions/update-requests/process-groups/$PG_ID" \
+  log_info "Payload: $(wc -c < "$PAYLOAD_FILE") bytes"
+
+  # PUT to NiFi
+  RESPONSE=$(curl -k -s -X PUT \
+    "$NIFI_URL/nifi-api/versions/process-groups/$PG_ID" \
     -H "$AUTH_HEADER" \
     -H "Content-Type: application/json" \
     --data-binary "@$PAYLOAD_FILE")
 
-  log_info "Response: $RESPONSE"
+  rm -f "$PAYLOAD_FILE"
 
   ERROR=$(echo "$RESPONSE" | jq -r '.message // empty')
   if [ -n "$ERROR" ]; then
@@ -448,9 +455,7 @@ update_flow_version() {
     return 1
   fi
 
-  UPDATED_VER=$(echo "$RESPONSE" | \
-    jq -r '.versionControlInformation.version // empty')
-
+  UPDATED_VER=$(echo "$RESPONSE" | jq -r '.versionControlInformation.version // empty')
   if [ -n "$UPDATED_VER" ]; then
     log_info "✓ Canvas updated to version $UPDATED_VER"
     return 0
