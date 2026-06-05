@@ -403,18 +403,22 @@ update_flow_version() {
   fi
 
   # Step 1 — fetch the versioned flow snapshot from registry
-  log_info "Fetching snapshot version $NEXT_VERSION from registry..."
+  # Fetch latest snapshot from registry
+  log_info "Fetching latest snapshot from registry..."
   SNAPSHOT=$(curl -k -s \
-    "$REGISTRY_URL/nifi-registry-api/buckets/$BUCKET_ID/flows/$FLOW_ID/versions/$NEXT_VERSION")
+    "$REGISTRY_URL/nifi-registry-api/buckets/$BUCKET_ID/flows/$FLOW_ID/versions/latest")
 
-  SNAPSHOT_CHECK=$(echo "$SNAPSHOT" | jq -r '.snapshotMetadata.version // empty')
+  # Check flowContents exists — that's the real indicator of a valid snapshot
+  SNAPSHOT_CHECK=$(echo "$SNAPSHOT" | jq -r '.flowContents.name // empty')
+
   if [ -z "$SNAPSHOT_CHECK" ]; then
-    log_warn "Failed to fetch snapshot from registry"
-    log_warn "Response: $SNAPSHOT"
+    log_warn "Invalid snapshot — flowContents missing"
+    log_warn "Raw response: $SNAPSHOT"
     return 1
   fi
 
-  log_info "✓ Snapshot fetched — version $SNAPSHOT_CHECK"
+  SNAPSHOT_VER=$(echo "$SNAPSHOT" | jq -r '.snapshotMetadata.version // empty')
+  log_info "✓ Snapshot fetched — flow=$SNAPSHOT_CHECK version=$SNAPSHOT_VER"
 
   # Step 2 — build payload with full snapshot + revision
   PAYLOAD=$(echo "$SNAPSHOT" | jq \
