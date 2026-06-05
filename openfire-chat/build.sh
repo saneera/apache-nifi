@@ -381,7 +381,6 @@ import_flow() {
 update_flow_version() {
   log_info "Updating canvas to version $NEXT_VERSION..."
 
-  # Get current PG revision
   PG_RESPONSE=$(curl -k -s \
     "$NIFI_URL/nifi-api/process-groups/$PG_ID" \
     -H "$AUTH_HEADER")
@@ -392,7 +391,6 @@ update_flow_version() {
 
   log_info "Current revision: $REVISION  PG_ID: $PG_ID"
 
-  # Validate
   if ! echo "$REVISION" | grep -qE '^[0-9]+$'; then
     log_warn "Invalid REVISION: '$REVISION'"
     return 1
@@ -403,7 +401,6 @@ update_flow_version() {
     return 1
   fi
 
-  # NiFi 2.x payload — PG_ID goes inside the body
   PAYLOAD=$(jq -n \
     --arg pgid "$PG_ID" \
     --argjson rev ${REVISION} \
@@ -412,7 +409,6 @@ update_flow_version() {
     --arg flow "$FLOW_ID" \
     --argjson version ${NEXT_VERSION} \
     '{
-      processGroupId: $pgid,
       processGroupRevision: {version: $rev},
       versionControlInformation: {
         registryId: $reg,
@@ -423,59 +419,41 @@ update_flow_version() {
       disconnectedNodeAcknowledged: false
     }')
 
-  log_info "Payload: $PAYLOAD"
+  log_info "Submitting version update..."
 
-  # NiFi 2.x endpoint — no PG_ID in URL
-  RESPONSE=$(curl -k -s -X POST \
-    "$NIFI_URL/nifi-api/versions/update-requests/process-groups" \
+  # PUT — update to specific version from registry
+  RESPONSE=$(curl -k -s -X PUT \
+    "$NIFI_URL/nifi-api/versions/process-groups/$PG_ID" \
     -H "$AUTH_HEADER" \
     -H "Content-Type: application/json" \
     -d "$PAYLOAD")
 
   log_info "Response: $RESPONSE"
 
-  REQUEST_ID=$(echo "$RESPONSE" | jq -r '.request.requestId // empty')
-
-  if [ -z "$REQUEST_ID" ] || [ "$REQUEST_ID" = "null" ]; then
-    log_warn "Failed to submit update request"
-    log_warn "Response: $RESPONSE"
+  # Check for error in response
+  ERROR=$(echo "$RESPONSE" | jq -r '.message // empty')
+  if [ -n "$ERROR" ]; then
+    log_warn "Version update failed: $ERROR"
     return 1
   fi
 
-  log_info "Update request submitted: $REQUEST_ID — polling..."
+  # Verify version was updated
+  UPDATED_VER=$(echo "$RESPONSE" | \
+    jq -r '.versionControlInformation.version // empty')
 
-  # Poll until complete
-  for i in $(seq 1 30); do
-    POLL=$(curl -k -s \
-      "$NIFI_URL/nifi-api/versions/update-requests/$REQUEST_ID" \
-      -H "$AUTH_HEADER")
+  if [ -n "$UPDATED_VER" ]; then
+    log_info "✓ Canvas updated to version $UPDATED_VER"
+    return 0
+  fi
 
-    COMPLETE=$(echo "$POLL" | jq -r '.request.complete // false')
-    STATE=$(echo "$POLL"   | jq -r '.request.state // "UNKNOWN"')
-    PERCENT=$(echo "$POLL" | jq -r '.request.percentCompleted // 0')
+  # If response has processGroupRevision it likely succeeded
+  RESP_REV=$(echo "$RESPONSE" | jq -r '.processGroupRevision.version // empty')
+  if [ -n "$RESP_REV" ]; then
+    log_info "✓ Canvas updated successfully (revision: $RESP_REV)"
+    return 0
+  fi
 
-    log_info "Poll $i/30: state=$STATE complete=$COMPLETE ($PERCENT%)"
-
-    if [ "$COMPLETE" = "true" ]; then
-      FAILED=$(echo "$POLL" | jq -r '.request.failureReason // empty')
-      if [ -n "$FAILED" ]; then
-        log_warn "Update failed: $FAILED"
-        return 1
-      fi
-
-      # Clean up
-      curl -k -s -X DELETE \
-        "$NIFI_URL/nifi-api/versions/update-requests/$REQUEST_ID" \
-        -H "$AUTH_HEADER" > /dev/null
-
-      log_info "✓ Canvas updated to version $NEXT_VERSION"
-      return 0
-    fi
-
-    sleep 3
-  done
-
-  log_warn "Timed out — request: $REQUEST_ID"
+  log_warn "Unexpected response: $RESPONSE"
   return 1
 }
 
