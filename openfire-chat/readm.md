@@ -222,3 +222,32 @@ muc.join(Resourcepart.from(nickname), null, history, timeout);
 | Recommended PVC | 5 GB (room for growth) |
 | Client changes needed | None — Smack handles delivery automatically |
 | Verify via | MySQL Workbench → `ofOffline` table |
+
+
+```sql
+
+
+SELECT * FROM ofProperty
+WHERE name LIKE '%conversation%'
+   OR name LIKE '%monitoring%'
+   OR name LIKE '%archiv%';
+
+SELECT name, propValue FROM ofProperty
+WHERE name IN (
+    'conversation.metadataArchiving',
+    'conversation.messageArchiving'
+);
+
+INSERT IGNORE INTO ofProperty (name, propValue) VALUES
+    ('conversation.metadataArchiving', 'true'),
+    ('conversation.messageArchiving',  'true');
+
+
+SELECT * FROM ofMessageArchive ORDER BY sentDate DESC LIMIT 10;
+
+```
+SELECT name, propValue FROM ofProperty
+WHERE name IN (
+'conversation.metadataArchiving',
+'conversation.messageArchiving'
+);
