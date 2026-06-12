@@ -308,7 +308,6 @@ List<String> targetMessageIds) throws Exception {
 }
 
 
-
 public List<MessageResponse> readMessagesByParticipantAndRoom(
 String roomName,
 String participantName,
@@ -322,27 +321,33 @@ List<String> messageIds) {
         return Collections.emptyList();
     }
 
+    boolean fetchAll = messageIds == null || messageIds.isEmpty();
+
     List<Message> foundMessages = new CopyOnWriteArrayList<>();
     CountDownLatch latch = new CountDownLatch(1);
 
-    MessageListener tempListener = message -> {
+    MessageListener tempMessageListener = message -> {
+        if (message.getBody() == null) return;
+
         String stanzaId = message.getStanzaId();
 
-        if (stanzaId != null && messageIds.contains(stanzaId)) {
+        if (fetchAll) {
             foundMessages.add(message);
-        }
 
-        // Release latch when all found
-        if (foundMessages.size() == messageIds.size()) {
-            latch.countDown();
+        } else {
+            if (stanzaId != null && messageIds.contains(stanzaId)) {
+                foundMessages.add(message);
+
+                if (foundMessages.size() == messageIds.size()) {
+                    latch.countDown();
+                }
+            }
         }
     };
 
-    // ── Register listener BEFORE join ─────────────────────────────────────
-    muc.addMessageListener(tempListener);
+    muc.addMessageListener(tempMessageListener);
 
     try {
-        // ── Leave first if already joined ─────────────────────────────────
         if (muc.isJoined()) {
             muc.leave();
         }
@@ -354,45 +359,65 @@ List<String> messageIds) {
 
         muc.join(config);
 
-        // Wait max 10 seconds
-        boolean completed = latch.await(10, TimeUnit.SECONDS);
+        if (fetchAll) {
+            // Wait for history to finish replaying
+            // Adjust sleep time based on expected message volume
+            Thread.sleep(3000);
+            log.info("Retrieved [{}] messages from room [{}]",
+                foundMessages.size(), roomName);
 
-        if (!completed) {
-            log.warn("Only found [{}/{}] messages within timeout",
-                foundMessages.size(), messageIds.size());
+        } else {
+            // Wait until all IDs found or timeout
+            boolean completed = latch.await(10, TimeUnit.SECONDS);
+            if (!completed) {
+                log.warn("Only found [{}/{}] messages within timeout",
+                    foundMessages.size(), messageIds.size());
+            }
         }
 
-        // ── Map to response ───────────────────────────────────────────────
         return foundMessages.stream()
-            .map(message -> MessageResponse.builder()
-                .messageId(message.getStanzaId())
-                .message(message.getBody())
-                .sender(message.getFrom()
-                    .getResourceOrEmpty().toString())   // ← fix sender
-                .roomName(roomName)
-                .build())
+            .map(message -> {
+                DelayInformation delay = DelayInformation.from(message);
+                Instant timestamp = delay != null
+                    ? delay.getStamp().toInstant()
+                    : Instant.now();
+
+                return MessageResponse.builder()
+                    .messageId(message.getStanzaId())
+                    .message(message.getBody())
+                    .sender(message.getFrom()
+                        .getResourceOrEmpty().toString())
+                    .roomName(roomName)
+                    .timestamp(timestamp)
+                    .isDelayed(delay != null)
+                    .build();
+            })
             .collect(Collectors.toList());
 
     } catch (Exception e) {
         log.error("Error reading messages for participant [{}] room [{}]",
             participantName, roomName, e);
         throw new RuntimeException(e);
-    } finally {
-        // ── Always remove temp listener ───────────────────────────────────
-        muc.removeMessageListener(tempListener);
 
-        // ── Rejoin without history to restore normal state ────────────────
+    } finally {
+        muc.removeMessageListener(tempMessageListener);
+
         try {
             if (!muc.isJoined()) {
-                MucEnterConfiguration rejoinConfig = muc
+                muc.join(muc
                     .getEnterConfigurationBuilder(
                         Resourcepart.from(participantName))
                     .requestNoHistory()
-                    .build();
-                muc.join(rejoinConfig);
+                    .build());
+                log.info("Rejoined room [{}] after read", roomName);
             }
         } catch (Exception e) {
             log.error("Error rejoining room [{}] after read", roomName, e);
         }
     }
 }
+
+
+
+
+
