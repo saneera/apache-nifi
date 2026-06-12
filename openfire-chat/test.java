@@ -152,3 +152,41 @@ class ReadRoomMessageCommandTest {
         verify(muc).removeMessageListener(any(MessageListener.class));
     }
 }
+
+
+public void deleteMessageFromRoom(String roomName,
+                                  String participantName,
+                                  String messageId) {
+    try {
+        MultiUserChat muc = checkParticipantJoinedTheRoom(
+                roomName, participantName);
+
+        // Build message targeting the ROOM JID
+        MessageBuilder retractBuilder = muc.buildMessage()
+                .ofType(Message.Type.groupchat);
+
+        // Add retraction element using static helper
+        MessageRetractionManager.addRetractionElementToMessage(
+                new OriginIdElement(messageId),
+                retractBuilder                   // ← your builder with room JID
+        );
+
+        // Send via connection
+        muc.getXmppConnection().sendStanza(retractBuilder.build());
+
+        log.info("Retracted message [{}] from room [{}]",
+                messageId, roomName);
+
+    } catch (IllegalArgumentException e) {
+        throw e;
+    } catch (SmackException.NotConnectedException e) {
+        log.error("Error when connecting the room {}", e.getMessage());
+        throw new IllegalArgumentException(
+                "Error when connecting the room", e);
+    } catch (InterruptedException e) {
+        log.error("Error retracting message [{}] from room [{}]",
+                messageId, roomName, e);
+        throw new IllegalArgumentException(
+                "Error retracting message", e);
+    }
+}
