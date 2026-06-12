@@ -251,3 +251,58 @@ WHERE name IN (
 'conversation.metadataArchiving',
 'conversation.messageArchiving'
 );
+
+
+
+public List<Message> getMessagesByIds(String roomName,
+String participantName,
+List<String> targetMessageIds) throws Exception {
+
+    MultiUserChat muc = joinedRooms.get(roomName + ":" + participantName);
+
+    // Thread-safe list to collect found messages
+    List<Message> foundMessages = new CopyOnWriteArrayList<>();
+    CountDownLatch latch = new CountDownLatch(1);
+
+    // Temporary listener — collects ALL history messages
+    MessageListener tempListener = message -> {
+        String stanzaId = message.getStanzaId();
+
+        // Only collect messages whose ID is in our target list
+        if (stanzaId != null && targetMessageIds.contains(stanzaId)) {
+            foundMessages.add(message);
+        }
+
+        // Check if we found all messages we need
+        if (foundMessages.size() == targetMessageIds.size()) {
+            latch.countDown();   // ← got everything, stop waiting
+        }
+    };
+
+    // ── Register listener BEFORE join ────────────────────────────────────
+    muc.addMessageListener(tempListener);
+
+    // ── Join with large history window ────────────────────────────────────
+    MucEnterConfiguration config = muc
+        .getEnterConfigurationBuilder(Resourcepart.from(participantName))
+        .requestMaxStanzasHistory(500)
+        .build();
+
+    muc.join(config);
+
+    try {
+        // Wait max 10 seconds for all messages to arrive
+        boolean completed = latch.await(10, TimeUnit.SECONDS);
+
+        if (!completed) {
+            log.warn("Only found [{}/{}] messages within timeout",
+                foundMessages.size(), targetMessageIds.size());
+        }
+
+        return foundMessages;
+
+    } finally {
+        // Always remove temp listener
+        muc.removeMessageListener(tempListener);
+    }
+}
