@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plugin>
+    <!-- Plugin metadata -->
+    <class>com.babcock.openfire.plugin.MessageDeletePlugin</class>
+    <name>Message Delete Plugin</name>
+    <description>
+        REST API endpoint to delete a MUC message from ofMessageArchive by messageId.
+    </description>
+    <author>Babcock</author>
+    <version>1.0.0</version>
+    <date>06/12/2026</date>
+    <url>https://babcock.com</url>
+
+    <!-- Minimum Openfire version required -->
+    <minServerVersion>5.0.0</minServerVersion>
+</plugin>
