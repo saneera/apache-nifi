@@ -398,3 +398,104 @@ public List<MessageResponse> readMessagesByParticipantAndRoom(
 
     return mapToMessageResponse(foundMessages, roomName);
 }
+
+
+
+===========
+
+
+
+/**
+ * Fetches ALL messages in the room asynchronously using CompletableFuture.
+ *
+ * Returns a CompletableFuture that completes after allowing time for
+ * Openfire to finish replaying history stanzas following a room join.
+ *
+ * Why Thread.sleep:
+ *   Smack provides no callback or signal for when history replay is complete.
+ *   The subject-updated listener was considered but is unreliable — rooms
+ *   without a subject set never receive a subject stanza after join.
+ *   A timed wait is the only reliable approach without MAM support.
+ *
+ * Why 2000ms:
+ *   Empirically chosen to give Openfire enough time to replay up to 500
+ *   messages over the internal k8s network. Increase if messages are
+ *   missed on slower environments.
+ *
+ * Caller uses fetchAllMessages().get() to block until messages are ready.
+ *
+ * @param muc             the joined MultiUserChat instance
+ * @param participantName participant performing the read
+ * @param roomName        room name for logging
+ * @return CompletableFuture containing all collected messages
+ */
+private CompletableFuture<List<Message>> fetchAllMessages(
+        MultiUserChat muc,
+        String participantName,
+        String roomName) {
+
+    CompletableFuture<List<Message>> future = new CompletableFuture<>();
+    List<Message> foundMessages = new CopyOnWriteArrayList<>();
+
+    MessageListener tempListener = message -> {
+        if (message.getBody() != null) {
+            foundMessages.add(message);
+        }
+    };
+
+    muc.addMessageListener(tempListener);
+
+    CompletableFuture.runAsync(() -> {
+        try {
+            rejoinWithHistory(muc, participantName);
+
+            // Wait for Openfire to finish replaying history.
+            // No completion signal is available without MAM — see javadoc above.
+            TimeUnit.MILLISECONDS.sleep(historyReplayWaitMs);
+
+            log.info("Retrieved [{}] messages from room [{}]",
+                    foundMessages.size(), roomName);
+
+            future.complete(foundMessages);
+
+        } catch (SmackException.NotConnectedException e) {
+            future.completeExceptionally(
+                    new IllegalArgumentException("Not connected to room: " + roomName, e));
+        } catch (SmackException.NoResponseException e) {
+            future.completeExceptionally(
+                    new IllegalArgumentException("No response from server: " + roomName, e));
+        } catch (XMPPException.XMPPErrorException e) {
+            future.completeExceptionally(
+                    new IllegalArgumentException("XMPP error for room: " + roomName, e));
+        } catch (MultiUserChatException.NotAMucServiceException e) {
+            future.completeExceptionally(
+                    new IllegalArgumentException("Not a MUC service: " + roomName, e));
+        } catch (MultiUserChatException.MucNotJoinedException e) {
+            future.completeExceptionally(
+                    new IllegalArgumentException("MUC not joined: " + roomName, e));
+        } catch (XmppStringprepException e) {
+            future.completeExceptionally(
+                    new IllegalArgumentException("Invalid participant: " + participantName, e));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            future.completeExceptionally(
+                    new IllegalArgumentException("Interrupted fetching messages", e));
+        } finally {
+            muc.removeMessageListener(tempListener);
+            rejoinWithoutHistory(muc, participantName, roomName);
+        }
+    });
+
+    return future;
+}
+
+
+// In ChatService
+private final long historyReplayWaitMs;
+
+public ChatService(ChatGatewayProperties properties, ...) {
+    this.historyReplayWaitMs = properties.getHistoryReplayWaitMs();
+}
+
+chat-gateway:
+history-replay-wait-ms: 2000   # ← tunable per environment
