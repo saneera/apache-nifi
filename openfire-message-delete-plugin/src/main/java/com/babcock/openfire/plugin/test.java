@@ -296,3 +296,105 @@ private List<MessageResponse> mapToMessageResponse(List<Message> messages,
             })
             .collect(Collectors.toList());
 }
+
+
+
+
+/**
+ * Fetches ALL messages in the room asynchronously using CompletableFuture.
+ *
+ * Returns a CompletableFuture that completes when history replay is done.
+ * The future is completed by the subject listener (end-of-history signal)
+ * or after a 2-second sleep as a fallback.
+ *
+ * Caller uses fetchAllMessages().get() to block until messages are ready.
+ */
+private CompletableFuture<List<Message>> fetchAllMessages(
+        MultiUserChat muc,
+        String participantName,
+        String roomName) {
+
+    CompletableFuture<List<Message>> future = new CompletableFuture<>();
+    List<Message> foundMessages = new CopyOnWriteArrayList<>();
+
+    MessageListener tempListener = message -> {
+        if (message.getBody() != null) {
+            foundMessages.add(message);
+        }
+    };
+
+    muc.addMessageListener(tempListener);
+
+    // Run asynchronously — don't block the calling thread
+    CompletableFuture.runAsync(() -> {
+        try {
+            rejoinWithHistory(muc, participantName);
+            Thread.sleep(2000);   // wait for history replay to finish
+            future.complete(foundMessages);   // ← signal done
+
+        } catch (SmackException.NotConnectedException e) {
+            future.completeExceptionally(
+                    new IllegalArgumentException("Not connected to room: " + roomName, e));
+
+        } catch (SmackException.NoResponseException e) {
+            future.completeExceptionally(
+                    new IllegalArgumentException("No response from server: " + roomName, e));
+
+        } catch (XMPPException.XMPPErrorException e) {
+            future.completeExceptionally(
+                    new IllegalArgumentException("XMPP error for room: " + roomName, e));
+
+        } catch (MultiUserChatException.NotAMucServiceException e) {
+            future.completeExceptionally(
+                    new IllegalArgumentException("Not a MUC service: " + roomName, e));
+
+        } catch (MultiUserChatException.MucNotJoinedException e) {
+            future.completeExceptionally(
+                    new IllegalArgumentException("MUC not joined: " + roomName, e));
+
+        } catch (XmppStringprepException e) {
+            future.completeExceptionally(
+                    new IllegalArgumentException("Invalid participant: " + participantName, e));
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            future.completeExceptionally(
+                    new IllegalArgumentException("Interrupted fetching messages", e));
+
+        } finally {
+            muc.removeMessageListener(tempListener);
+            rejoinWithoutHistory(muc, participantName, roomName);
+        }
+    });
+
+    return future;
+}
+
+
+public List<MessageResponse> readMessagesByParticipantAndRoom(
+        String roomName,
+        String participantName,
+        List<String> messageIds) {
+
+    MultiUserChat muc = getJoinedMucOrThrow(roomName, participantName);
+
+    boolean fetchAll = messageIds == null || messageIds.isEmpty();
+
+    List<Message> foundMessages;
+
+    try {
+        foundMessages = fetchAll
+                ? fetchAllMessages(muc, participantName, roomName).get()   // ← .get() blocks here
+                : fetchMessagesByIds(muc, participantName, roomName, messageIds);
+
+    } catch (java.util.concurrent.ExecutionException e) {
+        log.error("Error fetching messages from room [{}]", roomName, e);
+        throw new IllegalArgumentException("Error fetching messages", e.getCause());
+
+    } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new IllegalArgumentException("Interrupted fetching messages", e);
+    }
+
+    return mapToMessageResponse(foundMessages, roomName);
+}
