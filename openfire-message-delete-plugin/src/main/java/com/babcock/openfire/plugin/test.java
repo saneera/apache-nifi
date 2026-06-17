@@ -88,9 +88,43 @@ private List<Message> fetchAllMessages(MultiUserChat muc,
         Thread.sleep(2000);
         log.info("Retrieved [{}] messages from room [{}]",
                 foundMessages.size(), roomName);
-    } catch (Exception e) {
-        log.error("Error fetching all messages from room [{}]", roomName, e);
-        throw new IllegalArgumentException("Error fetching messages", e);
+
+    } catch (SmackException.NotConnectedException e) {
+        log.error("Not connected when fetching messages from room [{}]", roomName, e);
+        throw new IllegalArgumentException(
+                "Not connected to room: " + roomName, e);
+
+    } catch (SmackException.NoResponseException e) {
+        log.error("No response from server for room [{}]", roomName, e);
+        throw new IllegalArgumentException(
+                "No response from server for room: " + roomName, e);
+
+    } catch (XMPPException.XMPPErrorException e) {
+        log.error("XMPP error fetching messages from room [{}]", roomName, e);
+        throw new IllegalArgumentException(
+                "XMPP error for room: " + roomName, e);
+
+    } catch (MultiUserChatException.NotAMucServiceException e) {
+        log.error("Not a MUC service for room [{}]", roomName, e);
+        throw new IllegalArgumentException(
+                "Not a MUC service: " + roomName, e);
+
+    } catch (MultiUserChatException.MucNotJoinedException e) {
+        log.error("MUC not joined for room [{}]", roomName, e);
+        throw new IllegalArgumentException(
+                "MUC not joined: " + roomName, e);
+
+    } catch (XmppStringprepException e) {
+        log.error("Invalid participant name [{}]", participantName, e);
+        throw new IllegalArgumentException(
+                "Invalid participant name: " + participantName, e);
+
+    } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        log.error("Interrupted while fetching messages from room [{}]", roomName, e);
+        throw new IllegalArgumentException(
+                "Interrupted while fetching messages", e);
+
     } finally {
         muc.removeMessageListener(tempListener);
         rejoinWithoutHistory(muc, participantName, roomName);
@@ -132,9 +166,43 @@ private List<Message> fetchMessagesByIds(MultiUserChat muc,
             log.warn("Only found [{}/{}] messages within timeout",
                     foundMessages.size(), messageIds.size());
         }
-    } catch (Exception e) {
-        log.error("Error fetching messages by ID from room [{}]", roomName, e);
-        throw new IllegalArgumentException("Error fetching messages", e);
+
+    } catch (SmackException.NotConnectedException e) {
+        log.error("Not connected when fetching messages from room [{}]", roomName, e);
+        throw new IllegalArgumentException(
+                "Not connected to room: " + roomName, e);
+
+    } catch (SmackException.NoResponseException e) {
+        log.error("No response from server for room [{}]", roomName, e);
+        throw new IllegalArgumentException(
+                "No response from server for room: " + roomName, e);
+
+    } catch (XMPPException.XMPPErrorException e) {
+        log.error("XMPP error fetching messages from room [{}]", roomName, e);
+        throw new IllegalArgumentException(
+                "XMPP error for room: " + roomName, e);
+
+    } catch (MultiUserChatException.NotAMucServiceException e) {
+        log.error("Not a MUC service for room [{}]", roomName, e);
+        throw new IllegalArgumentException(
+                "Not a MUC service: " + roomName, e);
+
+    } catch (MultiUserChatException.MucNotJoinedException e) {
+        log.error("MUC not joined for room [{}]", roomName, e);
+        throw new IllegalArgumentException(
+                "MUC not joined: " + roomName, e);
+
+    } catch (XmppStringprepException e) {
+        log.error("Invalid participant name [{}]", participantName, e);
+        throw new IllegalArgumentException(
+                "Invalid participant name: " + participantName, e);
+
+    } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        log.error("Interrupted while fetching messages from room [{}]", roomName, e);
+        throw new IllegalArgumentException(
+                "Interrupted while fetching messages", e);
+
     } finally {
         muc.removeMessageListener(tempListener);
         rejoinWithoutHistory(muc, participantName, roomName);
@@ -150,7 +218,14 @@ private List<Message> fetchMessagesByIds(MultiUserChat muc,
  * Rooms with more than 500 messages will only replay the most recent 500.
  */
 private void rejoinWithHistory(MultiUserChat muc, String participantName)
-        throws Exception {
+        throws SmackException.NotConnectedException,
+        SmackException.NoResponseException,
+        XMPPException.XMPPErrorException,
+        MultiUserChatException.NotAMucServiceException,
+        MultiUserChatException.MucNotJoinedException,
+        XmppStringprepException,
+        InterruptedException {
+
     if (muc.isJoined()) {
         muc.leave();
     }
@@ -178,8 +253,22 @@ private void rejoinWithoutHistory(MultiUserChat muc,
             muc.join(config);
             log.info("Rejoined room [{}] after read", roomName);
         }
-    } catch (Exception e) {
-        log.error("Error rejoining room [{}] after read", roomName, e);
+    } catch (SmackException.NotConnectedException e) {
+        log.error("Not connected rejoining room [{}]", roomName, e);
+    } catch (SmackException.NoResponseException e) {
+        log.error("No response rejoining room [{}]", roomName, e);
+    } catch (XMPPException.XMPPErrorException e) {
+        log.error("XMPP error rejoining room [{}]", roomName, e);
+    } catch (MultiUserChatException.NotAMucServiceException e) {
+        log.error("Not a MUC service rejoining room [{}]", roomName, e);
+    } catch (MultiUserChatException.MucNotJoinedException e) {
+        log.error("MUC not joined rejoining room [{}]", roomName, e);
+    } catch (XmppStringprepException e) {
+        log.error("Invalid participant name [{}] rejoining room [{}]",
+                participantName, roomName, e);
+    } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        log.error("Interrupted rejoining room [{}]", roomName, e);
     }
 }
 
