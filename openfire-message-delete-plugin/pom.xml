@@ -321,3 +321,33 @@
     <scope>runtime</scope>
 </dependencySet>
 </dependencySets>
+
+
+==========
+
+
+
+
+    <?xml version="1.0" encoding="UTF-8"?>
+<web-app>
+<servlet>
+    <servlet-name>DeleteMessageServlet</servlet-name>
+    <!-- ← USE THIS instead of Jersey's ServletContainer -->
+    <servlet-class>
+        org.jivesoftware.openfire.plugin.JerseyWrapper
+    </servlet-class>
+    <init-param>
+        <param-name>jersey.config.server.provider.packages</param-name>
+        <param-value>
+            com.babcock.openfire.plugin.rest
+        </param-value>
+    </init-param>
+    <load-on-startup>1</load-on-startup>
+</servlet>
+
+<servlet-mapping>
+    <servlet-name>DeleteMessageServlet</servlet-name>
+    <url-pattern>/api/*</url-pattern>
+</servlet-mapping>
+</web-app>
+</web-app>
