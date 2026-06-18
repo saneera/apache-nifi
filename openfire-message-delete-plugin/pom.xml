@@ -80,66 +80,86 @@
 
 
 
+<assembly xmlns="http://maven.apache.org/ASSEMBLY/2.1.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/ASSEMBLY/2.1.0
+          http://maven.apache.org/xsd/assembly-2.1.0.xsd">
+
+<id>plugin</id>
+<formats>
+    <format>jar</format>
+</formats>
+<includeBaseDirectory>false</includeBaseDirectory>
+
+<files>
+    <!-- plugin.xml at root -->
+    <file>
+        <source>src/main/resources/plugin.xml</source>
+        <destName>plugin.xml</destName>
+        <fileMode>0644</fileMode>
+    </file>
+</files>
+
+<fileSets>
+    <!-- web.xml inside WEB-INF -->
+    <fileSet>
+        <directory>src/main/webapp</directory>
+        <outputDirectory>/</outputDirectory>
+        <includes>
+            <include>WEB-INF/web.xml</include>
+        </includes>
+    </fileSet>
+</fileSets>
+
+<dependencySets>
+    <!-- All classes and dependencies go into lib/ -->
+    <dependencySet>
+        <outputDirectory>lib</outputDirectory>
+        <useProjectArtifact>true</useProjectArtifact>
+        <scope>runtime</scope>
+    </dependencySet>
+</dependencySets>
+
+</assembly>
+
+
 <build>
 <finalName>muc-message-delete</finalName>
-
 <plugins>
-    <!-- ── Disable Spring Boot repackage — this is NOT a Spring Boot app ── -->
-    <plugin>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-maven-plugin</artifactId>
-        <executions>
-            <execution>
-                <id>repackage</id>
-                <phase>none</phase>   <!-- ← skip repackage entirely -->
-            </execution>
-        </executions>
-    </plugin>
 
-    <!-- ── Copy plugin.xml to JAR root ───────────────────────────────── -->
+    <!-- Step 1: build the classes JAR normally -->
     <plugin>
         <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-resources-plugin</artifactId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.3.0</version>
+        <configuration>
+            <outputDirectory>${project.build.directory}/lib</outputDirectory>
+            <finalName>muc-message-delete</finalName>
+        </configuration>
+    </plugin>
+
+    <!-- Step 2: assemble final plugin JAR with correct structure -->
+    <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-assembly-plugin</artifactId>
+        <version>3.6.0</version>
         <executions>
             <execution>
-                <id>copy-plugin-xml</id>
-                <phase>process-resources</phase>
+                <id>make-plugin-jar</id>
+                <phase>package</phase>
                 <goals>
-                    <goal>copy-resources</goal>
+                    <goal>single</goal>
                 </goals>
                 <configuration>
-                    <outputDirectory>
-                        ${project.build.outputDirectory}
-                    </outputDirectory>
-                    <resources>
-                        <resource>
-                            <!-- plugin.xml from resources goes to JAR root -->
-                            <directory>src/main/resources</directory>
-                            <includes>
-                                <include>plugin.xml</include>
-                            </includes>
-                        </resource>
-                    </resources>
+                    <finalName>muc-message-delete</finalName>
+                    <appendAssemblyId>false</appendAssemblyId>
+                    <descriptors>
+                        <descriptor>src/assembly/plugin.xml</descriptor>
+                    </descriptors>
                 </configuration>
             </execution>
         </executions>
     </plugin>
 
-    <!-- ── JAR plugin ────────────────────────────────────────────────── -->
-    <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-jar-plugin</artifactId>
-        <configuration>
-            <archive>
-                <manifestEntries>
-                    <Plugin-Class>
-                        com.babcock.openfire.plugin.DeleteMessagePlugin
-                    </Plugin-Class>
-                </manifestEntries>
-            </archive>
-            <finalName>muc-message-delete</finalName>
-        </configuration>
-    </plugin>
 </plugins>
-</build>
 </build>
