@@ -273,3 +273,40 @@
 
 </assembly>
 </assembly>
+
+
+==========
+
+
+    <!-- pom.xml -->
+<dependency>
+<groupId>org.glassfish.jersey.core</groupId>
+<artifactId>jersey-server</artifactId>
+<version>2.40</version>
+<scope>provided</scope>   <!-- ← back to provided -->
+</dependency>
+
+<dependency>
+<groupId>org.glassfish.jersey.containers</groupId>
+<artifactId>jersey-container-servlet</artifactId>
+<version>2.40</version>
+<scope>provided</scope>   <!-- ← back to provided -->
+</dependency>
+
+
+<dependencySets>
+<dependencySet>
+    <outputDirectory>lib</outputDirectory>
+    <useProjectArtifact>true</useProjectArtifact>
+    <scope>runtime</scope>
+    <excludes>
+        <exclude>org.igniterealtime.openfire:*</exclude>
+        <exclude>javax.servlet:*</exclude>
+        <exclude>org.glassfish.jersey:*</exclude>      <!-- ← ADD -->
+        <exclude>org.springframework*:*</exclude>       <!-- ← ADD -->
+        <exclude>org.springframework.boot:*</exclude>   <!-- ← ADD -->
+        <exclude>ch.qos.logback:*</exclude>             <!-- ← ADD -->
+        <exclude>com.fasterxml.jackson*:*</exclude>     <!-- ← ADD -->
+    </excludes>
+</dependencySet>
+</dependencySets>
