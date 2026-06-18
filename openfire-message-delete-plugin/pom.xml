@@ -310,3 +310,14 @@
     </excludes>
 </dependencySet>
 </dependencySets>
+
+
+
+<dependencySets>
+<dependencySet>
+    <outputDirectory>lib</outputDirectory>
+    <useProjectArtifact>true</useProjectArtifact>
+    <useTransitiveDependencies>false</useTransitiveDependencies>  <!-- ← ADD -->
+    <scope>runtime</scope>
+</dependencySet>
+</dependencySets>
