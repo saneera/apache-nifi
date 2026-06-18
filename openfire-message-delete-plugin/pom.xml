@@ -224,3 +224,52 @@
 
 </plugins>
 </build>
+
+
+
+<assembly xmlns="http://maven.apache.org/ASSEMBLY/2.1.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/ASSEMBLY/2.1.0
+          http://maven.apache.org/xsd/assembly-2.1.0.xsd">
+
+<id>plugin</id>
+<formats>
+    <format>jar</format>
+</formats>
+<includeBaseDirectory>false</includeBaseDirectory>
+
+<!-- plugin.xml at root -->
+<files>
+    <file>
+        <source>src/main/resources/plugin.xml</source>
+        <destName>plugin.xml</destName>
+    </file>
+</files>
+
+<!-- web/WEB-INF/web-custom.xml -->
+<fileSets>
+    <fileSet>
+        <directory>src/main/webapp</directory>
+        <outputDirectory>web</outputDirectory>
+        <includes>
+            <include>WEB-INF/web-custom.xml</include>
+        </includes>
+    </fileSet>
+</fileSets>
+
+<!-- ── CHANGE THIS SECTION ──────────────────────────────────────── -->
+<dependencySets>
+    <dependencySet>
+        <outputDirectory>lib</outputDirectory>
+        <useProjectArtifact>true</useProjectArtifact>
+        <scope>runtime</scope>
+        <!-- Exclude Openfire — already on Openfire's classpath -->
+        <excludes>
+            <exclude>org.igniterealtime.openfire:*</exclude>
+            <exclude>javax.servlet:*</exclude>
+        </excludes>
+    </dependencySet>
+</dependencySets>
+
+</assembly>
+</assembly>
