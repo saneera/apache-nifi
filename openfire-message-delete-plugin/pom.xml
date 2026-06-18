@@ -163,3 +163,64 @@
 
 </plugins>
 </build>
+
+
+
+===============
+
+
+<build>
+<finalName>muc-message-delete</finalName>
+<plugins>
+
+    <!-- Step 1: build classes JAR into target/lib/ -->
+    <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.3.0</version>
+        <configuration>
+            <outputDirectory>${project.build.directory}/lib</outputDirectory>
+            <archive>
+                <manifestEntries>
+                    <Plugin-Class>
+                        com.babcock.openfire.plugin.DeleteMessagePlugin
+                    </Plugin-Class>
+                </manifestEntries>
+            </archive>
+        </configuration>
+    </plugin>
+
+    <!-- Step 2: assemble final plugin JAR with lib/ structure -->
+    <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-assembly-plugin</artifactId>
+        <version>3.6.0</version>
+        <executions>
+            <execution>
+                <id>make-plugin-jar</id>
+                <phase>package</phase>
+                <goals>
+                    <goal>single</goal>
+                </goals>
+                <configuration>
+                    <finalName>muc-message-delete</finalName>
+                    <appendAssemblyId>false</appendAssemblyId>
+                    <descriptors>
+                        <descriptor>src/assembly/plugin.xml</descriptor>
+                    </descriptors>
+                </configuration>
+            </execution>
+        </executions>
+    </plugin>
+
+    <!-- Disable Spring Boot repackage -->
+    <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <configuration>
+            <skip>true</skip>
+        </configuration>
+    </plugin>
+
+</plugins>
+</build>
