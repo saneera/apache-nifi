@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plugin>
+    <class>com.babcock.openfire.plugin.rest.MucMessageDeletePlugin</class>
+    <name>MUC Message Delete Plugin</name>
+    <description>
+        REST endpoint to delete a MUC message from ofMessageArchive by messageId.
+        DELETE /plugins/muc-message-delete/messages/{messageId}
+        Authorization: plugin.restapi.secret
+    </description>
+    <author>Babcock</author>
+    <version>1.0.0</version>
+    <date>18/06/2026</date>
+    <minServerVersion>5.0.0</minServerVersion>
+</plugin>

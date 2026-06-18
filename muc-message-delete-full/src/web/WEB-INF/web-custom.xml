@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<web-app xmlns="http://xmlns.jcp.org/xml/ns/javaee"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://xmlns.jcp.org/xml/ns/javaee
+         http://xmlns.jcp.org/xml/ns/javaee/web-app_3_1.xsd"
+         version="3.1">
+
+    <!--
+        JerseyWrapper extends org.glassfish.jersey.servlet.ServletContainer.
+        Openfire's PluginServlet loads it from the plugin's lib/ classloader,
+        so it uses the Jersey bundled inside this plugin — not Openfire's.
+    -->
+    <servlet>
+        <servlet-name>JerseyWrapper</servlet-name>
+        <servlet-class>
+            com.babcock.openfire.plugin.rest.service.JerseyWrapper
+        </servlet-class>
+        <load-on-startup>1</load-on-startup>
+    </servlet>
+
+    <!--
+        URL pattern:  /plugins/muc-message-delete/messages/{messageId}
+        The @Path("/{messageId}") on DeleteMessageService handles the rest.
+    -->
+    <servlet-mapping>
+        <servlet-name>JerseyWrapper</servlet-name>
+        <url-pattern>/messages/*</url-pattern>
+    </servlet-mapping>
+
+</web-app>
