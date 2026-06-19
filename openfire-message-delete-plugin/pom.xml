@@ -351,3 +351,47 @@
 </servlet-mapping>
 </web-app>
 </web-app>
+
+
+===========
+
+<dependencies>
+<!-- Openfire — provided at runtime -->
+<dependency>
+    <groupId>org.igniterealtime.openfire</groupId>
+    <artifactId>xmppserver</artifactId>
+    <version>5.0.4</version>
+    <scope>provided</scope>
+</dependency>
+
+<!-- Jersey — provided by Openfire at runtime, needed for compilation only -->
+<dependency>
+    <groupId>org.glassfish.jersey.core</groupId>
+    <artifactId>jersey-server</artifactId>
+    <version>2.45</version>
+    <scope>provided</scope>   <!-- ← provided NOT compile -->
+</dependency>
+
+<dependency>
+    <groupId>org.glassfish.jersey.containers</groupId>
+    <artifactId>jersey-container-servlet-core</artifactId>
+    <version>2.45</version>
+    <scope>provided</scope>   <!-- ← provided NOT compile -->
+</dependency>
+
+<!-- JAX-RS API — provided by Openfire -->
+<dependency>
+    <groupId>javax.ws.rs</groupId>
+    <artifactId>javax.ws.rs-api</artifactId>
+    <version>2.1.1</version>
+    <scope>provided</scope>
+</dependency>
+
+<!-- Servlet API — provided by Openfire/Jetty -->
+<dependency>
+    <groupId>javax.servlet</groupId>
+    <artifactId>javax.servlet-api</artifactId>
+    <version>4.0.1</version>
+    <scope>provided</scope>
+</dependency>
+</dependencies>
