@@ -1,9 +1,9 @@
-# MUC Message Delete Plugin for Openfire 5.x
+# MUC REST API Plugin for Openfire 5.x
 
-Openfire plugin that exposes a REST endpoint to permanently delete a MUC
-message from `ofMessageArchive` by its `messageId`.
+REST API plugin for MUC operations. Currently exposes a DELETE endpoint
+to permanently remove a MUC message from `ofMessageArchive`.
 
-Follows the same build pattern and Jersey 2.x approach as the official
+Built using the **same parent POM and Jersey setup** as the official
 [openfire-restAPI-plugin](https://github.com/igniterealtime/openfire-restAPI-plugin).
 
 ---
@@ -11,25 +11,23 @@ Follows the same build pattern and Jersey 2.x approach as the official
 ## Project Structure
 
 ```
-muc-message-delete/
-├── plugin.xml                                    ← Openfire plugin descriptor (at root)
-├── pom.xml                                       ← Standalone Maven build
+muc-rest-api/
+├── plugin.xml                                        ← Openfire plugin descriptor
+├── pom.xml                                           ← Uses Openfire plugins parent
 ├── README.md
-├── src/
-│   ├── assembly/
-│   │   └── plugin-assembly.xml                   ← Controls JAR structure
-│   ├── java/com/babcock/openfire/plugin/rest/
-│   │   ├── MucMessageDeletePlugin.java           ← Plugin entry point
-│   │   ├── ServiceException.java                 ← HTTP-aware exception
-│   │   ├── controller/
-│   │   │   └── DeleteMessageController.java      ← DB logic
-│   │   └── service/
-│   │       ├── JerseyWrapper.java                ← Jersey 2.x bridge servlet
-│   │       ├── AuthFilter.java                   ← Authorization header filter
-│   │       └── DeleteMessageService.java         ← JAX-RS @DELETE endpoint
-│   └── web/
-│       └── WEB-INF/
-│           └── web-custom.xml                    ← Servlet registration
+└── src/
+    ├── java/com/babcock/openfire/plugin/rest/
+    │   ├── MucRestApiPlugin.java                     ← Plugin entry point
+    │   ├── ServiceException.java                     ← HTTP-aware exception
+    │   ├── controller/
+    │   │   └── DeleteMessageController.java          ← DB logic
+    │   └── service/
+    │       ├── JerseyWrapper.java                    ← Jersey 2.x bridge
+    │       ├── AuthFilter.java                       ← Authorization header filter
+    │       └── DeleteMessageService.java             ← @DELETE endpoint
+    └── web/
+        └── WEB-INF/
+            └── web-custom.xml                        ← Servlet registration
 ```
 
 ---
@@ -38,8 +36,7 @@ muc-message-delete/
 
 - Java 11+
 - Maven 3.8+
-- Access to Maven Central (for Jersey/Jackson)
-- Access to igniterealtime Archiva (for Openfire xmppserver artifact)
+- Access to Ignite Realtime Archiva repository (for Openfire parent POM)
 
 ---
 
@@ -49,151 +46,84 @@ muc-message-delete/
 mvn clean package -DskipTests
 ```
 
-Output files in `target/`:
+Output: `target/muc-rest-api-openfire-plugin-assembly.jar`
 
+Rename for Openfire:
+```bash
+cp target/muc-rest-api-openfire-plugin-assembly.jar \
+   target/muc-rest-api.jar
 ```
-target/
-├── muc-message-delete.jar                        ← THE plugin JAR (use this)
-└── lib/
-    └── muc-message-delete.jar                    ← classes only (intermediate)
-```
-
-> **Note:** The output is `muc-message-delete.jar` (not `...-openfire-plugin-assembly.jar`)
-> because `appendAssemblyId=false` is set in the assembly plugin config.
 
 ---
 
 ## Install
 
-### Option A — Copy to running Kubernetes pod (dev/test)
+### Dev — copy to running pod
 
 ```bash
-kubectl cp target/muc-message-delete.jar \
+kubectl cp target/muc-rest-api.jar \
     -n openfire \
-    openfire/<pod-name>:/usr/local/openfire/plugins/muc-message-delete.jar
+    openfire/<pod>:/usr/local/openfire/plugins/muc-rest-api.jar
 ```
 
-Openfire auto-deploys — check logs:
-```bash
-kubectl -n openfire logs -f deployment/openfire | grep muc-message-delete
-```
-
-Expected log:
-```
-MucMessageDeletePlugin initialised. REST endpoint: DELETE /plugins/muc-message-delete/messages/{messageId}
-```
-
-### Option B — Bake into Docker image (production)
+### Production — Docker image
 
 ```dockerfile
-COPY plugins/muc-message-delete.jar /usr/local/openfire/plugins_org/muc-message-delete.jar
+COPY plugins/muc-rest-api.jar /usr/local/openfire/plugins_org/muc-rest-api.jar
 ```
 
 ---
 
 ## Authentication
 
-Uses the same secret as the REST API plugin — stored in `ofProperty`:
-
-| Property | Value |
-|----------|-------|
-| `plugin.restapi.secret` | your secret string |
-
-Set via Openfire Admin Console → Server Settings → REST API → Secret Key.
-
-Or directly via SQL:
-```sql
-INSERT IGNORE INTO ofProperty (name, propValue)
-VALUES ('plugin.restapi.secret', 'yourSecret');
-```
+Uses the same secret as the REST API plugin (`plugin.restapi.secret` in ofProperty).
 
 ---
 
-## API
+## Endpoints
 
-### Delete a message
+### Delete message
 
 ```
-DELETE http://{host}:{port}/plugins/muc-message-delete/messages/{messageId}
+DELETE http://{host}:9090/plugins/muc-rest-api/messages/{messageId}
 Authorization: yourSecret
 ```
 
-#### Path parameter
+**Success (200):**
+```json
+{"success":true,"messageId":"C5RT6-18","room":"room1@conference.example.com"}
+```
 
-| Param | Description |
-|-------|-------------|
-| `messageId` | The Openfire-assigned stanza ID stored in `ofMessageArchive.messageID` |
+**Not found (404):**
+```json
+{"error":"Message not found: C5RT6-18","messageId":"C5RT6-18"}
+```
 
-#### Responses
-
-| Status | Body |
-|--------|------|
-| `200 OK` | `{"success":true,"messageId":"...","room":"room1@conference.example.com"}` |
-| `401 Unauthorized` | `{"error":"Unauthorized — ..."}` |
-| `404 Not Found` | `{"error":"Message not found in ofMessageArchive: ..."}` |
-| `500 Server Error` | `{"error":"Internal server error: ..."}` |
+**Unauthorized (401):**
+```json
+{"error":"Unauthorized"}
+```
 
 ---
 
-## Example — call from Spring Boot service
+## curl
+
+```bash
+curl -X DELETE \
+  "http://localhost:9090/plugins/muc-rest-api/messages/C5RT6-18" \
+  -H "Authorization: yourSecret" \
+  -v
+```
+
+---
+
+## Adding more endpoints
+
+Register in `JerseyWrapper.java`:
 
 ```java
-@Service
-public class MucMessageDeleteClient {
-
-    @Value("${openfire.host}")
-    private String host;
-
-    @Value("${openfire.admin.port:9090}")
-    private int port;
-
-    @Value("${openfire.rest.secret}")
-    private String secret;
-
-    private final RestTemplate restTemplate = new RestTemplate();
-
-    public void deleteMessage(String messageId) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.set("Authorization", secret);
-
-        ResponseEntity<String> response = restTemplate.exchange(
-            "http://{host}:{port}/plugins/muc-message-delete/messages/{messageId}",
-            HttpMethod.DELETE,
-            new HttpEntity<>(headers),
-            String.class,
-            host, port, messageId
-        );
-
-        log.info("Delete response: {}", response.getBody());
-    }
-}
+config.register(DeleteMessageService.class);
+config.register(YourNewService.class);   // ← add here
 ```
 
----
-
-## How it works
-
-```
-Spring Boot calls DELETE /plugins/muc-message-delete/messages/{messageId}
-        ↓
-Openfire PluginServlet routes to JerseyWrapper (registered in web-custom.xml)
-        ↓
-AuthFilter validates Authorization header against plugin.restapi.secret
-        ↓
-DeleteMessageService.deleteMessage() called
-        ↓
-DeleteMessageController queries ofMessageArchive — checks message exists
-        ↓
-DELETE FROM ofMessageArchive WHERE messageID = ?
-        ↓
-Returns 200 OK with success JSON
-```
-
----
-
-## Why this approach
-
-Openfire does not update `ofMessageArchive` when a retraction stanza is
-received — the original message row remains. This plugin provides a
-direct DELETE to ensure the message is truly gone from the archive and
-will not appear in history replay or MAM queries.
+Add servlet mapping in `web-custom.xml` if needed.

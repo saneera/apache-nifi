@@ -5,21 +5,15 @@
          http://xmlns.jcp.org/xml/ns/javaee/web-app_3_1.xsd"
          version="3.1">
 
-    <!--
-        JerseyWrapper extends org.glassfish.jersey.servlet.ServletContainer.
-        Uses jersey-container-jetty-servlet which integrates with Openfire's
-        embedded Jetty without the GenericServlet conflict.
-    -->
     <servlet>
-        <servlet-name>JerseyWrapper</servlet-name>
+        <servlet-name>MucMessageServlet</servlet-name>
         <servlet-class>
-            com.babcock.openfire.plugin.rest.service.JerseyWrapper
+            com.babcock.openfire.plugin.rest.MucMessageServlet
         </servlet-class>
-        <load-on-startup>1</load-on-startup>
     </servlet>
 
     <servlet-mapping>
-        <servlet-name>JerseyWrapper</servlet-name>
+        <servlet-name>MucMessageServlet</servlet-name>
         <url-pattern>/messages/*</url-pattern>
     </servlet-mapping>
 

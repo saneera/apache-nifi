@@ -2610,6 +2610,30 @@
         <option name="homepage" value="https://kaui-shadcn-registry.vercel.app" />
         <option name="urlTemplate" value="https://kaui-shadcn-registry.vercel.app/r/{name}.json" />
       </RegistryConfigState>
+      <RegistryConfigState>
+        <option name="id" value="central-shadcn-ui-blocks" />
+        <option name="name" value="Shadcn-ui-blocks" />
+        <option name="namespace" value="@shadcn-ui-blocks" />
+        <option name="baseUrl" value="https://www.shadcn-ui-blocks.com/r" />
+        <option name="stylePath" value="/{name}.json" />
+        <option name="type" value="community" />
+        <option name="enabled" value="false" />
+        <option name="description" value="Shadcn blocks across standard collections and handcrafted premium collections, plus a beautiful templates. Start free, then unlock more with Pro." />
+        <option name="homepage" value="https://www.shadcn-ui-blocks.com" />
+        <option name="urlTemplate" value="https://www.shadcn-ui-blocks.com/r/{name}.json" />
+      </RegistryConfigState>
+      <RegistryConfigState>
+        <option name="id" value="central-uui" />
+        <option name="name" value="Uui" />
+        <option name="namespace" value="@uui" />
+        <option name="baseUrl" value="https://uui.app/r" />
+        <option name="stylePath" value="/{name}.json" />
+        <option name="type" value="community" />
+        <option name="enabled" value="false" />
+        <option name="description" value="Inspiration for UI Interfaces. Discover UI ideas, micro-interactions, and components drawn from real products." />
+        <option name="homepage" value="https://uui.app" />
+        <option name="urlTemplate" value="https://uui.app/r/{name}.json" />
+      </RegistryConfigState>
     </registryConfigs>
   </component>
 </project>

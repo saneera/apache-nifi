@@ -4,10 +4,8 @@ import javax.ws.rs.core.Response;
 
 /**
  * Exception thrown by the controller layer.
- *
- * Carries an HTTP {@link Response.Status} so the service layer can
- * return the correct HTTP response without coupling the controller
- * to JAX-RS specifics.
+ * Carries an HTTP status so the service layer can return
+ * the correct response without coupling controller to JAX-RS.
  */
 public class ServiceException extends Exception {
 

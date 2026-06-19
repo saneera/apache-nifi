@@ -14,8 +14,5 @@ public class MessageDeleteApplication extends ResourceConfig {
     public MessageDeleteApplication() {
         // Register the REST resource
         register(MessageDeleteResource.class);
-
-        // Enable JSON support
-        register(org.glassfish.jersey.jackson.JacksonFeature.class);
     }
 }

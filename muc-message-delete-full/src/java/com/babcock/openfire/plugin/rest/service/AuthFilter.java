@@ -14,19 +14,12 @@ import javax.ws.rs.core.Response;
 import java.io.IOException;
 
 /**
- * JAX-RS container request filter that validates the Authorization header.
+ * JAX-RS request filter — validates Authorization header before every request.
  *
- * Runs before every request hits the resource class.
- * Returns 401 Unauthorized if the secret does not match or is absent.
+ * Reads secret from ofProperty: plugin.restapi.secret
+ * Same property used by the official REST API plugin.
  *
- * Secret is read from Openfire's ofProperty table:
- *   name  = plugin.restapi.secret
- *   value = yourSecret
- *
- * This is the same property used by the official REST API plugin, so
- * no separate configuration is needed if that plugin is also installed.
- *
- * Header format accepted:
+ * Header format:
  *   Authorization: yourSecret
  *   Authorization: Bearer yourSecret
  */
@@ -37,45 +30,30 @@ public class AuthFilter implements ContainerRequestFilter {
     private static final Logger log =
         LoggerFactory.getLogger(AuthFilter.class);
 
-    private static final String AUTH_PROPERTY = "plugin.restapi.secret";
-
     @Override
     public void filter(ContainerRequestContext ctx) throws IOException {
-        String authHeader = ctx.getHeaderString("Authorization");
-
-        if (!isAuthorized(authHeader)) {
-            log.warn("Unauthorized request rejected by muc-message-delete plugin.");
+        if (!isAuthorized(ctx.getHeaderString("Authorization"))) {
+            log.warn("Unauthorized request to muc-rest-api plugin.");
             ctx.abortWith(
                 Response.status(Response.Status.UNAUTHORIZED)
                     .type(MediaType.APPLICATION_JSON)
-                    .entity("{\"error\": \"Unauthorized — " +
-                        "provide Authorization header matching " +
-                        AUTH_PROPERTY + "\"}")
+                    .entity("{\"error\":\"Unauthorized\"}")
                     .build()
             );
         }
     }
 
-    /**
-     * Validates the Authorization header value against the stored secret.
-     *
-     * @param authHeader raw value of the Authorization header
-     * @return true if valid, false otherwise
-     */
     private boolean isAuthorized(String authHeader) {
-        if (authHeader == null || authHeader.isBlank()) {
-            return false;
-        }
+        if (authHeader == null || authHeader.isBlank()) return false;
 
-        // Accept both "Bearer <token>" and raw "<token>"
         String token = authHeader.startsWith("Bearer ")
             ? authHeader.substring(7).trim()
             : authHeader.trim();
 
-        String secret = JiveGlobals.getProperty(AUTH_PROPERTY, "");
+        String secret = JiveGlobals.getProperty("plugin.restapi.secret", "");
 
         if (secret.isBlank()) {
-            log.warn("{} is not set in ofProperty — all requests denied.", AUTH_PROPERTY);
+            log.warn("plugin.restapi.secret not set — denying all requests.");
             return false;
         }
 

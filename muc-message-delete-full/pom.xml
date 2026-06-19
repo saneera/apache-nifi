@@ -6,125 +6,104 @@
 
     <modelVersion>4.0.0</modelVersion>
 
+    <!--
+        Uses the same parent POM as the official REST API plugin.
+        This parent provides:
+          - Correct maven-assembly-plugin config (builds lib/, web/, plugin.xml structure)
+          - xmppserver as provided dependency
+          - Correct compiler settings
+          - Correct output filename
+    -->
+    <parent>
+        <artifactId>plugins</artifactId>
+        <groupId>org.igniterealtime.openfire</groupId>
+        <version>5.0.0</version>
+    </parent>
+
     <groupId>com.babcock.openfire</groupId>
-    <artifactId>muc-message-delete</artifactId>
+    <artifactId>muc-rest-api</artifactId>
     <version>1.0.0</version>
-    <packaging>jar</packaging>
-    <name>MUC Message Delete Plugin</name>
+    <name>MUC REST API Plugin</name>
+    <description>
+        REST API for MUC operations — delete, query and manage MUC messages.
+        DELETE /plugins/muc-rest-api/messages/{messageId}
+    </description>
 
     <properties>
-        <maven.compiler.source>11</maven.compiler.source>
-        <maven.compiler.target>11</maven.compiler.target>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <openfire.version>5.0.4</openfire.version>
-        <jersey.version>2.43</jersey.version>
+        <jersey.version>2.45</jersey.version>
     </properties>
 
     <build>
+        <!-- Same source directory as REST API plugin -->
         <sourceDirectory>src/java</sourceDirectory>
         <plugins>
-
-            <!-- Compiler -->
+            <!-- Parent handles all assembly config -->
             <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.13.0</version>
-                <configuration>
-                    <source>11</source>
-                    <target>11</target>
-                </configuration>
-            </plugin>
-
-            <!-- Step 1: Build classes JAR into target/lib/ -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-jar-plugin</artifactId>
-                <version>3.4.1</version>
-                <configuration>
-                    <outputDirectory>${project.build.directory}/lib</outputDirectory>
-                    <finalName>muc-message-delete</finalName>
-                    <archive>
-                        <manifestEntries>
-                            <Plugin-Class>com.babcock.openfire.plugin.rest.MucMessageDeletePlugin</Plugin-Class>
-                        </manifestEntries>
-                    </archive>
-                </configuration>
-            </plugin>
-
-            <!-- Step 2: Assembly — final Openfire plugin JAR -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-assembly-plugin</artifactId>
-                <version>3.7.1</version>
-                <executions>
-                    <execution>
-                        <id>make-plugin-jar</id>
-                        <phase>package</phase>
-                        <goals><goal>single</goal></goals>
-                        <configuration>
-                            <finalName>muc-message-delete</finalName>
-                            <appendAssemblyId>false</appendAssemblyId>
-                            <descriptors>
-                                <descriptor>src/assembly/plugin-assembly.xml</descriptor>
-                            </descriptors>
-                        </configuration>
-                    </execution>
-                </executions>
             </plugin>
-
         </plugins>
     </build>
 
     <dependencies>
 
-        <!-- Openfire — provided at runtime by server -->
-        <dependency>
-            <groupId>org.igniterealtime.openfire</groupId>
-            <artifactId>xmppserver</artifactId>
-            <version>${openfire.version}</version>
-            <scope>provided</scope>
-        </dependency>
-
-        <!-- Servlet API — provided by Openfire/Jetty -->
-        <dependency>
-            <groupId>javax.servlet</groupId>
-            <artifactId>javax.servlet-api</artifactId>
-            <version>4.0.1</version>
-            <scope>provided</scope>
-        </dependency>
-
-        <!-- JAX-RS API -->
-        <dependency>
-            <groupId>javax.ws.rs</groupId>
-            <artifactId>javax.ws.rs-api</artifactId>
-            <version>2.1.1</version>
-            <scope>compile</scope>
-        </dependency>
-
-        <!-- Jersey 2.x — bundled in lib/ (compile scope) -->
-        <dependency>
-            <groupId>org.glassfish.jersey.core</groupId>
-            <artifactId>jersey-server</artifactId>
-            <version>${jersey.version}</version>
-            <scope>compile</scope>
-        </dependency>
+        <!--
+            Jersey Jetty HTTP container — same as REST API plugin.
+            Uses jersey-container-jetty-http (NOT servlet-core) because
+            Openfire runs on Jetty. This avoids the GenericServlet conflict
+            that jersey-container-servlet-core causes on Openfire 5.x.
+        -->
         <dependency>
             <groupId>org.glassfish.jersey.containers</groupId>
-            <artifactId>jersey-container-servlet-core</artifactId>
+            <artifactId>jersey-container-jetty-http</artifactId>
             <version>${jersey.version}</version>
-            <scope>compile</scope>
+            <exclusions>
+                <!-- Exclude Jetty — provided by Openfire -->
+                <exclusion>
+                    <groupId>org.eclipse.jetty</groupId>
+                    <artifactId>jetty-server</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.eclipse.jetty</groupId>
+                    <artifactId>jetty-util</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.eclipse.jetty</groupId>
+                    <artifactId>jetty-continuation</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
+
+        <dependency>
+            <groupId>org.glassfish.jersey.containers</groupId>
+            <artifactId>jersey-container-jetty-servlet</artifactId>
+            <version>${jersey.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.eclipse.jetty</groupId>
+                    <artifactId>jetty-webapp</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <!-- HK2 dependency injection — required by Jersey 2.x -->
         <dependency>
             <groupId>org.glassfish.jersey.inject</groupId>
             <artifactId>jersey-hk2</artifactId>
             <version>${jersey.version}</version>
-            <scope>compile</scope>
         </dependency>
+
+        <!-- JSON support via Jackson -->
         <dependency>
             <groupId>org.glassfish.jersey.media</groupId>
             <artifactId>jersey-media-json-jackson</artifactId>
             <version>${jersey.version}</version>
-            <scope>compile</scope>
+        </dependency>
+
+        <!-- JAXB support -->
+        <dependency>
+            <groupId>org.glassfish.jersey.media</groupId>
+            <artifactId>jersey-media-jaxb</artifactId>
+            <version>${jersey.version}</version>
         </dependency>
 
     </dependencies>
@@ -136,5 +115,13 @@
             <url>https://igniterealtime.org/archiva/repository/maven/</url>
         </repository>
     </repositories>
+
+    <pluginRepositories>
+        <pluginRepository>
+            <id>igniterealtime</id>
+            <name>Ignite Realtime Repository</name>
+            <url>https://igniterealtime.org/archiva/repository/maven/</url>
+        </pluginRepository>
+    </pluginRepositories>
 
 </project>
