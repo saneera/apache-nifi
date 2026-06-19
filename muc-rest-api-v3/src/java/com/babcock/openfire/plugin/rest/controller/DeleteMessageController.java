@@ -23,9 +23,9 @@ public class DeleteMessageController {
 
     private DeleteMessageController() {}
 
-    private static final String CHECK_SQL ="SELECT messageID, toJID FROM ofMessageArchive WHERE messageID = ?";
+    private static final String CHECK_SQL ="SELECT messageID, roomID FROM ofMucConversationLog WHERE messageID = ?";
 
-    private static final String DELETE_SQL = "DELETE FROM ofMessageArchive WHERE messageID = ?";
+    private static final String DELETE_SQL = "DELETE FROM ofMucConversationLog WHERE messageID = ?";
 
     /**
      * Deletes a message from ofMessageArchive.
@@ -57,7 +57,7 @@ public class DeleteMessageController {
                 throw new ServiceException("Message not found: " + messageId, Response.Status.NOT_FOUND);
             }
 
-            String roomJid = rs.getString("toJID");
+            String roomJid = rs.getString("roomID");
 
             DbConnectionManager.closeResultSet(rs);
             DbConnectionManager.closeStatement(checkStmt);
