@@ -14,11 +14,9 @@ import java.util.List;
 
 public class ListMessagesController {
 
-    private static final Logger log =
-            LoggerFactory.getLogger(ListMessagesController.class);
+    private static final Logger log = LoggerFactory.getLogger(ListMessagesController.class);
 
-    private static final ListMessagesController INSTANCE =
-            new ListMessagesController();
+    private static final ListMessagesController INSTANCE = new ListMessagesController();
 
     public static ListMessagesController getInstance() {
         return INSTANCE;
@@ -55,15 +53,11 @@ public class ListMessagesController {
             throws ServiceException {
 
         if (roomName == null || roomName.isBlank()) {
-            throw new ServiceException(
-                    "roomName must not be blank",
-                    Response.Status.BAD_REQUEST);
+            throw new ServiceException("roomName must not be blank", Response.Status.BAD_REQUEST);
         }
 
         if ((limit != null && limit < 0) || (offset != null && offset < 0)) {
-            throw new ServiceException(
-                    "limit and offset must not be negative",
-                    Response.Status.BAD_REQUEST);
+            throw new ServiceException("limit and offset must not be negative", Response.Status.BAD_REQUEST);
         }
 
         Connection        conn = null;
@@ -99,16 +93,13 @@ public class ListMessagesController {
                 ));
             }
 
-            log.info("Listed {} message(s) for room [{}] (limit={}, offset={})",
-                    messages.size(), roomName, limit, offset);
+            log.info("Listed {} message(s) for room [{}] (limit={}, offset={})", messages.size(), roomName, limit, offset);
 
             return messages;
 
         } catch (Exception e) {
             log.error("Error listing messages for room [{}]", roomName, e);
-            throw new ServiceException(
-                    "Internal error: " + e.getMessage(),
-                    Response.Status.INTERNAL_SERVER_ERROR);
+            throw new ServiceException("Internal error: " + e.getMessage(), Response.Status.INTERNAL_SERVER_ERROR);
         } finally {
             DbConnectionManager.closeConnection(rs, stmt, conn);
         }

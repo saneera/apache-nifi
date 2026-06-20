@@ -23,9 +23,9 @@ public class DeleteMessageController {
 
     private DeleteMessageController() {}
 
-    private static final String CHECK_SQL ="SELECT messageID, roomID FROM ofMucConversationLog WHERE messageID = ?";
+    private static final String CHECK_SQL ="SELECT messageID, roomID FROM ofMucConversationLog WHERE stanza = ?";
 
-    private static final String DELETE_SQL = "DELETE FROM ofMucConversationLog WHERE messageID = ?";
+    private static final String DELETE_SQL = "DELETE FROM ofMucConversationLog WHERE stanza = ?";
 
     /**
      * Deletes a message from ofMessageArchive.
