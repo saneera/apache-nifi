@@ -10,8 +10,11 @@ public class JerseyWrapper extends ResourceConfig {
 
 
     public JerseyWrapper() {
-        register(DeleteMessageService.class);
-        // register(AuthFilter.class); // re-enable once 302 resolved
+        registerClasses(
+                DeleteMessageService.class,
+                ListMessagesService.class
+        );
+        // register(AuthFilter.class);
         log.debug("JerseyWrapper: ResourceConfig built.");
     }
 }
