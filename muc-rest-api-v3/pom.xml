@@ -90,17 +90,11 @@
                 <version>3.13.0</version>
             </plugin>
 
-            <!-- Disable the default thin jar output -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-jar-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>default-jar</id>
-                        <phase>none</phase>
-                    </execution>
-                </executions>
-            </plugin>
+            <!-- default-jar now runs normally, producing target/muc-rest-api.jar
+                 containing our own compiled classes. This jar will be picked
+                 up by the assembly descriptor below and placed into lib/
+                 alongside all dependency jars, matching how restAPI.jar and
+                 other Openfire plugins are laid out. -->
 
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
