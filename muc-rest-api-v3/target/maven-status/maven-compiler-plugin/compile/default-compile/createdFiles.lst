@@ -1,0 +1,9 @@
+com/babcock/openfire/plugin/rest/controller/ListMessagesController$MessageRow.class
+com/babcock/openfire/plugin/rest/service/AuthFilter.class
+com/babcock/openfire/plugin/rest/service/DeleteMessageService.class
+com/babcock/openfire/plugin/rest/controller/ListMessagesController.class
+com/babcock/openfire/plugin/rest/MucRestApiPlugin.class
+com/babcock/openfire/plugin/rest/service/ListMessagesService.class
+com/babcock/openfire/plugin/rest/service/JerseyWrapper.class
+com/babcock/openfire/plugin/rest/ServiceException.class
+com/babcock/openfire/plugin/rest/controller/DeleteMessageController.class

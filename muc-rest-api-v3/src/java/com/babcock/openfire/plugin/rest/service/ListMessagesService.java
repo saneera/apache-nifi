@@ -26,10 +26,7 @@ public class ListMessagesService {
             ListMessagesController.getInstance();
 
     @GET
-    public Response listMessages(
-            @PathParam("roomName") String roomName,
-            @QueryParam("limit") Integer limit,
-            @QueryParam("offset") Integer offset) {
+    public Response listMessages(@PathParam("roomName") String roomName, @QueryParam("limit") Integer limit, @QueryParam("offset") Integer offset) {
 
         log.info("GET /room/{}?limit={}&offset={}", roomName, limit, offset);
 
