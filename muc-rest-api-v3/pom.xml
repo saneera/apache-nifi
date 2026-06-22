@@ -66,7 +66,7 @@
 
     <build>
         <sourceDirectory>src/java</sourceDirectory>
-        <finalName>muc-rest-api-classes</finalName>
+        <finalName>muc-rest-api</finalName>
         <plugins>
 
             <plugin>
@@ -95,30 +95,24 @@
 
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-antrun-plugin</artifactId>
-                <version>3.1.0</version>
+                <artifactId>maven-jar-plugin</artifactId>
                 <executions>
+                    <!-- Disable default jar -->
                     <execution>
-                        <id>copy-plugin-jar-to-lib</id>
-                        <phase>package</phase>
-                        <goals><goal>run</goal></goals>
-                        <configuration>
-                            <target>
-                                <copy file="${project.build.directory}/muc-rest-api-classes.jar"
-                                      tofile="${project.build.directory}/lib/muc-rest-api.jar"/>
-                            </target>
-                        </configuration>
+                        <id>default-jar</id>
+                        <phase>none</phase>
                     </execution>
+                    <!-- Build plugin jar with classes + plugin.xml + lib/ -->
                     <execution>
-                        <id>rename-final-jar</id>
-                        <phase>verify</phase>
-                        <goals><goal>run</goal></goals>
+                        <id>plugin-jar</id>
+                        <phase>package</phase>
+                        <goals><goal>jar</goal></goals>
                         <configuration>
-                            <target>
-                                <move file="${project.build.directory}/muc-rest-api-dist.jar"
-                                      tofile="${project.build.directory}/muc-rest-api.jar"
-                                      overwrite="true"/>
-                            </target>
+                            <finalName>muc-rest-api</finalName>
+                            <classesDirectory>${project.build.outputDirectory}</classesDirectory>
+                            <includes>
+                                <include>**/*.class</include>
+                            </includes>
                         </configuration>
                     </execution>
                 </executions>
@@ -126,19 +120,30 @@
 
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-assembly-plugin</artifactId>
-                <version>3.7.1</version>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
                 <executions>
                     <execution>
-                        <id>make-plugin-jar</id>
+                        <id>build-plugin-jar</id>
                         <phase>package</phase>
-                        <goals><goal>single</goal></goals>
+                        <goals><goal>run</goal></goals>
                         <configuration>
-                            <finalName>muc-rest-api-dist</finalName>
-                            <appendAssemblyId>false</appendAssemblyId>
-                            <descriptors>
-                                <descriptor>src/assembly/plugin.xml</descriptor>
-                            </descriptors>
+                            <target>
+                                <!-- copy classes jar into lib/ -->
+                                <copy file="${project.build.directory}/muc-rest-api.jar"
+                                      tofile="${project.build.directory}/lib/muc-rest-api.jar"
+                                      overwrite="true"/>
+                                <!-- rebuild the jar with plugin.xml + lib/ -->
+                                <jar destfile="${project.build.directory}/muc-rest-api.jar">
+                                    <zipfileset file="${project.basedir}/plugin.xml"
+                                                fullpath="plugin.xml"/>
+                                    <mappedresources>
+                                        <fileset dir="${project.build.directory}/lib"
+                                                 includes="*.jar"/>
+                                        <globmapper from="*" to="lib/*"/>
+                                    </mappedresources>
+                                </jar>
+                            </target>
                         </configuration>
                     </execution>
                 </executions>
