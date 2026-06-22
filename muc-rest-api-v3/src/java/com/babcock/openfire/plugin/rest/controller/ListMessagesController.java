@@ -14,15 +14,20 @@ import java.util.List;
 
 public class ListMessagesController {
 
-    private static final Logger log = LoggerFactory.getLogger(ListMessagesController.class);
+    private static final Logger log =
+            LoggerFactory.getLogger(ListMessagesController.class);
 
-    private static final ListMessagesController INSTANCE = new ListMessagesController();
+    private static final ListMessagesController INSTANCE =
+            new ListMessagesController();
 
     public static ListMessagesController getInstance() {
         return INSTANCE;
     }
 
     private ListMessagesController() {}
+
+    private static final String CHECK_ROOM_SQL =
+            "SELECT roomID FROM ofMucRoom WHERE name = ?";
 
     private static final String SELECT_ALL_SQL =
             "SELECT l.messageID, l.logTime, l.sender, l.nickname, l.subject, l.body " +
@@ -53,22 +58,40 @@ public class ListMessagesController {
             throws ServiceException {
 
         if (roomName == null || roomName.isBlank()) {
-            throw new ServiceException("roomName must not be blank", Response.Status.BAD_REQUEST);
+            throw new ServiceException(
+                    "roomName must not be blank",
+                    Response.Status.BAD_REQUEST);
         }
 
         if ((limit != null && limit < 0) || (offset != null && offset < 0)) {
-            throw new ServiceException("limit and offset must not be negative", Response.Status.BAD_REQUEST);
+            throw new ServiceException(
+                    "limit and offset must not be negative",
+                    Response.Status.BAD_REQUEST);
         }
 
-        Connection        conn = null;
-        PreparedStatement stmt = null;
-        ResultSet         rs   = null;
-
-        boolean paged = limit != null;
+        Connection        conn  = null;
+        PreparedStatement stmt  = null;
+        ResultSet         rs    = null;
 
         try {
             conn = DbConnectionManager.getConnection();
 
+            // Check room exists
+            stmt = conn.prepareStatement(CHECK_ROOM_SQL);
+            stmt.setString(1, roomName);
+            rs = stmt.executeQuery();
+            if (!rs.next()) {
+                throw new ServiceException(
+                        "Room not found: " + roomName,
+                        Response.Status.NOT_FOUND);
+            }
+            DbConnectionManager.closeResultSet(rs);
+            DbConnectionManager.closeStatement(stmt);
+            rs   = null;
+            stmt = null;
+
+            // Query messages
+            boolean paged = limit != null;
             if (paged) {
                 stmt = conn.prepareStatement(SELECT_PAGED_SQL);
                 stmt.setString(1, roomName);
@@ -93,13 +116,18 @@ public class ListMessagesController {
                 ));
             }
 
-            log.info("Listed {} message(s) for room [{}] (limit={}, offset={})", messages.size(), roomName, limit, offset);
+            log.info("Listed {} message(s) for room [{}] (limit={}, offset={})",
+                    messages.size(), roomName, limit, offset);
 
             return messages;
 
+        } catch (ServiceException e) {
+            throw e;
         } catch (Exception e) {
             log.error("Error listing messages for room [{}]", roomName, e);
-            throw new ServiceException("Internal error: " + e.getMessage(), Response.Status.INTERNAL_SERVER_ERROR);
+            throw new ServiceException(
+                    "Internal error: " + e.getMessage(),
+                    Response.Status.INTERNAL_SERVER_ERROR);
         } finally {
             DbConnectionManager.closeConnection(rs, stmt, conn);
         }
@@ -107,8 +135,6 @@ public class ListMessagesController {
 
     /**
      * Parses Openfire's zero-padded 15-char epoch-millisecond date encoding.
-     * Falls back to 0 if the value is missing or malformed rather than
-     * failing the whole request over one bad row.
      */
     private long parseLogTime(String raw) {
         if (raw == null || raw.isBlank()) {
