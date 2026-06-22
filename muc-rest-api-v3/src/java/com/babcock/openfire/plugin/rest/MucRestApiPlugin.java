@@ -33,19 +33,18 @@ public class MucRestApiPlugin implements Plugin {
     @Override
     public void initializePlugin(PluginManager manager, File pluginDirectory) {
 
-        // 1. Build a dedicated Jetty context for our plugin
-        context = new ServletContextHandler(null, "/plugins/muc-rest-api", ServletContextHandler.NO_SESSIONS);
-        ServletHolder holder = new ServletHolder(new ServletContainer(new JerseyWrapper()));
+        context = new ServletContextHandler(null, "/plugins/muc-rest-api",
+                ServletContextHandler.NO_SESSIONS);
+        ServletHolder holder = new ServletHolder(
+                new ServletContainer(new JerseyWrapper()));
         context.addServlet(holder, "/messages/*");
+        context.addServlet(holder, "/room/*");
 
-        // 2. Register with Openfire's embedded Jetty (5.x API)
         HttpBindManager.getInstance().addJettyHandler(context);
-        log.info("Registered Jersey servlet at /plugins/muc-rest-api/messages/*");
+        log.info("Registered Jersey servlet at /plugins/muc-rest-api/*");
 
-        // 3. Enable wildcard excludes (5.x property key)
         JiveGlobals.setProperty(WILDCARD_PROPERTY, "true");
 
-        // 4. Persist and apply AuthCheckFilter excludes
         String existing = JiveGlobals.getProperty(EXCLUDE_PROPERTY, "");
         for (String exclude : EXCLUDES) {
             if (!existing.contains(exclude)) {

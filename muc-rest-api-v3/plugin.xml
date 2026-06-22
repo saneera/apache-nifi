@@ -2,10 +2,7 @@
 <plugin>
     <class>com.babcock.openfire.plugin.rest.MucRestApiPlugin</class>
     <name>MUC REST API Plugin</name>
-    <description>
-        REST API for MUC operations.
-        Authorization: Babcock Australia
-    </description>
+    <description>REST API for MUC operations</description>
     <author>Babcock</author>
     <version>1.0.0</version>
     <date>19/06/2026</date>

@@ -3,48 +3,20 @@
           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
           xsi:schemaLocation="http://maven.apache.org/ASSEMBLY/2.1.0
           http://maven.apache.org/xsd/assembly-2.1.0.xsd">
-
     <id>plugin</id>
-
-    <formats>
-        <format>jar</format>
-    </formats>
-
+    <formats><format>jar</format></formats>
     <includeBaseDirectory>false</includeBaseDirectory>
 
-    <dependencySets>
-        <!-- Our own compiled code (target/muc-rest-api.jar from default-jar)
-             AND all runtime dependency jars both land in lib/, matching
-             how restAPI.jar and other Openfire plugins are packaged. -->
-        <dependencySet>
-            <outputDirectory>/lib</outputDirectory>
-            <unpack>false</unpack>
-            <scope>runtime</scope>
-            <useProjectArtifact>true</useProjectArtifact>
-            <excludes>
-                <exclude>org.igniterealtime.openfire:xmppserver</exclude>
-            </excludes>
-        </dependencySet>
-    </dependencySets>
-
     <fileSets>
-        <!-- plugin.xml must sit at archive root -->
         <fileSet>
             <directory>${project.basedir}</directory>
             <outputDirectory>/</outputDirectory>
-            <includes>
-                <include>plugin.xml</include>
-            </includes>
+            <includes><include>plugin.xml</include></includes>
         </fileSet>
-
         <fileSet>
-            <directory>${project.basedir}</directory>
-            <outputDirectory>/</outputDirectory>
-            <includes>
-                <include>changelog.html</include>
-                <include>readme.html</include>
-            </includes>
+            <directory>${project.build.directory}/lib</directory>
+            <outputDirectory>/lib</outputDirectory>
+            <includes><include>*.jar</include></includes>
         </fileSet>
     </fileSets>
-
 </assembly>
