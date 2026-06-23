@@ -11,6 +11,8 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class ListMessagesController {
 
@@ -26,34 +28,27 @@ public class ListMessagesController {
 
     private ListMessagesController() {}
 
+    private static final Pattern STANZA_ID_PATTERN =
+            Pattern.compile("\\bid=\"([^\"]+)\"");
+
     private static final String CHECK_ROOM_SQL =
             "SELECT roomID FROM ofMucRoom WHERE name = ?";
 
     private static final String SELECT_ALL_SQL =
-            "SELECT l.messageID, l.logTime, l.sender, l.nickname, l.subject, l.body " +
+            "SELECT l.messageID, l.logTime, l.sender, l.nickname, l.body, l.stanza " +
                     "FROM ofMucConversationLog l " +
                     "JOIN ofMucRoom r ON r.roomID = l.roomID " +
                     "WHERE r.name = ? " +
                     "ORDER BY l.logTime ASC";
 
     private static final String SELECT_PAGED_SQL =
-            "SELECT l.messageID, l.logTime, l.sender, l.nickname, l.subject, l.body " +
+            "SELECT l.messageID, l.logTime, l.sender, l.nickname, l.body, l.stanza " +
                     "FROM ofMucConversationLog l " +
                     "JOIN ofMucRoom r ON r.roomID = l.roomID " +
                     "WHERE r.name = ? " +
                     "ORDER BY l.logTime ASC " +
                     "LIMIT ? OFFSET ?";
 
-    /**
-     * Lists conversation log entries for a MUC room, matched by room name
-     * only (ofMucRoom.name).
-     *
-     * @param roomName the unqualified room name, e.g. "myroom"
-     * @param limit    max rows to return, or null for no limit
-     * @param offset   rows to skip, or null to start from the beginning
-     * @return list of message rows as simple value objects, oldest first
-     * @throws ServiceException with HTTP status on failure
-     */
     public List<MessageRow> listMessages(String roomName, Integer limit, Integer offset)
             throws ServiceException {
 
@@ -69,9 +64,9 @@ public class ListMessagesController {
                     Response.Status.BAD_REQUEST);
         }
 
-        Connection        conn  = null;
-        PreparedStatement stmt  = null;
-        ResultSet         rs    = null;
+        Connection        conn = null;
+        PreparedStatement stmt = null;
+        ResultSet         rs   = null;
 
         try {
             conn = DbConnectionManager.getConnection();
@@ -111,8 +106,8 @@ public class ListMessagesController {
                         parseLogTime(rs.getString("logTime")),
                         rs.getString("sender"),
                         rs.getString("nickname"),
-                        rs.getString("subject"),
-                        rs.getString("body")
+                        rs.getString("body"),
+                        extractStanzaId(rs.getString("stanza"))
                 ));
             }
 
@@ -133,9 +128,14 @@ public class ListMessagesController {
         }
     }
 
-    /**
-     * Parses Openfire's zero-padded 15-char epoch-millisecond date encoding.
-     */
+    private String extractStanzaId(String stanza) {
+        if (stanza == null || stanza.isBlank()) {
+            return "";
+        }
+        Matcher m = STANZA_ID_PATTERN.matcher(stanza);
+        return m.find() ? m.group(1) : "";
+    }
+
     private long parseLogTime(String raw) {
         if (raw == null || raw.isBlank()) {
             return 0L;
@@ -148,25 +148,22 @@ public class ListMessagesController {
         }
     }
 
-    /**
-     * Plain data holder for a single conversation log row.
-     */
     public static class MessageRow {
         public final String messageId;
         public final long   sentDate;
         public final String sender;
         public final String nickname;
-        public final String subject;
         public final String body;
+        public final String stanzaId;
 
         public MessageRow(String messageId, long sentDate, String sender,
-                          String nickname, String subject, String body) {
+                          String nickname, String body, String stanzaId) {
             this.messageId = messageId;
             this.sentDate  = sentDate;
             this.sender    = sender;
             this.nickname  = nickname;
-            this.subject   = subject;
             this.body      = body;
+            this.stanzaId  = stanzaId;
         }
     }
 }

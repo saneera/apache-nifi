@@ -26,7 +26,10 @@ public class ListMessagesService {
             ListMessagesController.getInstance();
 
     @GET
-    public Response listMessages(@PathParam("roomName") String roomName, @QueryParam("limit") Integer limit, @QueryParam("offset") Integer offset) {
+    public Response listMessages(
+            @PathParam("roomName") String roomName,
+            @QueryParam("limit") Integer limit,
+            @QueryParam("offset") Integer offset) {
 
         log.info("GET /room/{}?limit={}&offset={}", roomName, limit, offset);
 
@@ -40,15 +43,13 @@ public class ListMessagesService {
 
             for (int i = 0; i < messages.size(); i++) {
                 MessageRow m = messages.get(i);
-                if (i > 0) {
-                    json.append(",");
-                }
+                if (i > 0) json.append(",");
                 json.append("{")
                         .append("\"messageId\":\"").append(escape(m.messageId)).append("\",")
+                        .append("\"stanzaId\":\"").append(escape(m.stanzaId)).append("\",")
                         .append("\"sentDate\":").append(m.sentDate).append(",")
                         .append("\"sender\":\"").append(escape(m.sender)).append("\",")
                         .append("\"nickname\":\"").append(escape(m.nickname)).append("\",")
-                        .append("\"subject\":\"").append(escape(m.subject)).append("\",")
                         .append("\"body\":\"").append(escape(m.body)).append("\"")
                         .append("}");
             }
@@ -66,13 +67,8 @@ public class ListMessagesService {
         }
     }
 
-    /**
-     * Minimal JSON string escaping for values we build manually.
-     */
     private static String escape(String value) {
-        if (value == null) {
-            return "";
-        }
+        if (value == null) return "";
         return value
                 .replace("\\", "\\\\")
                 .replace("\"", "\\\"")

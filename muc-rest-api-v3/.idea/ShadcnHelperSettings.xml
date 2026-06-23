@@ -2634,6 +2634,18 @@
         <option name="homepage" value="https://kaui-shadcn-registry.vercel.app" />
         <option name="urlTemplate" value="https://kaui-shadcn-registry.vercel.app/r/{name}.json" />
       </RegistryConfigState>
+      <RegistryConfigState>
+        <option name="id" value="central-agentcn" />
+        <option name="name" value="Agentcn" />
+        <option name="namespace" value="@agentcn" />
+        <option name="baseUrl" value="https://agentcn.vercel.app/r" />
+        <option name="stylePath" value="/{name}.json" />
+        <option name="type" value="community" />
+        <option name="enabled" value="false" />
+        <option name="description" value="Production-ready agents, made simple. Ready to use, customizable AI agent recipes. Built on Eve and Flue." />
+        <option name="homepage" value="https://agentcn.vercel.app" />
+        <option name="urlTemplate" value="https://agentcn.vercel.app/r/{name}.json" />
+      </RegistryConfigState>
     </registryConfigs>
   </component>
 </project>
