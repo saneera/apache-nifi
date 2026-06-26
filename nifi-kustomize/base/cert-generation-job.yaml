@@ -1,0 +1,187 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nifi-cert-generator
+  namespace: inspire-silrelease
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 1
+  template:
+    spec:
+      serviceAccountName: nifi-cert-sa
+      restartPolicy: Never
+
+      initContainers:
+        # ── Step 1: Check if secrets exist and whether certs are expiring ──
+        - name: check-secrets
+          image: REGISTRY_PLACEHOLDER/kubectl:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              NAMESPACE="inspire-silrelease"
+              EXPIRY_THRESHOLD_DAYS=30
+
+              check_cert_expiry() {
+                local secret_name=$1
+                echo "Checking expiry for $secret_name..."
+
+                kubectl get secret "$secret_name" \
+                  -n "$NAMESPACE" \
+                  -o jsonpath='{.data.keystore\.p12}' | base64 -d > /tmp/keystore.p12
+
+                EXPIRY=$(keytool -list -v \
+                  -keystore /tmp/keystore.p12 \
+                  -storetype PKCS12 \
+                  -storepass "$PASS" \
+                  2>/dev/null | grep "Valid until" | head -1)
+
+                echo "Expiry info: $EXPIRY"
+
+                EXPIRY_DATE=$(echo "$EXPIRY" | sed 's/.*until: //')
+                EXPIRY_EPOCH=$(date -d "$EXPIRY_DATE" +%s 2>/dev/null)
+                NOW_EPOCH=$(date +%s)
+                DAYS_LEFT=$(( (EXPIRY_EPOCH - NOW_EPOCH) / 86400 ))
+
+                echo "Days left for $secret_name: $DAYS_LEFT"
+
+                if [ "$DAYS_LEFT" -lt "$EXPIRY_THRESHOLD_DAYS" ]; then
+                  echo "WARNING: $secret_name expires in $DAYS_LEFT days — will regenerate"
+                  return 1
+                fi
+
+                echo "OK: $secret_name valid for $DAYS_LEFT days"
+                return 0
+              }
+
+              # Check existence
+              RED_EXISTS=$(kubectl get secret nifi-red-certs -n "$NAMESPACE" 2>/dev/null && echo "yes" || echo "no")
+              BLACK_EXISTS=$(kubectl get secret nifi-black-certs -n "$NAMESPACE" 2>/dev/null && echo "yes" || echo "no")
+
+              if [ "$RED_EXISTS" = "no" ] || [ "$BLACK_EXISTS" = "no" ]; then
+                echo "One or both secrets missing — will generate certs"
+                exit 0
+              fi
+
+              # Secrets exist — check expiry
+              RED_OK=0
+              BLACK_OK=0
+              check_cert_expiry "nifi-red-certs" || RED_OK=1
+              check_cert_expiry "nifi-black-certs" || BLACK_OK=1
+
+              if [ "$RED_OK" -eq 0 ] && [ "$BLACK_OK" -eq 0 ]; then
+                echo "All certs valid — skipping generation"
+                touch /output/SKIP
+              else
+                echo "Certs expired or expiring soon — regenerating"
+                kubectl delete secret nifi-red-certs -n "$NAMESPACE" --ignore-not-found
+                kubectl delete secret nifi-black-certs -n "$NAMESPACE" --ignore-not-found
+              fi
+          env:
+            - name: PASS
+              valueFrom:
+                secretKeyRef:
+                  name: nifi-cert-pass
+                  key: password
+          volumeMounts:
+            - name: tls-output
+              mountPath: /output
+
+        # ── Step 2: Generate certs using NiFi TLS Toolkit ──
+        - name: tls-toolkit
+          image: REGISTRY_PLACEHOLDER/nifi-toolkit:1.23.2
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              if [ -f /output/SKIP ]; then
+                echo "Skipping cert generation"
+                exit 0
+              fi
+
+              echo "Generating TLS certs for nodes: $NODE_A, $NODE_B"
+
+              tls-toolkit standalone \
+                -n "$NODE_A,$NODE_B" \
+                -o /output \
+                -P "$PASS" \
+                -S "$PASS" \
+                -K "$PASS" \
+                --nifiDnPrefix "CN=" \
+                --nifiDnSuffix ",OU=NIFI" \
+                -s SHA256WITHRSA \
+                -k 2048 \
+                -d 3650
+
+              echo "Cert generation complete"
+              ls -la /output/
+          env:
+            - name: PASS
+              valueFrom:
+                secretKeyRef:
+                  name: nifi-cert-pass
+                  key: password
+            - name: NODE_A
+              value: "NODE_A_PLACEHOLDER"
+            - name: NODE_B
+              value: "NODE_B_PLACEHOLDER"
+          volumeMounts:
+            - name: tls-output
+              mountPath: /output
+
+      containers:
+        # ── Step 3: Create Kubernetes secrets from generated certs ──
+        - name: secret-creator
+          image: REGISTRY_PLACEHOLDER/kubectl:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+
+              if [ -f /output/SKIP ]; then
+                echo "Secrets already valid — nothing to do"
+                exit 0
+              fi
+
+              NAMESPACE="inspire-silrelease"
+
+              # Locate generated files
+              KS_A=$(find /output -path "*red*" -name "keystore.p12" | head -1)
+              TS_A=$(find /output -path "*red*" -name "truststore.p12" | head -1)
+              KS_B=$(find /output -path "*black*" -name "keystore.p12" | head -1)
+              TS_B=$(find /output -path "*black*" -name "truststore.p12" | head -1)
+
+              # Validate
+              for f in "$KS_A" "$TS_A" "$KS_B" "$TS_B"; do
+                [ -f "$f" ] || { echo "ERROR: Missing file: $f"; exit 1; }
+              done
+
+              echo "Creating secret: nifi-red-certs"
+              kubectl create secret generic nifi-red-certs \
+                --from-file=keystore.p12="$KS_A" \
+                --from-file=truststore.p12="$TS_A" \
+                --namespace="$NAMESPACE" \
+                --dry-run=client -o yaml | kubectl apply -f -
+
+              echo "Creating secret: nifi-black-certs"
+              kubectl create secret generic nifi-black-certs \
+                --from-file=keystore.p12="$KS_B" \
+                --from-file=truststore.p12="$TS_B" \
+                --namespace="$NAMESPACE" \
+                --dry-run=client -o yaml | kubectl apply -f -
+
+              echo "Restarting NiFi StatefulSets to pick up new certs..."
+              kubectl rollout restart statefulset/nifi-red-nifi -n "$NAMESPACE" --ignore-not-found || true
+              kubectl rollout restart statefulset/nifi-black-nifi -n "$NAMESPACE" --ignore-not-found || true
+
+              echo "Done! Secrets created successfully"
+          volumeMounts:
+            - name: tls-output
+              mountPath: /output
+
+      volumes:
+        - name: tls-output
+          emptyDir: {}

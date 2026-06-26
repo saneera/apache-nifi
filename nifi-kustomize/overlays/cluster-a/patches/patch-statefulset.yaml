@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: nifi
+spec:
+  template:
+    spec:
+      containers:
+        - name: nifi
+          env:
+            - name: NIFI_WEB_HTTPS_HOST
+              value: "nifi-red-0.nifi-red-headless.inspire-silrelease.svc.cluster.local"
+            - name: NIFI_REMOTE_INPUT_HOST
+              value: "172.27.3.23"
+      volumes:
+        - name: nifi-certs
+          secret:
+            secretName: nifi-red-certs
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - cluster-a-node-1    # ← update to your actual node name

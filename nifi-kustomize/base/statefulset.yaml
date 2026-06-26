@@ -1,0 +1,123 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: nifi
+  namespace: inspire-silrelease
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  serviceName: nifi-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nifi
+  template:
+    metadata:
+      labels:
+        app: nifi
+    spec:
+      serviceAccountName: nifi-cert-sa
+
+      # ── Wait for certs secret to exist before starting ──
+      initContainers:
+        - name: wait-for-certs
+          image: REGISTRY_PLACEHOLDER/kubectl:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              echo "Waiting for NiFi cert secrets..."
+              until kubectl get secret nifi-red-certs -n inspire-silrelease 2>/dev/null && \
+                    kubectl get secret nifi-black-certs -n inspire-silrelease 2>/dev/null; do
+                echo "Secrets not ready yet, retrying in 5s..."
+                sleep 5
+              done
+              echo "Cert secrets ready — starting NiFi"
+
+      containers:
+        - name: nifi
+          image: apache/nifi:1.23.2
+          ports:
+            - containerPort: 8443
+              name: https
+            - containerPort: 10000
+              name: site-to-site
+          env:
+            - name: NIFI_WEB_HTTPS_PORT
+              value: "8443"
+            - name: NIFI_WEB_HTTPS_HOST
+              value: "0.0.0.0"
+            - name: NIFI_REMOTE_INPUT_SECURE
+              value: "true"
+            - name: NIFI_REMOTE_INPUT_SOCKET_PORT
+              value: "10000"
+            - name: NIFI_REMOTE_INPUT_HTTP_ENABLED
+              value: "true"
+          volumeMounts:
+            - name: nifi-certs
+              mountPath: /opt/nifi/certs
+              readOnly: true
+            - name: nifi-config
+              mountPath: /opt/nifi/nifi-current/conf/nifi.properties
+              subPath: nifi.properties
+            - name: nifi-flowfiles
+              mountPath: /opt/nifi/nifi-current/flowfile_repository
+            - name: nifi-content
+              mountPath: /opt/nifi/nifi-current/content_repository
+            - name: nifi-provenance
+              mountPath: /opt/nifi/nifi-current/provenance_repository
+            - name: nifi-database
+              mountPath: /opt/nifi/nifi-current/database_repository
+          livenessProbe:
+            httpGet:
+              path: /nifi
+              port: 8443
+              scheme: HTTPS
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /nifi
+              port: 8443
+              scheme: HTTPS
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "2Gi"
+              cpu: "500m"
+            limits:
+              memory: "4Gi"
+              cpu: "2000m"
+
+      volumes:
+        - name: nifi-certs
+          secret:
+            secretName: nifi-certs           # overridden per overlay
+        - name: nifi-config
+          configMap:
+            name: nifi-config
+        - name: nifi-flowfiles
+          persistentVolumeClaim:
+            claimName: nifi-flowfiles-pvc
+        - name: nifi-content
+          persistentVolumeClaim:
+            claimName: nifi-content-pvc
+        - name: nifi-provenance
+          persistentVolumeClaim:
+            claimName: nifi-provenance-pvc
+        - name: nifi-database
+          persistentVolumeClaim:
+            claimName: nifi-database-pvc
+
+      # ── Pin to specific node so hostPath data persists ──
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - NODE_HOSTNAME_PLACEHOLDER   # overridden per overlay

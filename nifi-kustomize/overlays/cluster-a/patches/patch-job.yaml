@@ -1,0 +1,20 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nifi-cert-generator
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: check-secrets
+          image: your-internal-registry/kubectl:latest    # ← update registry
+        - name: tls-toolkit
+          image: your-internal-registry/nifi-toolkit:1.23.2    # ← update registry
+          env:
+            - name: NODE_A
+              value: "nifi-red-0.nifi-red-headless.inspire-silrelease.svc.cluster.local"
+            - name: NODE_B
+              value: "nifi-black-0.nifi-black-headless.inspire-silrelease.svc.cluster.local"
+      containers:
+        - name: secret-creator
+          image: your-internal-registry/kubectl:latest    # ← update registry
