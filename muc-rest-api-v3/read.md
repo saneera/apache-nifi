@@ -286,3 +286,10 @@ PASS
 The validation demonstrates that Apache NiFi provides secure Site-to-Site communication using HTTPS and TLS. All NiFi deployments (Red, Black, and Test) are capable of acting as both Source and Destination. Communication between trusted deployments is successful, while connections from deployments presenting untrusted certificates are rejected during the TLS handshake. Apache NiFi also ensures reliable delivery by retaining FlowFiles during communication failures and automatically retrying delivery once secure connectivity is restored. These results demonstrate that the implementation satisfies the required security controls for secure cross-domain data transfer.
 
 This version is suitable for Confluence or your project wiki and aligns with your actual deployment model where Red, Black, and Test are all peers capable of sending and receiving data, rather than having fixed source/destination roles.
+
+
+https://nifi.apache.org/docs/nifi-docs/html/user-guide.html#site-to-site
+
+https://nifi.apache.org/docs/nifi-docs/html/administration-guide.html#security_configuration
+
+https://nifi.apache.org/docs/nifi-docs/html/administration-guide.html#site_to_site_properties
