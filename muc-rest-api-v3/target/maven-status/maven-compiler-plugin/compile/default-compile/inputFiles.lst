@@ -1,8 +1,0 @@
-/Users/saneera/Learning/nifi-learning/apache-nifi/muc-rest-api-v3/src/java/com/babcock/openfire/plugin/rest/MucRestApiPlugin.java
-/Users/saneera/Learning/nifi-learning/apache-nifi/muc-rest-api-v3/src/java/com/babcock/openfire/plugin/rest/ServiceException.java
-/Users/saneera/Learning/nifi-learning/apache-nifi/muc-rest-api-v3/src/java/com/babcock/openfire/plugin/rest/controller/DeleteMessageController.java
-/Users/saneera/Learning/nifi-learning/apache-nifi/muc-rest-api-v3/src/java/com/babcock/openfire/plugin/rest/controller/ListMessagesController.java
-/Users/saneera/Learning/nifi-learning/apache-nifi/muc-rest-api-v3/src/java/com/babcock/openfire/plugin/rest/service/AuthFilter.java
-/Users/saneera/Learning/nifi-learning/apache-nifi/muc-rest-api-v3/src/java/com/babcock/openfire/plugin/rest/service/DeleteMessageService.java
-/Users/saneera/Learning/nifi-learning/apache-nifi/muc-rest-api-v3/src/java/com/babcock/openfire/plugin/rest/service/JerseyWrapper.java
-/Users/saneera/Learning/nifi-learning/apache-nifi/muc-rest-api-v3/src/java/com/babcock/openfire/plugin/rest/service/ListMessagesService.java

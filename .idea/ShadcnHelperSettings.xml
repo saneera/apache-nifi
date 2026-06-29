@@ -2634,6 +2634,102 @@
         <option name="homepage" value="https://uui.app" />
         <option name="urlTemplate" value="https://uui.app/r/{name}.json" />
       </RegistryConfigState>
+      <RegistryConfigState>
+        <option name="id" value="central-7ovr" />
+        <option name="name" value="7ovr" />
+        <option name="namespace" value="@7ovr" />
+        <option name="baseUrl" value="https://7ovr.com/r" />
+        <option name="stylePath" value="/{name}.json" />
+        <option name="type" value="community" />
+        <option name="enabled" value="false" />
+        <option name="description" value="Free, production-ready UI blocks for marketing pages and application dashboards, built on Base UI and installable with the shadcn CLI." />
+        <option name="homepage" value="https://7ovr.com" />
+        <option name="urlTemplate" value="https://7ovr.com/r/{name}.json" />
+      </RegistryConfigState>
+      <RegistryConfigState>
+        <option name="id" value="central-agentcn" />
+        <option name="name" value="Agentcn" />
+        <option name="namespace" value="@agentcn" />
+        <option name="baseUrl" value="https://agentcn.vercel.app/r" />
+        <option name="stylePath" value="/{name}.json" />
+        <option name="type" value="community" />
+        <option name="enabled" value="false" />
+        <option name="description" value="Production-ready agents, made simple. Ready to use, customizable AI agent recipes. Built on Eve and Flue." />
+        <option name="homepage" value="https://agentcn.vercel.app" />
+        <option name="urlTemplate" value="https://agentcn.vercel.app/r/{name}.json" />
+      </RegistryConfigState>
+      <RegistryConfigState>
+        <option name="id" value="central-hirael" />
+        <option name="name" value="Hirael" />
+        <option name="namespace" value="@hirael" />
+        <option name="baseUrl" value="https://hirael.com/r" />
+        <option name="stylePath" value="/{name}.json" />
+        <option name="type" value="community" />
+        <option name="enabled" value="false" />
+        <option name="description" value="The components shadcn/ui doesn't ship. A collection of high-utility React components built on top of shadcn/ui." />
+        <option name="homepage" value="https://hirael.com" />
+        <option name="urlTemplate" value="https://hirael.com/r/{name}.json" />
+      </RegistryConfigState>
+      <RegistryConfigState>
+        <option name="id" value="central-paceui" />
+        <option name="name" value="Paceui" />
+        <option name="namespace" value="@paceui" />
+        <option name="baseUrl" value="https://paceui.com/r" />
+        <option name="stylePath" value="/{name}.json" />
+        <option name="type" value="community" />
+        <option name="enabled" value="false" />
+        <option name="description" value="Carefully built UI blocks for real apps and dashboards, designed to integrate smoothly from early ideas to production releases." />
+        <option name="homepage" value="https://paceui.com" />
+        <option name="urlTemplate" value="https://paceui.com/r/{name}.json" />
+      </RegistryConfigState>
+      <RegistryConfigState>
+        <option name="id" value="central-payload-components" />
+        <option name="name" value="Payload-components" />
+        <option name="namespace" value="@payload-components" />
+        <option name="baseUrl" value="https://www.payload-components.xyz/r" />
+        <option name="stylePath" value="/{name}.json" />
+        <option name="type" value="community" />
+        <option name="enabled" value="false" />
+        <option name="description" value="MIT registry of typed Payload CMS blocks for Payload v3 + Next.js. Each block installs as reviewable source; the companion CLI also wires collection config, RenderBlocks, types, and the admin import map." />
+        <option name="homepage" value="https://www.payload-components.xyz" />
+        <option name="urlTemplate" value="https://www.payload-components.xyz/r/{name}.json" />
+      </RegistryConfigState>
+      <RegistryConfigState>
+        <option name="id" value="central-tetra-ui" />
+        <option name="name" value="Tetra-ui" />
+        <option name="namespace" value="@tetra-ui" />
+        <option name="baseUrl" value="https://tetra-ui.com/r" />
+        <option name="stylePath" value="/{name}.json" />
+        <option name="type" value="community" />
+        <option name="enabled" value="false" />
+        <option name="description" value="Delightful components for a clean, accessible and modern component library for React Native." />
+        <option name="homepage" value="https://tetra-ui.com" />
+        <option name="urlTemplate" value="https://tetra-ui.com/r/{name}.json" />
+      </RegistryConfigState>
+      <RegistryConfigState>
+        <option name="id" value="central-uiable" />
+        <option name="name" value="Uiable" />
+        <option name="namespace" value="@uiable" />
+        <option name="baseUrl" value="https://uiable.com/r" />
+        <option name="stylePath" value="/{name}.json" />
+        <option name="type" value="community" />
+        <option name="enabled" value="false" />
+        <option name="description" value="Free, open-source UI component library built with Next.js, React 19, Tailwind CSS v4, and shadcn/ui — beautifully designed components you can copy, customize, and make your own." />
+        <option name="homepage" value="https://uiable.com" />
+        <option name="urlTemplate" value="https://uiable.com/r/{name}.json" />
+      </RegistryConfigState>
+      <RegistryConfigState>
+        <option name="id" value="central-evex" />
+        <option name="name" value="Evex" />
+        <option name="namespace" value="@evex" />
+        <option name="baseUrl" value="https://evex.sh/r" />
+        <option name="stylePath" value="/{name}.json" />
+        <option name="type" value="community" />
+        <option name="enabled" value="false" />
+        <option name="description" value="Installable AI agent recipes for Eve apps, including PR review, data analysis, and workflow automation agents." />
+        <option name="homepage" value="https://evex.sh" />
+        <option name="urlTemplate" value="https://evex.sh/r/{name}.json" />
+      </RegistryConfigState>
     </registryConfigs>
   </component>
 </project>
