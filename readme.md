@@ -420,3 +420,219 @@ public Response deleteMessage(
                 .build();
     }
 }
+
+
+
+
+package com.babcock.openfire.plugin.rest.service;
+
+import com.babcock.openfire.plugin.rest.exception.ServiceException;
+import com.babcock.openfire.plugin.rest.dto.MessageRow;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import javax.ws.rs.core.Response;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+public class RoomsService {
+
+    private static final Logger log = LoggerFactory.getLogger(RoomsService.class);
+
+    private static final RoomsService INSTANCE = new RoomsService();
+    public static RoomsService getInstance() { return INSTANCE; }
+    private RoomsService() {}
+
+    private static final Pattern STANZA_ID_PATTERN = Pattern.compile("\\bid=\"([^\"]+)\"");
+
+    private static final String CHECK_ROOM_SQL =
+            "SELECT roomID FROM ofMucRoom WHERE name = ?";
+
+    private static final String SELECT_ALL_SQL =
+            "SELECT l.messageID, l.logTime, l.sender, l.nickname, l.body, l.stanza "
+            + "FROM ofMucConversationLog l "
+            + "JOIN ofMucRoom r ON r.roomID = l.roomID "
+            + "WHERE r.name = ? "
+            + "ORDER BY l.logTime ASC";
+
+    private static final String SELECT_PAGED_SQL =
+            "SELECT l.messageID, l.logTime, l.sender, l.nickname, l.body, l.stanza "
+            + "FROM ofMucConversationLog l "
+            + "JOIN ofMucRoom r ON r.roomID = l.roomID "
+            + "WHERE r.name = ? "
+            + "ORDER BY l.logTime ASC "
+            + "LIMIT ? OFFSET ?";
+
+    private static final String CHECK_MESSAGE_SQL =
+            "SELECT messageID, roomID FROM ofMucConversationLog WHERE messageID = ?";
+
+    private static final String DELETE_SQL =
+            "DELETE FROM ofMucConversationLog WHERE messageID = ?";
+
+    // ---------- LIST ----------
+
+    public List<MessageRow> listMessages(String roomName, Integer limit, Integer offset) throws ServiceException {
+        Connection conn = null;
+        PreparedStatement stmt = null;
+        ResultSet rs = null;
+
+        try {
+            conn = DbConnectionManager.getConnection();
+
+            // Check room exists
+            stmt = conn.prepareStatement(CHECK_ROOM_SQL);
+            stmt.setString(1, roomName);
+            rs = stmt.executeQuery();
+            if (!rs.next()) {
+                throw new ServiceException("Room not found: " + roomName, Response.Status.NOT_FOUND);
+            }
+            DbConnectionManager.closeResultSet(rs);
+            DbConnectionManager.closeStatement(stmt);
+            rs = null;
+            stmt = null;
+
+            // Query messages
+            boolean paged = limit != null;
+            if (paged) {
+                stmt = conn.prepareStatement(SELECT_PAGED_SQL);
+                stmt.setString(1, roomName);
+                stmt.setInt(2, limit);
+                stmt.setInt(3, offset != null ? offset : 0);
+            } else {
+                stmt = conn.prepareStatement(SELECT_ALL_SQL);
+                stmt.setString(1, roomName);
+            }
+
+            rs = stmt.executeQuery();
+
+            List<MessageRow> messages = new ArrayList<>();
+            while (rs.next()) {
+                messages.add(new MessageRow(
+                        rs.getString("messageID"),
+                        parseLogTime(rs.getString("logTime")),
+                        rs.getString("sender"),
+                        rs.getString("nickname"),
+                        rs.getString("body"),
+                        extractStanzaId(rs.getString("stanza"))));
+            }
+
+            log.info("Listed {} message(s) for room [{}] (limit={}, offset={})",
+                    messages.size(), roomName, limit, offset);
+
+            return messages;
+
+        } catch (ServiceException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Error listing messages from room {}", roomName, e);
+            throw new ServiceException("Internal error: " + e.getMessage(), Response.Status.INTERNAL_SERVER_ERROR);
+        } finally {
+            DbConnectionManager.closeConnection(rs, stmt, conn);
+        }
+    }
+
+    // ---------- DELETE (now room-aware) ----------
+
+    public String deleteMessage(String roomName, String messageId) throws ServiceException {
+        Connection conn = null;
+        PreparedStatement roomStmt = null;
+        PreparedStatement checkStmt = null;
+        PreparedStatement deleteStmt = null;
+        ResultSet roomRs = null;
+        ResultSet rs = null;
+
+        try {
+            conn = DbConnectionManager.getConnection();
+
+            // Resolve roomName -> roomID
+            roomStmt = conn.prepareStatement(CHECK_ROOM_SQL);
+            roomStmt.setString(1, roomName);
+            roomRs = roomStmt.executeQuery();
+            if (!roomRs.next()) {
+                throw new ServiceException("Room not found: " + roomName, Response.Status.NOT_FOUND);
+            }
+            long expectedRoomId = roomRs.getLong("roomID");
+            DbConnectionManager.closeResultSet(roomRs);
+            DbConnectionManager.closeStatement(roomStmt);
+            roomRs = null;
+            roomStmt = null;
+
+            // Check message exists and capture its actual roomID
+            checkStmt = conn.prepareStatement(CHECK_MESSAGE_SQL);
+            checkStmt.setString(1, messageId);
+            rs = checkStmt.executeQuery();
+
+            if (!rs.next()) {
+                throw new ServiceException("Message not found for message ID: " + messageId, Response.Status.NOT_FOUND);
+            }
+
+            long messageIdExists = rs.getLong("messageID");
+            long actualRoomId = rs.getLong("roomID");
+
+            DbConnectionManager.closeResultSet(rs);
+            DbConnectionManager.closeStatement(checkStmt);
+            rs = null;
+            checkStmt = null;
+
+            // Enforce the message actually belongs to the room in the URL
+            if (actualRoomId != expectedRoomId) {
+                log.warn("Room mismatch on delete: path room='{}' (roomID={}) but message {} belongs to roomID={}",
+                        roomName, expectedRoomId, messageId, actualRoomId);
+                throw new ServiceException(
+                        "Message " + messageId + " does not belong to room " + roomName,
+                        Response.Status.NOT_FOUND); // 404 avoids confirming the message exists elsewhere
+            }
+
+            // Delete by numeric messageID
+            deleteStmt = conn.prepareStatement(DELETE_SQL);
+            deleteStmt.setLong(1, messageIdExists);
+            int rows = deleteStmt.executeUpdate();
+
+            if (rows == 0) {
+                throw new ServiceException(
+                        "Message not found or already deleted: " + messageIdExists, Response.Status.NOT_FOUND);
+            }
+
+            log.info("Deleted message stanzaId=[{}] messageID=[{}] room=[{}]",
+                    messageIdExists, messageIdExists, roomName);
+
+            return roomName;
+
+        } catch (ServiceException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Error deleting message stanzaId=[{}]", messageId, e);
+            throw new ServiceException("Internal error: " + e.getMessage(), Response.Status.INTERNAL_SERVER_ERROR);
+        } finally {
+            DbConnectionManager.closeConnection(rs, checkStmt, conn);
+            if (roomRs != null) DbConnectionManager.closeResultSet(roomRs);
+            if (roomStmt != null) DbConnectionManager.closeStatement(roomStmt);
+            if (deleteStmt != null) {
+                try { deleteStmt.close(); } catch (Exception ignored) {}
+            }
+        }
+    }
+
+    // ---------- helpers ----------
+
+    private String extractStanzaId(String stanza) {
+        if (stanza == null || stanza.isBlank()) return "";
+        Matcher m = STANZA_ID_PATTERN.matcher(stanza);
+        return m.find() ? m.group(1) : "";
+    }
+
+    private long parseLogTime(String raw) {
+        if (raw == null || raw.isBlank()) return 0L;
+        try {
+            return Long.parseLong(raw.trim());
+        } catch (NumberFormatException e) {
+            log.warn("Unparseable logTime value [{}]", raw);
+            return 0L;
+        }
+    }
+}
