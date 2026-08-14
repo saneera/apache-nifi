@@ -884,3 +884,26 @@ class RoomsControllerTest {
 *
 * and the reflection helper + field lookup can be deleted entirely.
   */
+
+
+private static String sanitizeForLog(String input) {
+if (input == null) return null;
+return input.replaceAll("[\r\n\t]", "_");
+}
+
+log.info("DELETE /rooms/{}/messages/{}", sanitizeForLog(roomName), sanitizeForLog(messageId));
+...
+log.error("Failed to delete message {} in room {}", sanitizeForLog(messageId), sanitizeForLog(roomName), e);
+
+
+if (actualRoomId != expectedRoomId) {
+log.warn(
+"Room mismatch on delete: path room='{}' (roomID={}) but message {} belongs to roomID={}",
+sanitizeForLog(roomName),
+expectedRoomId,
+sanitizeForLog(messageId),
+actualRoomId);
+throw new ServiceException(
+"Message " + messageId + " does not belong to room " + roomName,
+Response.Status.NOT_FOUND);
+}
