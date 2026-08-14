@@ -636,3 +636,251 @@ public class RoomsService {
         }
     }
 }
+
+
+
+package com.babcock.openfire.plugin.rest.controller;
+
+import com.babcock.openfire.plugin.rest.dto.DeleteMessageResponse;
+import com.babcock.openfire.plugin.rest.dto.ErrorResponse;
+import com.babcock.openfire.plugin.rest.dto.ListMessageResponse;
+import com.babcock.openfire.plugin.rest.dto.MessageRow;
+import com.babcock.openfire.plugin.rest.exception.ServiceException;
+import com.babcock.openfire.plugin.rest.service.RoomsService;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import javax.ws.rs.core.Response;
+import java.lang.reflect.Field;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+class RoomsControllerTest {
+
+    private RoomsController controller;
+    private RoomsService mockService;
+
+    @BeforeEach
+    void setUp() throws Exception {
+        controller = new RoomsController();
+        mockService = mock(RoomsService.class);
+
+        // RoomsController currently wires its service via
+        // RoomsService.getInstance() in a field initializer, so tests
+        // inject the mock via reflection. Switching to constructor
+        // injection would let this go away — see note at bottom of file.
+        Field f = RoomsController.class.getDeclaredField("roomsService");
+        f.setAccessible(true);
+        f.set(controller, mockService);
+    }
+
+    // ---------------------------------------------------------------
+    // listMessages
+    // ---------------------------------------------------------------
+
+    @Test
+    void listMessages_returnsOkWithMessages_whenServiceSucceeds() throws Exception {
+        List<MessageRow> rows = List.of(
+                new MessageRow("101", 1699999999000L, "alice@example.com", "Alice", "hello", "stanza-1")
+        );
+        when(mockService.listMessages("room1", 10, 0)).thenReturn(rows);
+
+        Response response = controller.listMessages("room1", 10, 0);
+
+        assertEquals(200, response.getStatus());
+        Object entity = response.getEntity();
+        assertInstanceOf(ListMessageResponse.class, entity);
+        ListMessageResponse body = (ListMessageResponse) entity;
+        assertEquals("room1", body.room);
+        assertEquals(1, body.count);
+        assertEquals(rows, body.messages);
+
+        verify(mockService).listMessages("room1", 10, 0);
+    }
+
+    @Test
+    void listMessages_allowsNullLimitAndOffset() throws Exception {
+        when(mockService.listMessages("room1", null, null)).thenReturn(List.of());
+
+        Response response = controller.listMessages("room1", null, null);
+
+        assertEquals(200, response.getStatus());
+        verify(mockService).listMessages("room1", null, null);
+    }
+
+    @Test
+    void listMessages_returnsBadRequest_whenRoomNameIsNull() throws Exception {
+        Response response = controller.listMessages(null, 10, 0);
+
+        assertEquals(400, response.getStatus());
+        assertInstanceOf(ErrorResponse.class, response.getEntity());
+        verifyNoInteractions(mockService);
+    }
+
+    @Test
+    void listMessages_returnsBadRequest_whenRoomNameIsBlank() throws Exception {
+        Response response = controller.listMessages("   ", 10, 0);
+
+        assertEquals(400, response.getStatus());
+        assertInstanceOf(ErrorResponse.class, response.getEntity());
+        verifyNoInteractions(mockService);
+    }
+
+    @Test
+    void listMessages_returnsBadRequest_whenLimitIsNegative() throws Exception {
+        Response response = controller.listMessages("room1", -1, 0);
+
+        assertEquals(400, response.getStatus());
+        verifyNoInteractions(mockService);
+    }
+
+    @Test
+    void listMessages_returnsBadRequest_whenOffsetIsNegative() throws Exception {
+        Response response = controller.listMessages("room1", 10, -1);
+
+        assertEquals(400, response.getStatus());
+        verifyNoInteractions(mockService);
+    }
+
+    @Test
+    void listMessages_returns404_whenRoomNotFound() throws Exception {
+        when(mockService.listMessages("ghost-room", 10, 0))
+                .thenThrow(new ServiceException("Room not found: ghost-room", Response.Status.NOT_FOUND));
+
+        Response response = controller.listMessages("ghost-room", 10, 0);
+
+        assertEquals(404, response.getStatus());
+        ErrorResponse error = (ErrorResponse) response.getEntity();
+        assertEquals("Room not found: ghost-room", error.error);
+        assertEquals("ghost-room", error.messageId); // roomName passed as the identifier field
+    }
+
+    @Test
+    void listMessages_returns500_whenServiceThrowsInternalError() throws Exception {
+        when(mockService.listMessages("room1", 10, 0))
+                .thenThrow(new ServiceException("Internal error: db down", Response.Status.INTERNAL_SERVER_ERROR));
+
+        Response response = controller.listMessages("room1", 10, 0);
+
+        assertEquals(500, response.getStatus());
+    }
+
+    // ---------------------------------------------------------------
+    // deleteMessage
+    // ---------------------------------------------------------------
+
+    @Test
+    void deleteMessage_returnsOk_whenServiceSucceeds() throws Exception {
+        when(mockService.deleteMessage("room1", "msg-123")).thenReturn("room1");
+
+        Response response = controller.deleteMessage("room1", "msg-123");
+
+        assertEquals(200, response.getStatus());
+        Object entity = response.getEntity();
+        assertInstanceOf(DeleteMessageResponse.class, entity);
+        DeleteMessageResponse body = (DeleteMessageResponse) entity;
+        assertEquals("msg-123", body.messageId);
+        assertEquals("room1", body.room);
+
+        verify(mockService).deleteMessage("room1", "msg-123");
+    }
+
+    @Test
+    void deleteMessage_returnsBadRequest_whenRoomNameIsBlank() throws Exception {
+        Response response = controller.deleteMessage("  ", "msg-123");
+
+        assertEquals(400, response.getStatus());
+        verifyNoInteractions(mockService);
+    }
+
+    @Test
+    void deleteMessage_returnsBadRequest_whenMessageIdIsNull() throws Exception {
+        Response response = controller.deleteMessage("room1", null);
+
+        assertEquals(400, response.getStatus());
+        verifyNoInteractions(mockService);
+    }
+
+    @Test
+    void deleteMessage_returnsBadRequest_whenMessageIdIsBlank() throws Exception {
+        Response response = controller.deleteMessage("room1", "   ");
+
+        assertEquals(400, response.getStatus());
+        verifyNoInteractions(mockService);
+    }
+
+    @Test
+    void deleteMessage_returns404_whenMessageNotFound() throws Exception {
+        when(mockService.deleteMessage("room1", "missing-id"))
+                .thenThrow(new ServiceException("Message not found for message ID: missing-id",
+                        Response.Status.NOT_FOUND));
+
+        Response response = controller.deleteMessage("room1", "missing-id");
+
+        assertEquals(404, response.getStatus());
+        ErrorResponse error = (ErrorResponse) response.getEntity();
+        assertEquals("Message not found for message ID: missing-id", error.error);
+        assertEquals("missing-id", error.messageId);
+    }
+
+    @Test
+    void deleteMessage_returns404_whenMessageBelongsToDifferentRoom() throws Exception {
+        // Regression test for the room-ownership check added to RoomsService:
+        // deleting a real message via the wrong room's URL must not succeed.
+        when(mockService.deleteMessage("wrong-room", "msg-123"))
+                .thenThrow(new ServiceException(
+                        "Message msg-123 does not belong to room wrong-room",
+                        Response.Status.NOT_FOUND));
+
+        Response response = controller.deleteMessage("wrong-room", "msg-123");
+
+        assertEquals(404, response.getStatus());
+        ErrorResponse error = (ErrorResponse) response.getEntity();
+        assertEquals("Message msg-123 does not belong to room wrong-room", error.error);
+    }
+
+    @Test
+    void deleteMessage_returns404_whenRoomDoesNotExist() throws Exception {
+        when(mockService.deleteMessage("ghost-room", "msg-123"))
+                .thenThrow(new ServiceException("Room not found: ghost-room", Response.Status.NOT_FOUND));
+
+        Response response = controller.deleteMessage("ghost-room", "msg-123");
+
+        assertEquals(404, response.getStatus());
+    }
+
+    @Test
+    void deleteMessage_returns500_whenServiceThrowsInternalError() throws Exception {
+        when(mockService.deleteMessage("room1", "msg-123"))
+                .thenThrow(new ServiceException("Internal error: db down", Response.Status.INTERNAL_SERVER_ERROR));
+
+        Response response = controller.deleteMessage("room1", "msg-123");
+
+        assertEquals(500, response.getStatus());
+    }
+}
+
+/*
+* NOTE ON TEST DESIGN
+* --------------------
+* RoomsController currently obtains its RoomsService via
+* RoomsService.getInstance() in a field initializer:
+*
+*     private final RoomsService roomsService = RoomsService.getInstance();
+*
+* That's why these tests use reflection to swap in a mock after
+* construction. If RoomsController is refactored to accept the
+* service via constructor injection, e.g.:
+*
+*     public RoomsController(RoomsService roomsService) { ... }
+*     public RoomsController() { this(RoomsService.getInstance()); }
+*
+* then setUp() simplifies to:
+*
+*     mockService = mock(RoomsService.class);
+*     controller = new RoomsController(mockService);
+*
+* and the reflection helper + field lookup can be deleted entirely.
+  */
