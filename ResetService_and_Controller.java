@@ -336,3 +336,31 @@ public class AdminResetController {
         }
     }
 }
+
+
+
+COUNT=$(mysql -N -h openfire-mysql -u$MYSQL_USER -p$MYSQL_PASSWORD $MYSQL_DATABASE \
+        "SELECT COUNT(*) FROM ofMucService WHERE subdomain='${OPENFIRE_SERVICE}';")
+
+if [ "$COUNT" = "0" ]; then
+echo "Creating chat service..."
+
+NEXT_ID=$(mysql -N -h openfire-mysql -u$MYSQL_USER -p$MYSQL_PASSWORD $MYSQL_DATABASE \
+        "SELECT COALESCE(MAX(serviceID),0)+1 FROM ofMucService;")
+
+mysql -h openfire-mysql -u$MYSQL_USER -p$MYSQL_PASSWORD $MYSQL_DATABASE <<EOF
+INSERT INTO ofMucService (serviceID, subdomain, description, isHidden)
+VALUES ($NEXT_ID, '${OPENFIRE_SERVICE}', 'Default chat service', 0);
+EOF
+
+echo "Service created."
+        else
+echo "Service already exists."
+fi
+
+# Disable Openfire blog feed
+mysql -h openfire-mysql -u$MYSQL_USER -p$MYSQL_PASSWORD $MYSQL_DATABASE <<EOF
+INSERT INTO ofProperty (name, propValue)
+VALUES ('adminConsole.blog-feed.enabled', 'false')
+ON DUPLICATE KEY UPDATE propValue='false';
+EOF
