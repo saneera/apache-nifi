@@ -28,6 +28,26 @@ spec:
       labels:
         app: openfire
     spec:
+      initContainers:
+        - name: copy-plugins
+          volumeMounts:
+            - name: openfire-config
+              mountPath: /plugins
+            - name: openfire-xml-config
+              mountPath: /openfire-xml-source
+              readOnly: true
+
+          args:
+            - |
+              mkdir -p /plugins/plugins
+              mkdir -p /plugins/conf
+              cp -f /openfire-xml-source/openfire.xml /plugins/conf/openfire.xml
+              cp -n /var/lib/openfire/plugins/*.jar /plugins/plugins/
+              find /plugins/plugins -maxdepth 1 \( -name "*(*).jar" -o -name " (*)" \) -exec rm -rf {} +
+              rm -rf /plugins/plugins/plugins_org
+              ls -l /plugins/plugins
+              echo "Copy Plugins success!"
+
       containers:
         - name: openfire
           image: openfire:custom-5.0.3
@@ -42,6 +62,14 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: openfire-data
+
+        - name: openfire-config
+          persistentVolumeClaim:
+            claimName: openfire-conf-pvc-v2
+
+        - name: openfire-xml-config
+          secret:
+            secretName: openfire-xml-config
 
 
 ---
@@ -67,5 +95,139 @@ spec:
       targetPort: 7777
 
 ---
+
+
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openfire
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openfire
+  template:
+    metadata:
+      labels:
+        app: openfire
+    spec:
+      initContainers:
+        - name: wait-for-mysql-service
+          image: curl-image
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "Waiting for MySQL openfire-mysql 3306";
+              until nc -z openfire-mysql 3306; do
+                echo "MySQL not ready, retrying..."
+                sleep 4
+              done
+              echo "MySQL is ready!"
+
+        - name: copy-openfire-xml
+          image: openfire-image
+          command: ["sh", "-c"]
+          args:
+            - |
+              rm -rf /conf-out/openfire.xml
+              cp -f /openfire-xml-source/openfire.xml /conf-out/openfire.xml
+              chown openfire:openfire /conf-out/openfire.xml
+              echo "Copied Openfire xml"
+          volumeMounts:
+            - name: openfire-xml-config
+              mountPath: /openfire-xml-source
+              readOnly: true
+            - name: openfire-config
+              mountPath: /conf-out
+
+        - name: generate-keystore
+          image: openfire-image
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              SECURITY_DIR="/conf-out/security"
+              KEYSTORE="$SECURITY_DIR/keystore"
+              TRUSTSTORE="$SECURITY_DIR/truststore"
+              STOREPASS="changeit"
+
+              mkdir -p "$SECURITY_DIR"
+
+              NEEDS_REGEN=false
+              if [ ! -f "$KEYSTORE" ]; then
+                echo "No keystore found, will generate."
+                NEEDS_REGEN=true
+              else
+                if ! keytool -list -keystore "$KEYSTORE" -storepass "$STOREPASS" -alias "$OPENFIRE_FQDN" > /dev/null 2>&1; then
+                  echo "Keystore exists but no entry for $OPENFIRE_FQDN, regenerating."
+                  NEEDS_REGEN=true
+                fi
+              fi
+
+              if [ "$NEEDS_REGEN" = true ]; then
+                rm -f "$KEYSTORE" "$TRUSTSTORE"
+                keytool -genkeypair \
+                  -alias "$OPENFIRE_FQDN" \
+                  -keyalg RSA \
+                  -keysize 2048 \
+                  -validity 1825 \
+                  -keystore "$KEYSTORE" \
+                  -storetype JKS \
+                  -storepass "$STOREPASS" \
+                  -keypass "$STOREPASS" \
+                  -dname "CN=$OPENFIRE_FQDN, OU=IT, O=Babcock, L=Adelaide, ST=SA, C=AU" \
+                  -ext "SAN=DNS:$OPENFIRE_FQDN,DNS:*.$OPENFIRE_FQDN"
+
+                keytool -exportcert \
+                  -alias "$OPENFIRE_FQDN" \
+                  -keystore "$KEYSTORE" \
+                  -storepass "$STOREPASS" \
+                  -file /tmp/openfire.crt
+
+                keytool -importcert \
+                  -alias "$OPENFIRE_FQDN" \
+                  -keystore "$TRUSTSTORE" \
+                  -storepass "$STOREPASS" \
+                  -file /tmp/openfire.crt \
+                  -noprompt
+
+                chown openfire:openfire "$KEYSTORE" "$TRUSTSTORE"
+                echo "Generated new keystore and truststore for $OPENFIRE_FQDN"
+              else
+                echo "Existing keystore already valid for $OPENFIRE_FQDN, skipping."
+              fi
+          envFrom:
+            - configMapRef:
+                name: openfire-env
+          volumeMounts:
+            - name: openfire-config
+              mountPath: /conf-out
+
+      containers:
+        - name: openfire
+          image: openfire-image
+          ports:
+            - containerPort: 9090
+            - containerPort: 5222
+            - containerPort: 7070
+
+          envFrom:
+            - configMapRef:
+                name: openfire-env
+
+          volumeMounts:
+            - name: openfire-config
+              mountPath: /var/lib/openfire/conf
+              readOnly: false
+
+      volumes:
+        - name: openfire-config
+          persistentVolumeClaim:
+            claimName: openfire-conf-pvc-v2
+            readOnly: false
+        - name: openfire-xml-config
+          configMap:
+            name: openfire-xml-config
 
 
