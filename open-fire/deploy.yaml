@@ -141,18 +141,46 @@ spec:
             - name: openfire-config
               mountPath: /conf-out
 
-        - name: generate-keystore
+        - name: copy-security-xml
           image: openfire-image
           command: ["sh", "-c"]
           args:
             - |
+              if [ ! -f /conf-out/security.xml ]; then
+                cp -f /security-xml-source/security.xml /conf-out/security.xml
+                chown openfire:openfire /conf-out/security.xml
+                echo "Seeded initial security.xml"
+              else
+                echo "security.xml already exists, leaving Openfire-managed key intact"
+              fi
+          volumeMounts:
+            - name: openfire-security-xml-config
+              mountPath: /security-xml-source
+              readOnly: true
+            - name: openfire-config
+              mountPath: /conf-out
+
+        - name: generate-keystore
+          image: openfire-image
+          command: [ "sh", "-c" ]
+          args:
+            - |
               set -e
               SECURITY_DIR="/conf-out/security"
+              DEFAULTS_DIR="/usr/local/openfire/resources/security_org"
               KEYSTORE="$SECURITY_DIR/keystore"
               TRUSTSTORE="$SECURITY_DIR/truststore"
               STOREPASS="changeit"
 
               mkdir -p "$SECURITY_DIR"
+
+              for f in client.truststore java.security; do
+                if [ ! -f "$SECURITY_DIR/$f" ] && [ -f "$DEFAULTS_DIR/$f" ]; then
+                  cp -f "$DEFAULTS_DIR/$f" "$SECURITY_DIR/$f"
+                  chown openfire:openfire "$SECURITY_DIR/$f"
+                  echo "Seeded default $f"
+                fi
+              done
 
               NEEDS_REGEN=false
               if [ ! -f "$KEYSTORE" ]; then
@@ -229,5 +257,6 @@ spec:
         - name: openfire-xml-config
           configMap:
             name: openfire-xml-config
-
-
+        - name: openfire-security-xml-config
+          configMap:
+            name: openfire-security-xml-config
