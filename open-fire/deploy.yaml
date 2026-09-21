@@ -260,3 +260,96 @@ spec:
         - name: openfire-security-xml-config
           configMap:
             name: openfire-security-xml-config
+
+========================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: phpmyadmin-config
+data:
+  config.user.inc.php: |
+    <?php
+    $cfg['Servers'][$i]['only_db'] = 'openfire';
+    $cfg['DefaultTabDatabase'] = 'structure';
+    $cfg['ShowDatabasesNavigationAsTree'] = false;
+    
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: phpmyadmin
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: phpmyadmin
+  template:
+    metadata:
+      labels:
+        app: phpmyadmin
+    spec:
+      containers:
+        - name: phpmyadmin
+          image: phpmyadmin-image
+          ports:
+            - containerPort: 80
+          env:
+            - name: PMA_HOST
+              value: openfire-mysql
+            - name: PMA_PORT
+              value: "3306"
+            - name: PMA_USER
+              value: root
+            - name: PMA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: openfire-mysql-secret-test
+                  key: MYSQL_OPENFIRE_ROOT_PASSWORD
+          volumeMounts:
+            - name: pma-config
+              mountPath: /etc/phpmyadmin/config.user.inc.php
+              subPath: config.user.inc.php
+      volumes:
+        - name: pma-config
+          configMap:
+            name: phpmyadmin-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: phpmyadmin
+spec:
+  type: NodePort
+  selector:
+    app: phpmyadmin
+  ports:
+    - port: 80
+      targetPort: 80
+      nodePort: 30180
+
+
+
+images:
+  - name: phpmyadmin-image
+    newName: docker-group.sdeconnexrp01vm:8081/phpmyadmin/phpmyadmin
+    newTag: "5.2.1"
+
+resources:
+  - ../../base-manifests
+  - phpmyadmin.yaml\
+
+
+  echo "Checking admin.authorizedJIDs property"
+  JID_COUNT=$(mysql -N -h openfire-mysql -u$MYSQL_USER -p$MYSQL_PASSWORD $MYSQL_DATABASE -e \
+  "SELECT COUNT(*) FROM ofProperty WHERE name='admin.authorizedJIDs';")
+  
+  if [ "$JID_COUNT" = "0" ]; then
+  echo "admin.authorizedJIDs not found, inserting"
+  mysql -h openfire-mysql -u$MYSQL_USER -p$MYSQL_PASSWORD $MYSQL_DATABASE -e \
+  "INSERT INTO ofProperty (name, propValue, encrypted, iv)
+  VALUES ('admin.authorizedJIDs', 'admin@${OPENFIRE_FQDN}', 0, NULL);"
+  echo "admin.authorizedJIDs inserted"
+  else
+  echo "admin.authorizedJIDs already exists"
+  fi

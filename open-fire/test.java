@@ -128,3 +128,5 @@ echo "admin.authorizedJIDs ensured"
     secretKeyRef:
     name: openfire-mysql-secret-test
     key: OPENFIRE_ADMIN_PASSWORD   # add this key to the secret
+
+
