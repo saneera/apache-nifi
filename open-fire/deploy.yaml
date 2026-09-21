@@ -353,3 +353,14 @@ resources:
   else
   echo "admin.authorizedJIDs already exists"
   fi
+  
+  
+  
+  
+  echo "Waiting for Openfire to create its schema..."
+  until [ "$(mysql -N -h openfire-mysql -u$MYSQL_USER -p$MYSQL_PASSWORD $MYSQL_DATABASE -e \
+  "SHOW TABLES LIKE 'ofUser';" | wc -l)" != "0" ]; do
+  echo "schema not ready yet..."
+  sleep 5
+  done
+  echo "Schema found, proceeding"
