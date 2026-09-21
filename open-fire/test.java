@@ -98,3 +98,33 @@ private ParticipantStatusListener getParticipantStatusListener(String roomName) 
         }
     };
 }
+
+
+echo "Ensuring default admin user exists"
+ADMIN_COUNT=$(mysql -N -h openfire-mysql -u$MYSQL_USER -p$MYSQL_PASSWORD $MYSQL_DATABASE -e \
+        "SELECT COUNT(*) FROM ofUser WHERE username='admin';")
+
+if [ "$ADMIN_COUNT" = "0" ]; then
+echo "admin user not found, inserting"
+mysql -h openfire-mysql -u$MYSQL_USER -p$MYSQL_PASSWORD $MYSQL_DATABASE -e \
+        "INSERT INTO ofUser (username, plainPassword, encryptedPassword, name, email, creationDate, modificationDate)
+VALUES ('admin', '${ADMIN_PASSWORD}', NULL, 'Administrator', 'admin@example.com', '0', '0');"
+echo "admin user inserted"
+        else
+echo "admin user already exists"
+fi
+
+echo "Ensuring admin.authorizedJIDs property"
+mysql -h openfire-mysql -u$MYSQL_USER -p$MYSQL_PASSWORD $MYSQL_DATABASE -e \
+        "INSERT INTO ofProperty (name, propValue, encrypted, iv) VALUES
+        ('admin.authorizedJIDs', 'admin@${OPENFIRE_FQDN}', 0, NULL)
+ON DUPLICATE KEY UPDATE propValue = VALUES(propValue);"
+echo "admin.authorizedJIDs ensured"
+
+
+
+- name: ADMIN_PASSWORD
+    valueFrom:
+    secretKeyRef:
+    name: openfire-mysql-secret-test
+    key: OPENFIRE_ADMIN_PASSWORD   # add this key to the secret
