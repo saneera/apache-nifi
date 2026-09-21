@@ -357,10 +357,17 @@ resources:
   
   
   
-  echo "Waiting for Openfire to create its schema..."
-  until [ "$(mysql -N -h openfire-mysql -u$MYSQL_USER -p$MYSQL_PASSWORD $MYSQL_DATABASE -e \
-  "SHOW TABLES LIKE 'ofUser';" | wc -l)" != "0" ]; do
-  echo "schema not ready yet..."
-  sleep 5
-  done
-  echo "Schema found, proceeding"
+  echo "Checking admin.authorizedJIDs property"
+  JID_VALUE=$(mysql -N -h openfire-mysql -u$MYSQL_USER -p$MYSQL_PASSWORD $MYSQL_DATABASE -e \
+  "SELECT propValue FROM ofProperty WHERE name='admin.authorizedJIDs';")
+
+  if [ -z "$JID_VALUE" ]; then
+  echo "admin.authorizedJIDs missing or empty, setting it"
+  mysql -h openfire-mysql -u$MYSQL_USER -p$MYSQL_PASSWORD $MYSQL_DATABASE -e \
+  "INSERT INTO ofProperty (name, propValue, encrypted, iv)
+  VALUES ('admin.authorizedJIDs', 'admin@${OPENFIRE_FQDN}', 0, NULL)
+  ON DUPLICATE KEY UPDATE propValue = VALUES(propValue);"
+  echo "admin.authorizedJIDs set"
+  else
+  echo "admin.authorizedJIDs already set to: $JID_VALUE"
+  fi
