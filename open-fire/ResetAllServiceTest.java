@@ -216,12 +216,37 @@ class ResetAllServiceTest {
     }
 }
 
+@Test
+void shouldReturnAllMessages_whenMessageIdsEmpty() {
+    MessageResponse m1 = MessageResponse.builder().messageId("msg-1").build();
+    MessageResponse m2 = MessageResponse.builder().messageId("msg-2").build();
+    when(messagingService.readMessageByParticipantAndRoom(ROOM_NAME, List.of()))
+            .thenReturn(List.of(m1, m2));
 
-@BeforeEach
-void setUp() {
-    Map<String, MultiUserChat> joinedRooms = new ConcurrentHashMap<>();
-    lenient().when(roomService.getJoinedRooms()).thenReturn(joinedRooms);
+    List<MessageResponse> result = chatService.readMessageByParticipantAndRoom(ROOM_NAME, List.of());
 
-    chatService.getRoomService().getJoinedRooms().put(ROOM_KEY, muc);
-    readRoomMessageCommand = new ReadRoomMessageCommand(chatService, propertyService, propertyHandlerFactory);
+    assertThat(result).hasSize(2);
+    assertThat(result).extracting(MessageResponse::getMessageId).containsExactly("msg-1", "msg-2");
+}
+
+@Test
+void shouldReturnList_whenMessageIdMatch() {
+    MessageResponse m2 = MessageResponse.builder().messageId("msg-2").build();
+    when(messagingService.readMessageByParticipantAndRoom(ROOM_NAME, List.of("msg-2")))
+            .thenReturn(List.of(m2));
+
+    List<MessageResponse> result = chatService.readMessageByParticipantAndRoom(ROOM_NAME, List.of("msg-2"));
+
+    assertThat(result).hasSize(1);
+    assertThat(result).extracting(MessageResponse::getMessageId).containsExactly("msg-2");
+}
+
+@Test
+void shouldReturnEmptyList_whenNoMessageIdMatch() {
+    when(messagingService.readMessageByParticipantAndRoom(ROOM_NAME, List.of("no-match")))
+            .thenReturn(List.of());
+
+    List<MessageResponse> result = chatService.readMessageByParticipantAndRoom(ROOM_NAME, List.of("no-match"));
+
+    assertThat(result).isEmpty();
 }
