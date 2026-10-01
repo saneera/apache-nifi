@@ -215,3 +215,13 @@ class ResetAllServiceTest {
         }
     }
 }
+
+
+@BeforeEach
+void setUp() {
+    Map<String, MultiUserChat> joinedRooms = new ConcurrentHashMap<>();
+    lenient().when(roomService.getJoinedRooms()).thenReturn(joinedRooms);
+
+    chatService.getRoomService().getJoinedRooms().put(ROOM_KEY, muc);
+    readRoomMessageCommand = new ReadRoomMessageCommand(chatService, propertyService, propertyHandlerFactory);
+}
