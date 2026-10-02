@@ -106,26 +106,12 @@ private void untrackExternalParticipantLeave(String roomName, EntityFullJid part
     }
 }
 
-// ADD this new public method for presence checks that should include
-// externally-joined participants (membership listing, "who's here" APIs) -
-// keep checkParticipantJoinedTheRoom(...) UNCHANGED, strictly backed by
-// joinedRooms only, since that's what sendMessageToRoom(...) relies on:
-
-/**
- * Returns true if the participant is currently in the room by ANY means -
- * joined through this app, or joined directly through another client (e.g.
- * Gajim). Use this for presence/membership questions ("is participant1 in
- * Room1 right now?", a participant-count, a "who's here" listing).
- * <p>
- * Do NOT use this to decide whether a message can be sent on the
- * participant's behalf - that must keep using checkParticipantJoinedTheRoom(...)
- * / joinedRooms, which only contains entries backed by a real, app-owned
- * connection.
- */
-public boolean isParticipantPresentInRoom(String roomName, String participantName) {
-    String roomKey = roomName + ":" + participantName;
-    return joinedRooms.containsKey(roomKey) || externallyJoinedParticipants.contains(roomKey);
-}
+// NOT adding a isParticipantPresentInRoom()-style method this time - there's
+// no real caller for it yet, and an unused public method is just dead code
+// to maintain. If you add a "who's in the room"/participant-listing endpoint
+// later, that's the moment to add a method reading
+// joinedRooms.containsKey(roomKey) || externallyJoinedParticipants.contains(roomKey)
+// - trivial to bring back then, with a real call site to verify it against.
 
 // UPDATE clearAllRoomTracking() (called from ResetAllService) to also clear
 // the new set:
