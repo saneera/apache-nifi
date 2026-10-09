@@ -1,10 +1,126 @@
+import { ref } from 'vue'
+import { getAddressBooks, getMeus } from '../api/requests'
+
+/**
+ * Shared MEU / TEU name lookup, the same logic as fetchMeusList() + fetchTeusList()
+ * in CircuitParticipants.vue. Loaded once and reused by every component.
+ */
+
+export enum ParticipantType {
+  TEU = 'teu',
+  MEU = 'meu',
+  FEATURE = 'feature',
+}
+
+export interface Participant {
+  id: string
+  label: string
+  type: ParticipantType
+}
+
+/**
+ * Chip icon per participant type, the same as getParticipantIcon() in CircuitParticipants.vue.
+ * TODO: copy the exact mdi names from that file if these differ.
+ */
+export function getParticipantIcon(type?: ParticipantType): string {
+  switch (type) {
+    case ParticipantType.TEU:
+      return 'mdi-account'
+    case ParticipantType.MEU:
+      return 'mdi-airplane'
+    case ParticipantType.FEATURE:
+      return 'mdi-map-marker'
+    default:
+      return ''
+  }
+}
+
+const directory = ref<Participant[]>([])
+const loading = ref(false)
+let inflight: Promise<void> | null = null
+
+async function load(): Promise<void> {
+  loading.value = true
+  try {
+    const [meus, teus] = await Promise.all([getMeus(), getAddressBooks()])
+    const list: Participant[] = []
+
+    meus
+      ?.filter((m) => m.id && m.name)
+      .forEach((m) => list.push({ id: m.id!, label: m.name!, type: ParticipantType.MEU }))
+
+    teus
+      ?.filter((t) => t.addressBookId && t.name)
+      .forEach((t) =>
+        list.push({ id: t.addressBookId!, label: t.name!, type: ParticipantType.TEU }),
+      )
+
+    directory.value = list
+  } finally {
+    loading.value = false
+  }
+}
+
+export function useParticipantDirectory() {
+  if (!inflight) {
+    inflight = load().catch((e) => {
+      inflight = null // allow a retry next time
+      console.error('Could not load participants', e)
+    })
+  }
+
+  /** Name for a meu / teu id; falls back to the id if it isn't known. */
+  const labelFor = (id: string) => directory.value.find((p) => p.id === id)?.label ?? id
+
+  /** Force a fresh fetch (e.g. after new MEUs / TEUs are added). */
+  const reload = () => {
+    inflight = load()
+    return inflight
+  }
+
+  return { directory, loading, labelFor, reload }
+}
+
+
+=============
+
+
 <!--
   Reconstructed from the screen recording. Diff it against your copy rather
-  than overwriting blind. Every change is marked with  // NEW  or  <!-- NEW -->.
+  than overwriting blind. Every change is marked NEW.
 -->
 <template>
+  <!-- NEW: participant picker for `targets`, the same list as the
+       circuit-creation Participants dropdown (CircuitParticipants.vue).
+       Placed first so it wins over the plain string/array branches. -->
+  <v-select
+    v-if="isParticipantProperty"
+    :id="`property-form-input-local-value-${Math.floor(Math.random() * 1000)}`"
+    v-model="participantValue"
+    :items="participantOptions"
+    item-title="label"
+    item-value="id"
+    :label="property.name"
+    :hint="property.description"
+    :multiple="property.type === 'array'"
+    :chips="property.type === 'array'"
+    :loading="participantsLoading"
+    no-data-text="No participants found"
+    clearable
+    persistent-hint
+    variant="solo"
+    density="compact"
+  >
+    <template #chip="{ item }">
+      <v-chip color="primary">
+        <v-icon :icon="getParticipantIcon(item.raw.type)" start />
+        {{ item.raw.label }}
+      </v-chip>
+    </template>
+  </v-select>
+
   <v-text-field
-    v-if="['string'].includes(property.type)"
+    v-else-if="['string'].includes(property.type)"
     :id="`property-form-input-local-value-${Math.floor(Math.random() * 1000)}`"
     v-model="localValue"
     :label="property.name"
@@ -42,36 +158,13 @@
     color="primary"
   />
 
-  <!-- NEW: participant picker for `targets`. Lists only the circuit's participants,
-       with checkboxes, like the Participants field on circuit creation -->
-  <v-select
-    v-else-if="isParticipantProperty"
-    :id="`property-form-input-local-value-${Math.floor(Math.random() * 1000)}`"
-    v-model="participantValue"
-    :items="participantOptions"
-    item-title="title"
-    item-value="value"
-    :label="property.name"
-    :hint="property.description"
-    :multiple="property.type === 'array'"
-    :chips="property.type === 'array'"
-    :closable-chips="property.type === 'array'"
-    no-data-text="No participants on this circuit"
-    clearable
-    persistent-hint
-    density="compact"
-    color="primary"
-  />
-
   <div v-if="property.type === 'object'" style="width: 100%">
     <div v-for="(childProp, key) in properties" :key="key">
       <PropertyFormInput
         :model-value="localValue[key]"
         :property="childProp"
-        :participants="participants"
         @update:model-value="(val) => updateNestedValue(key, val)"
       />
-      <!-- NEW: :participants passed down so nested `targets` gets the list -->
     </div>
   </div>
 </template>
@@ -84,18 +177,15 @@ import {
   PropertyEnum,
   PropertyObject,
 } from '../../api/generated/property-service'
-import type { components } from '../../api/generated/circuit-manager' // NEW: `components` wasn't imported
+import {
+  getParticipantIcon,
+  useParticipantDirectory,
+} from '../../composables/useParticipantDirectory' // NEW
 
-type CircuitParticipant = components['schemas']['CircuitParticipant']
-
-const props = withDefaults( // NEW: withDefaults so `participants` is never undefined
-  defineProps<{
-    modelValue: any
-    property: Property
-    participants?: CircuitParticipant[]
-  }>(),
-  { participants: () => [] },
-)
+const props = defineProps<{
+  modelValue: any
+  property: Property
+}>()
 
 const emit = defineEmits(['update:modelValue'])
 
@@ -114,7 +204,7 @@ onMounted(() => {
 
 // ---------- NEW: participant dropdown ----------
 
-/** Property names whose values are participant / address-book ids. */
+/** Property names whose values are participant ids (meu id / address-book id). */
 const PARTICIPANT_PROPERTY_NAMES = ['targets', 'target']
 
 const isParticipantProperty = computed(() => {
@@ -126,28 +216,17 @@ const isParticipantProperty = computed(() => {
   )
 })
 
-/**
- * TODO: check these field names against CircuitParticipant in circuit-manager.ts.
- * `value` must be the id that `targets` expects (the address-book entry UUID).
- */
-/**
- * CircuitParticipant is { teu?, meu?, feature? }, with exactly one UUID set.
- * The meu / teu id is both the label and the value. Features aren't operators, so they're skipped.
- */
-const participantOptions = computed(() =>
-  props.participants
-    .map((p) => p.meu ?? p.teu)
-    .filter((id): id is string => !!id)
-    .map((id) => ({ title: id, value: id })),
-)
+/** Same MEUs + TEUs as the circuit-creation Participants dropdown. */
+const { directory: participantOptions, loading: participantsLoading } =
+  useParticipantDirectory()
 
 /**
- * Only show values that are real participants. This hides template placeholders
- * such as the YAML default "$USER_ADDRESSBOOK_ID", so nothing is pre-ticked.
+ * Only show values that match a real participant. This hides template
+ * placeholders such as the YAML default "$USER_ADDRESSBOOK_ID", so nothing is pre-ticked.
  */
 const participantValue = computed({
   get() {
-    const ids = new Set(participantOptions.value.map((o) => o.value))
+    const ids = new Set(participantOptions.value.map((p) => p.id))
     const v = localValue.value
     if (Array.isArray(v)) return v.filter((x) => ids.has(x))
     return ids.has(v) ? v : null
