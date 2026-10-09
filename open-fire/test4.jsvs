@@ -69,7 +69,6 @@
         :model-value="localValue[key]"
         :property="childProp"
         :participants="participants"
-        :participant-names="participantNames"
         @update:model-value="(val) => updateNestedValue(key, val)"
       />
       <!-- NEW: :participants passed down so nested `targets` gets the list -->
@@ -94,10 +93,8 @@ const props = withDefaults( // NEW: withDefaults so `participants` is never unde
     modelValue: any
     property: Property
     participants?: CircuitParticipant[]
-    /** NEW: participant UUID -> display name (e.g. "Ken") */
-    participantNames?: Record<string, string>
   }>(),
-  { participants: () => [], participantNames: () => ({}) },
+  { participants: () => [] },
 )
 
 const emit = defineEmits(['update:modelValue'])
@@ -135,23 +132,13 @@ const isParticipantProperty = computed(() => {
  */
 /**
  * CircuitParticipant is { teu?, meu?, feature? }, with exactly one UUID set.
- * Operators can only be end users (TEU / MEU), so geographic features are skipped.
- * Names come from `participantNames` (id -> display name), the same lookup the
- * circuit-creation Participants dropdown uses.
+ * The meu / teu id is both the label and the value. Features aren't operators, so they're skipped.
  */
 const participantOptions = computed(() =>
   props.participants
-    .map((p) => {
-      const value = p.teu ?? p.meu
-      if (!value) return null
-      const kind = p.teu ? 'TEU' : 'MEU'
-      return {
-        value,
-        title: props.participantNames[value] ?? `${kind} ${value.slice(0, 8)}…`,
-      }
-    })
-    .filter((o): o is { value: string; title: string } => o !== null)
-    .sort((a, b) => a.title.localeCompare(b.title)),
+    .map((p) => p.meu ?? p.teu)
+    .filter((id): id is string => !!id)
+    .map((id) => ({ title: id, value: id })),
 )
 
 /**
@@ -226,52 +213,4 @@ const extractValue = (value: object) => {
   }
   return value
 }
-
-
-async function loadParticipantNames(
-  list: CircuitParticipant[],
-): Promise<Record<string, string>> {
-  const lookups = list.map(async (p): Promise<[string, string] | null> => {
-    if (p.meu) return [p.meu, (await getMobileEndUser(p.meu)).name]
-    if (p.teu) return [p.teu, (await getTerrestrialEndUser(p.teu)).name]
-    return null // geographic features aren't operators
-  })
-
-  // allSettled: one failed lookup shouldn't blank the whole list
-  const results = await Promise.allSettled(lookups)
-  return Object.fromEntries(
-    results.flatMap((r) => (r.status === 'fulfilled' && r.value ? [r.value] : [])),
-  )
-}
-
-<CircuitOperationForm
-  :operation-id="item.id"
-  :circuit-id="circuitId"
-  :circuit-properties="template.circuitProperties || {}"
-  :fragment-operations="item.fragmentOperations"
-  :participants="participants"
-  :participant-names="participantNames"
-  @submit="(result) => performConfigurableOperation(item, result)"
-  @cancel="toggleExpandedRow(item.id)"
-/>
-
-import type { components } from '../../api/generated/circuit-manager'
-type CircuitParticipant = components['schemas']['CircuitParticipant']
-
-const props = defineProps<{
-  operationId: string
-  circuitId: string
-  circuitProperties: { [key: string]: CircuitProperty }
-  fragmentOperations: { [key: string]: FragmentOperation }
-  participants?: CircuitParticipant[]
-  participantNames?: Record<string, string>
-}>()
-
-<PropertyFormInput
-  v-model="formData[`${elementId}.${statement.command}`]"
-  :property="circuitProperties[statement.command].args"
-  :participants="participants"
-  :participant-names="participantNames"
-/>
-
 </script>
