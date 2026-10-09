@@ -226,4 +226,52 @@ const extractValue = (value: object) => {
   }
   return value
 }
+
+
+async function loadParticipantNames(
+  list: CircuitParticipant[],
+): Promise<Record<string, string>> {
+  const lookups = list.map(async (p): Promise<[string, string] | null> => {
+    if (p.meu) return [p.meu, (await getMobileEndUser(p.meu)).name]
+    if (p.teu) return [p.teu, (await getTerrestrialEndUser(p.teu)).name]
+    return null // geographic features aren't operators
+  })
+
+  // allSettled: one failed lookup shouldn't blank the whole list
+  const results = await Promise.allSettled(lookups)
+  return Object.fromEntries(
+    results.flatMap((r) => (r.status === 'fulfilled' && r.value ? [r.value] : [])),
+  )
+}
+
+<CircuitOperationForm
+  :operation-id="item.id"
+  :circuit-id="circuitId"
+  :circuit-properties="template.circuitProperties || {}"
+  :fragment-operations="item.fragmentOperations"
+  :participants="participants"
+  :participant-names="participantNames"
+  @submit="(result) => performConfigurableOperation(item, result)"
+  @cancel="toggleExpandedRow(item.id)"
+/>
+
+import type { components } from '../../api/generated/circuit-manager'
+type CircuitParticipant = components['schemas']['CircuitParticipant']
+
+const props = defineProps<{
+  operationId: string
+  circuitId: string
+  circuitProperties: { [key: string]: CircuitProperty }
+  fragmentOperations: { [key: string]: FragmentOperation }
+  participants?: CircuitParticipant[]
+  participantNames?: Record<string, string>
+}>()
+
+<PropertyFormInput
+  v-model="formData[`${elementId}.${statement.command}`]"
+  :property="circuitProperties[statement.command].args"
+  :participants="participants"
+  :participant-names="participantNames"
+/>
+
 </script>
