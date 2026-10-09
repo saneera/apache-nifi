@@ -1,0 +1,229 @@
+<!--
+  Reconstructed from the screen recording. Diff it against your copy rather
+  than overwriting blind. Every change is marked with  // NEW  or  <!-- NEW -->.
+-->
+<template>
+  <v-text-field
+    v-if="['string'].includes(property.type)"
+    :id="`property-form-input-local-value-${Math.floor(Math.random() * 1000)}`"
+    v-model="localValue"
+    :label="property.name"
+    :hint="property.description"
+    density="compact"
+  />
+
+  <v-text-field
+    v-else-if="['integer', 'float'].includes(property.type)"
+    :id="`property-form-input-local-value-${Math.floor(Math.random() * 1000)}`"
+    v-model.number="localValue"
+    :label="property.name"
+    :hint="property.description"
+    density="compact"
+  />
+
+  <v-select
+    v-else-if="property.type === 'enum'"
+    :id="`property-form-input-local-value-${Math.floor(Math.random() * 1000)}`"
+    v-model="localValue"
+    :items="[...enumValOptions, '$property']"
+    :label="property.name"
+    :hint="property.description"
+    density="compact"
+  />
+
+  <v-select
+    v-else-if="property.type === 'boolean'"
+    :id="`property-form-input-local-value-${Math.floor(Math.random() * 1000)}`"
+    v-model="localValue"
+    :items="['true', 'false', '$property']"
+    :label="property.name"
+    :hint="property.description"
+    density="compact"
+    color="primary"
+  />
+
+  <!-- NEW: participant picker for `targets`. Lists only the circuit's participants,
+       with checkboxes, like the Participants field on circuit creation -->
+  <v-select
+    v-else-if="isParticipantProperty"
+    :id="`property-form-input-local-value-${Math.floor(Math.random() * 1000)}`"
+    v-model="participantValue"
+    :items="participantOptions"
+    item-title="title"
+    item-value="value"
+    :label="property.name"
+    :hint="property.description"
+    :multiple="property.type === 'array'"
+    :chips="property.type === 'array'"
+    :closable-chips="property.type === 'array'"
+    no-data-text="No participants on this circuit"
+    clearable
+    persistent-hint
+    density="compact"
+    color="primary"
+  />
+
+  <div v-if="property.type === 'object'" style="width: 100%">
+    <div v-for="(childProp, key) in properties" :key="key">
+      <PropertyFormInput
+        :model-value="localValue[key]"
+        :property="childProp"
+        :participants="participants"
+        :participant-names="participantNames"
+        @update:model-value="(val) => updateNestedValue(key, val)"
+      />
+      <!-- NEW: :participants passed down so nested `targets` gets the list -->
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, onMounted, ref } from 'vue'
+
+import {
+  Property,
+  PropertyEnum,
+  PropertyObject,
+} from '../../api/generated/property-service'
+import type { components } from '../../api/generated/circuit-manager' // NEW: `components` wasn't imported
+
+type CircuitParticipant = components['schemas']['CircuitParticipant']
+
+const props = withDefaults( // NEW: withDefaults so `participants` is never undefined
+  defineProps<{
+    modelValue: any
+    property: Property
+    participants?: CircuitParticipant[]
+    /** NEW: participant UUID -> display name (e.g. "Ken") */
+    participantNames?: Record<string, string>
+  }>(),
+  { participants: () => [], participantNames: () => ({}) },
+)
+
+const emit = defineEmits(['update:modelValue'])
+
+const enumValOptions = ref<string[]>([])
+const properties = ref<Record<string, Property>>({})
+
+onMounted(() => {
+  if (props.property.type === 'enum') {
+    const propEnum = props.property as PropertyEnum
+    enumValOptions.value = propEnum.values ?? []
+  } else if (props.property.type === 'object') {
+    const propObject = props.property as PropertyObject
+    properties.value = propObject.properties
+  }
+})
+
+// ---------- NEW: participant dropdown ----------
+
+/** Property names whose values are participant / address-book ids. */
+const PARTICIPANT_PROPERTY_NAMES = ['targets', 'target']
+
+const isParticipantProperty = computed(() => {
+  const p = props.property as any
+  if (!['array', 'string'].includes(p.type)) return false
+  return (
+    PARTICIPANT_PROPERTY_NAMES.includes(p.name) ||
+    /address ?book/i.test(p.items?.description ?? '')
+  )
+})
+
+/**
+ * TODO: check these field names against CircuitParticipant in circuit-manager.ts.
+ * `value` must be the id that `targets` expects (the address-book entry UUID).
+ */
+/**
+ * CircuitParticipant is { teu?, meu?, feature? }, with exactly one UUID set.
+ * Operators can only be end users (TEU / MEU), so geographic features are skipped.
+ * Names come from `participantNames` (id -> display name), the same lookup the
+ * circuit-creation Participants dropdown uses.
+ */
+const participantOptions = computed(() =>
+  props.participants
+    .map((p) => {
+      const value = p.teu ?? p.meu
+      if (!value) return null
+      const kind = p.teu ? 'TEU' : 'MEU'
+      return {
+        value,
+        title: props.participantNames[value] ?? `${kind} ${value.slice(0, 8)}…`,
+      }
+    })
+    .filter((o): o is { value: string; title: string } => o !== null)
+    .sort((a, b) => a.title.localeCompare(b.title)),
+)
+
+/**
+ * Only show values that are real participants. This hides template placeholders
+ * such as the YAML default "$USER_ADDRESSBOOK_ID", so nothing is pre-ticked.
+ */
+const participantValue = computed({
+  get() {
+    const ids = new Set(participantOptions.value.map((o) => o.value))
+    const v = localValue.value
+    if (Array.isArray(v)) return v.filter((x) => ids.has(x))
+    return ids.has(v) ? v : null
+  },
+  set(value) {
+    localValue.value = value ?? (props.property.type === 'array' ? [] : null)
+  },
+})
+
+// ---------- end NEW ----------
+
+const localValue = computed({
+  get() {
+    const type = props.property.type
+    const value = props.modelValue
+
+    if (type === 'object') {
+      return typeof value === 'object' && value ? value : {}
+    }
+
+    // NEW: arrays (e.g. targets) stay arrays; a single value is wrapped
+    if (type === 'array') {
+      if (Array.isArray(value)) return value
+      return value == null || value === '' ? [] : [value]
+    }
+
+    if (type === 'string') {
+      return typeof value === 'string' ? value : ''
+    }
+
+    if (type === 'integer' || type === 'float') {
+      const raw = value && typeof value === 'object' ? extractValue(value) : value
+      const n = Number(raw)
+      if (raw == null || raw === '' || Number.isNaN(n)) {
+        return null
+      }
+      return type === 'integer' ? Math.trunc(n) : n
+    }
+
+    return value
+  },
+  set(value) {
+    if (props.property.type !== 'object') {
+      emit('update:modelValue', value)
+    }
+  },
+})
+
+function updateNestedValue(key: string | number, val: any) {
+  const currentValue = props.modelValue
+  const updatedValue =
+    typeof currentValue === 'object' && currentValue !== null ? { ...currentValue } : {}
+  updatedValue[key] = val
+  emit('update:modelValue', updatedValue)
+}
+
+const extractValue = (value: object) => {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const entries = Object.entries(value)
+    if (entries.length === 1) {
+      return entries[0][1]
+    }
+  }
+  return value
+}
+</script>
