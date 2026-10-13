@@ -211,6 +211,19 @@ function getResultIcon(result: OperationResult): string {
 
 =========
 
+<v-expansion-panel v-if="showFragmentOperations">
+<v-expansion-panel-title>Add/Delete fragment</v-expansion-panel-title>
+<v-expansion-panel-text>
+<FragmentOperations
+    :circuit-id="circuitId"
+    :template="template"
+    @updated="refreshCircuit"
+/>
+</v-expansion-panel-text>
+</v-expansion-panel>
+
+const showFragmentOperations = computed(() => hasConfigurableFragments(template.value))
+
 import type { CircuitTemplate } from '../api/generated/circuit-manager'
 
 export interface TemplateFragment {
