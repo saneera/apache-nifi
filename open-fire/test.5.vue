@@ -1,3 +1,71 @@
+/**
+* From circuit-template.yaml:
+*   CircuitFragmentTemplate { id, name, nodeType, multiplicity: FragmentMultiplicity, … }
+*   FragmentMultiplicity    { min?: integer, max?: integer }
+* multiplicity.min > 0 means the fragment is dynamic (can be added / deleted).
+*
+* Uses local structural types so it doesn't depend on which generated schema
+* file exports FragmentMultiplicity. It accepts any template object with that shape.
+*/
+
+interface FragmentMultiplicityLike {
+min?: number
+max?: number
+}
+
+interface FragmentTemplateLike {
+id?: string
+name?: string
+multiplicity?: FragmentMultiplicityLike
+}
+
+export interface TemplateFragment {
+id: string
+name: string
+min: number
+max?: number
+}
+
+/**
+* All fragment templates in the circuit template.
+* TODO: confirm the property on CircuitTemplate that holds the fragment templates
+* (assumed `fragments`). Works whether it's an array or a map keyed by id.
+*/
+export function getTemplateFragments(template?: unknown): TemplateFragment[] {
+const raw = (template as { fragments?: unknown } | undefined)?.fragments
+if (!raw) return []
+
+const list: [string, FragmentTemplateLike][] = Array.isArray(raw)
+? (raw as FragmentTemplateLike[]).map((f) => [f.id ?? '', f])
+: Object.entries(raw as Record<string, FragmentTemplateLike>)
+
+return list.map(([key, f]) => ({
+id: f.id ?? key,
+name: f.name ?? f.id ?? key,
+min: f.multiplicity?.min ?? 0,
+max: f.multiplicity?.max,
+}))
+}
+
+/** Dynamic = multiplicity.min > 0. */
+export function isDynamic(multiplicity?: FragmentMultiplicityLike): boolean {
+return (multiplicity?.min ?? 0) > 0
+}
+
+/** Dynamic fragments, i.e. those that can be added / deleted. */
+export function getConfigurableFragments(template?: unknown): TemplateFragment[] {
+return getTemplateFragments(template).filter((f) => isDynamic(f))
+}
+
+/** Show the Add/Delete fragment section only if the template has a dynamic fragment. */
+export function hasConfigurableFragments(template?: unknown): boolean {
+return getConfigurableFragments(template).length > 0
+}
+
+
+=========
+
+
 <!--
   Add/Delete fragment section, built like CircuitOperations.vue:
   a table with two operations (Add fragment, Delete fragment), each with
@@ -48,7 +116,7 @@
                 item-title="title"
                 item-value="value"
                 label="Fragment"
-                hint="Fragments with a template minimum greater than 0"
+                hint="Dynamic fragments (multiplicity min > 0)"
                 persistent-hint
                 :rules="[(v: string) => !!v || 'This field is required']"
                 variant="solo"
@@ -146,7 +214,7 @@ const selectedFragment = ref<Record<string, string | undefined>>({})
 const fragmentOptions = computed(() =>
     getConfigurableFragments(props.template).map((f) => ({
       title: `${f.name} (min ${f.min}${f.max != null ? `, max ${f.max}` : ''})`,
-      value: f.name,
+      value: f.id,
     })),
 )
 
@@ -207,51 +275,3 @@ function getResultIcon(result: OperationResult): string {
   }
 }
 </script>
-
-
-=========
-
-<v-expansion-panel v-if="showFragmentOperations">
-<v-expansion-panel-title>Add/Delete fragment</v-expansion-panel-title>
-<v-expansion-panel-text>
-<FragmentOperations
-    :circuit-id="circuitId"
-    :template="template"
-    @updated="refreshCircuit"
-/>
-</v-expansion-panel-text>
-</v-expansion-panel>
-
-const showFragmentOperations = computed(() => hasConfigurableFragments(template.value))
-
-import type { CircuitTemplate } from '../api/generated/circuit-manager'
-
-export interface TemplateFragment {
-name: string
-min: number
-max?: number
-}
-
-/**
-* Fragments defined in the circuit template, with their min / max.
-* TODO: adjust `template.fragments` and the `min` / `max` field names to match the
-* CircuitTemplate type in circuit-manager.ts if they differ.
-*/
-export function getTemplateFragments(template?: CircuitTemplate): TemplateFragment[] {
-const fragments = ((template as any)?.fragments ?? {}) as Record<string, any>
-return Object.entries(fragments).map(([name, f]) => ({
-name: f?.name ?? name,
-min: Number(f?.min ?? 0),
-max: f?.max != null ? Number(f.max) : undefined,
-}))
-}
-
-/** Fragments that can be added / deleted: template `min` greater than 0. */
-export function getConfigurableFragments(template?: CircuitTemplate): TemplateFragment[] {
-return getTemplateFragments(template).filter((f) => f.min > 0)
-}
-
-/** Show the Add/Delete fragment section only if at least one fragment has min > 0. */
-export function hasConfigurableFragments(template?: CircuitTemplate): boolean {
-return getConfigurableFragments(template).length > 0
-}
