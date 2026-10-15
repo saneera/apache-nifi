@@ -249,3 +249,4 @@ function getResultIcon(result: OperationResult): string {
   }
 }
 </script>
+console.log('PFI', props.propertyKey, props.participantPicker, JSON.stringify(props.property))
