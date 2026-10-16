@@ -1,557 +1,248 @@
 // =====================================================================================
-// NotificationTrigger.java - minutes recurrence support (JTTHFC2-6527 follow-up)
+// Minutes recurrence tests - paste into ReminderServiceTest, next to testDailyReminders()
 //
-// Reconstructed from a screen recording, so typos are possible in the UNCHANGED code.
-// Safest approach: copy only the blocks marked "// NEW" / "// CHANGED" into your file.
-//
-// Package and imports: keep your existing ones. Make sure these are present:
-//   import java.time.temporal.ChronoUnit;   // used by the NEW MINUTES case
+// Check before running:
+//  1. MinutesRecurrencePattern constructor: match the argument order your DailyRecurrencePattern
+//     constructor uses (recurrencePatternType first, then the count). If there's no all-args
+//     constructor, use: new MinutesRecurrencePattern().recurrencePatternType("minute").minutes(15)
+//  2. The 0-minutes test only applies if you kept the guard in setupCronExpression.
+//  3. Imports needed (most already exist in this test class):
+//     java.time.OffsetDateTime, static org.junit.jupiter.api.Assertions.assertNull,
+//     static org.junit.jupiter.api.Assertions.assertThrows
 // =====================================================================================
 
-/**
- * Class to create notification-triggers from a reminder schedule or notification postponement.
- */
-public class NotificationTrigger implements Trigger {
+@Test
+@DisplayName("Test notification trigger for minute reminders with a start date in the past.")
+void testMinutesRemindersStartInPast() {
+    final SimpleTriggerContext triggerContext = new SimpleTriggerContext();
 
-    private enum RecurTypes {
-        NONE,
-        MINUTES,
-        HOURS,
-        DAYS,
-        WEEKS,
-        MONTHS,
-        YEARS
+    // Set current date-time to 3/1/2024 10:15am
+    final DateTimeFormatter formatter = DateTimeFormatter.ISO_DATE_TIME;
+    final Instant currentTime = Instant.from(formatter.parse("2024-01-03T10:15:00.00Z"));
+
+    final NotificationTrigger trigger = new NotificationTrigger();
+    trigger.setClock(Clock.fixed(currentTime, ZoneId.of("UTC")));
+
+    // Set start date-time to 3/1/2024 9:07am
+    final Reminder reminder = createReminder("2024-01-03T09:07:00.00Z");
+
+    final MinutesRecurrencePattern minutesRecurrencePattern = new MinutesRecurrencePattern("minute", 15);
+
+    final Recurrence recurrence = new Recurrence(minutesRecurrencePattern, new RecurrenceRange());
+    reminder.getSchedule().setRecurrence(recurrence);
+    trigger.setReminderTask(reminder);
+
+    // Every 15 minutes starting at 9:07 means trigger on
+    // 9:07, 9:22, 9:37, 9:52, 10:07, 10:22, 10:37 etc.
+    // If current time is 10:15, then nextExecution should be at 10:22.
+    assertEquals(trigger.getNextOccurrence().toString(), "2024-01-03T10:22:00Z");
+
+    // First call should be 10:22, with nextOccurrence at 10:37
+    Instant next = trigger.nextExecution(triggerContext);
+    assertNotNull(next);
+    assertEquals(next.toString(), "2024-01-03T10:22:00Z");
+    assertEquals(trigger.getNextOccurrence().toString(), "2024-01-03T10:37:00Z");
+
+    // Update clock to 10:22.
+    // Next execution should be at 10:37, with nextOccurrence at 10:52
+    trigger.setClock(Clock.fixed(next, ZoneId.of("UTC")));
+    next = trigger.nextExecution(triggerContext);
+    assertNotNull(next);
+    assertEquals(next.toString(), "2024-01-03T10:37:00Z");
+    assertEquals(trigger.getNextOccurrence().toString(), "2024-01-03T10:52:00Z");
+}
+
+@Test
+@DisplayName("Test notification trigger for minute reminders with a start date in the future.")
+void testMinutesRemindersStartInFuture() {
+    final SimpleTriggerContext triggerContext = new SimpleTriggerContext();
+
+    // Set current date-time to 3/1/2024 10:15am
+    final DateTimeFormatter formatter = DateTimeFormatter.ISO_DATE_TIME;
+    final Instant currentTime = Instant.from(formatter.parse("2024-01-03T10:15:00.00Z"));
+
+    final NotificationTrigger trigger = new NotificationTrigger();
+    trigger.setClock(Clock.fixed(currentTime, ZoneId.of("UTC")));
+
+    // Set start date-time to 3/1/2024 11:00am
+    final Reminder reminder = createReminder("2024-01-03T11:00:00.00Z");
+
+    final MinutesRecurrencePattern minutesRecurrencePattern = new MinutesRecurrencePattern("minute", 30);
+
+    final Recurrence recurrence = new Recurrence(minutesRecurrencePattern, new RecurrenceRange());
+    reminder.getSchedule().setRecurrence(recurrence);
+    trigger.setReminderTask(reminder);
+
+    // Start is in the future, so the first notification is at the start time.
+    assertEquals(trigger.getNextOccurrence().toString(), "2024-01-03T11:00:00Z");
+
+    // First call should be 11:00, with nextOccurrence at 11:30
+    Instant next = trigger.nextExecution(triggerContext);
+    assertNotNull(next);
+    assertEquals(next.toString(), "2024-01-03T11:00:00Z");
+    assertEquals(trigger.getNextOccurrence().toString(), "2024-01-03T11:30:00Z");
+
+    // Update clock to 11:00.
+    // Next execution should be at 11:30, with nextOccurrence at 12:00
+    trigger.setClock(Clock.fixed(next, ZoneId.of("UTC")));
+    next = trigger.nextExecution(triggerContext);
+    assertNotNull(next);
+    assertEquals(next.toString(), "2024-01-03T11:30:00Z");
+    assertEquals(trigger.getNextOccurrence().toString(), "2024-01-03T12:00:00Z");
+}
+
+@Test
+@DisplayName("Test notification trigger for minute reminders that don't divide evenly into an hour.")
+void testMinutesRemindersAcrossHourBoundary() {
+    final SimpleTriggerContext triggerContext = new SimpleTriggerContext();
+
+    // Set current date-time to 3/1/2024 10:15am
+    final DateTimeFormatter formatter = DateTimeFormatter.ISO_DATE_TIME;
+    final Instant currentTime = Instant.from(formatter.parse("2024-01-03T10:15:00.00Z"));
+
+    final NotificationTrigger trigger = new NotificationTrigger();
+    trigger.setClock(Clock.fixed(currentTime, ZoneId.of("UTC")));
+
+    // Set start date-time to 3/1/2024 10:00am
+    final Reminder reminder = createReminder("2024-01-03T10:00:00.00Z");
+
+    final MinutesRecurrencePattern minutesRecurrencePattern = new MinutesRecurrencePattern("minute", 7);
+
+    final Recurrence recurrence = new Recurrence(minutesRecurrencePattern, new RecurrenceRange());
+    reminder.getSchedule().setRecurrence(recurrence);
+    trigger.setReminderTask(reminder);
+
+    // Every 7 minutes starting at 10:00 means trigger on 10:00, 10:07, 10:14, 10:21 ...
+    // If current time is 10:15, then nextExecution should be at 10:21.
+    assertEquals(trigger.getNextOccurrence().toString(), "2024-01-03T10:21:00Z");
+
+    // Gaps must stay exactly 7 minutes across the 11:00 boundary
+    // (a cron "*/7" would wrongly jump from 10:56 to 11:00).
+    final String[] expected = {
+            "2024-01-03T10:21:00Z",
+            "2024-01-03T10:28:00Z",
+            "2024-01-03T10:35:00Z",
+            "2024-01-03T10:42:00Z",
+            "2024-01-03T10:49:00Z",
+            "2024-01-03T10:56:00Z",
+            "2024-01-03T11:03:00Z",
+            "2024-01-03T11:10:00Z"
+    };
+    for (final String expectedTime : expected) {
+        final Instant next = trigger.nextExecution(triggerContext);
+        assertNotNull(next);
+        assertEquals(next.toString(), expectedTime);
+        trigger.setClock(Clock.fixed(next, ZoneId.of("UTC")));
     }
+}
 
-    private enum CronDayOfWeek {
-        MONDAY(1),
-        TUESDAY(2),
-        WEDNESDAY(3),
-        THURSDAY(4),
-        FRIDAY(5),
-        SATURDAY(6),
-        SUNDAY(7);
+@Test
+@DisplayName("Test notification trigger for minute reminders that end after a number of occurrences.")
+void testMinutesRemindersEndAfter() {
+    final SimpleTriggerContext triggerContext = new SimpleTriggerContext();
 
-        final int value;
+    // Set current date-time to 3/1/2024 10:15am
+    final DateTimeFormatter formatter = DateTimeFormatter.ISO_DATE_TIME;
+    final Instant currentTime = Instant.from(formatter.parse("2024-01-03T10:15:00.00Z"));
 
-        CronDayOfWeek(final int val) { value = val; }
+    final NotificationTrigger trigger = new NotificationTrigger();
+    trigger.setClock(Clock.fixed(currentTime, ZoneId.of("UTC")));
 
-        public static String valueOf(final CronDayOfWeek dow) { return String.valueOf(dow.value); }
-    }
+    // Set start date-time to 3/1/2024 11:00am
+    final Reminder reminder = createReminder("2024-01-03T11:00:00.00Z");
 
-    /*
-     * Map of DayInstance enums to cron equivalents.
-     */
-    private static final Map<DayInstance, String> dayInstanceMap = new HashMap<>();
+    final MinutesRecurrencePattern minutesRecurrencePattern = new MinutesRecurrencePattern("minute", 10);
 
-    static {
-        dayInstanceMap.put(DayInstance.FIRST, "#1");
-        dayInstanceMap.put(DayInstance.SECOND, "#2");
-        dayInstanceMap.put(DayInstance.THIRD, "#3");
-        dayInstanceMap.put(DayInstance.FOURTH, "#4");
-        dayInstanceMap.put(DayInstance.LAST, "L");
-    }
+    // Repeat 3 times only
+    final RecurrenceRange range = new RecurrenceRange();
+    range.setEndAfter(3);
 
-    /*
-     * Map of DayOfWeek enums to cron equivalents.
-     */
-    private static final Map<DayOfWeek, Integer> dayOfWeekMap = new HashMap<>();
+    final Recurrence recurrence = new Recurrence(minutesRecurrencePattern, range);
+    reminder.getSchedule().setRecurrence(recurrence);
+    trigger.setReminderTask(reminder);
 
-    static {
-        dayOfWeekMap.put(DayOfWeek.MON, 1);
-        dayOfWeekMap.put(DayOfWeek.TUE, 2);
-        dayOfWeekMap.put(DayOfWeek.WED, 3);
-        dayOfWeekMap.put(DayOfWeek.THU, 4);
-        dayOfWeekMap.put(DayOfWeek.FRI, 5);
-        dayOfWeekMap.put(DayOfWeek.SAT, 6);
-        dayOfWeekMap.put(DayOfWeek.SUN, 7);
-    }
+    // Should fire at 11:00, 11:10, 11:20 and then stop.
+    Instant next = trigger.nextExecution(triggerContext);
+    assertNotNull(next);
+    assertEquals(next.toString(), "2024-01-03T11:00:00Z");
 
-    private Duration duration;
-    private int occurrencesRemaining;
-    private CronExpression cronExpression;
-    private String cronString;
-    private Instant startDateTime;
-    private Instant endDateTime;
-    private RecurTypes recurType;
-    private int recurCount;
+    trigger.setClock(Clock.fixed(next, ZoneId.of("UTC")));
+    next = trigger.nextExecution(triggerContext);
+    assertNotNull(next);
+    assertEquals(next.toString(), "2024-01-03T11:10:00Z");
 
-    /**
-     * Return whether this trigger is a recurring trigger.
-     */
-    @Getter
-    private boolean recurring;
+    trigger.setClock(Clock.fixed(next, ZoneId.of("UTC")));
+    next = trigger.nextExecution(triggerContext);
+    assertNotNull(next);
+    assertEquals(next.toString(), "2024-01-03T11:20:00Z");
 
-    /**
-     * Return the next occurrence calculated by this trigger.
-     */
-    @Getter
-    private Instant nextOccurrence;
+    // Fourth call returns null - no more occurrences
+    trigger.setClock(Clock.fixed(next, ZoneId.of("UTC")));
+    next = trigger.nextExecution(triggerContext);
+    assertNull(next);
+}
 
-    /**
-     * The runnable that is executed when a trigger is completed.
-     */
-    @Setter
-    private Runnable onCompleted;
+@Test
+@DisplayName("Test notification trigger for minute reminders that end by a date-time.")
+void testMinutesRemindersEndBy() {
+    final SimpleTriggerContext triggerContext = new SimpleTriggerContext();
 
-    /**
-     * The clock to use for this notification trigger. By default, this is the system UTC based
-     * clock. -- SETTER -- Allow the system clock to be overridden for debugging purposes.
-     */
-    @Setter
-    private Clock clock = Clock.systemUTC();
+    // Set current date-time to 3/1/2024 10:15am
+    final DateTimeFormatter formatter = DateTimeFormatter.ISO_DATE_TIME;
+    final Instant currentTime = Instant.from(formatter.parse("2024-01-03T10:15:00.00Z"));
 
-    /**
-     * Setup a simple trigger for postponing a notification.
-     *
-     * @param seconds The number of seconds before the trigger is fired.
-     */
-    public void setNextExecution(final int seconds) {
-        this.duration = Duration.ofSeconds(seconds);
-        this.occurrencesRemaining = 1;
-        this.cronString = null;
-        this.cronExpression = null;
-        this.startDateTime = null;
-        this.endDateTime = null;
-        this.recurring = false;
-        this.nextOccurrence = Instant.now(clock).plusSeconds(seconds);
-        this.onCompleted = null;
-        this.recurType = RecurTypes.NONE;
-        this.recurCount = 0;
-    }
+    final NotificationTrigger trigger = new NotificationTrigger();
+    trigger.setClock(Clock.fixed(currentTime, ZoneId.of("UTC")));
 
-    /**
-     * Create the cron string and corresponding parsed cron expression if applicable.
-     *
-     * @param reminder The reminder containing the scheduling information.
-     */
-    void setupCronExpression(final Reminder reminder) {
+    // Set start date-time to 3/1/2024 11:00am
+    final Reminder reminder = createReminder("2024-01-03T11:00:00.00Z");
 
-        cronString = null;
-        cronExpression = null;
-        recurType = RecurTypes.NONE;
-        recurCount = 0;
-        startDateTime = reminder.getSchedule().getStartUTC().toInstant();
-        endDateTime = null;
-        onCompleted = null;
-        duration = Duration.between(Instant.now(clock), startDateTime);
+    final MinutesRecurrencePattern minutesRecurrencePattern = new MinutesRecurrencePattern("minute", 10);
 
-        // Ignore end timestamp if it is before the specified start.
-        final Schedule schedule = reminder.getSchedule();
-        if (schedule.getRecurrence() != null
-                && schedule.getRecurrence().getRange().getEndByUTC() != null) {
-            endDateTime = schedule.getRecurrence().getRange().getEndByUTC().toInstant();
-        }
+    // End by 3/1/2024 11:25am
+    final RecurrenceRange range = new RecurrenceRange();
+    range.setEndByUTC(OffsetDateTime.parse("2024-01-03T11:25:00Z"));
 
-        if (endDateTime != null && endDateTime.isBefore(startDateTime)) {
-            endDateTime = null;
-        }
+    final Recurrence recurrence = new Recurrence(minutesRecurrencePattern, range);
+    reminder.getSchedule().setRecurrence(recurrence);
+    trigger.setReminderTask(reminder);
 
-        if (schedule.getRecurrence() == null) {
-            // The reminder will activate once at the specified startDateTime.
-            return;
-        }
+    // Should fire at 11:00, 11:10, 11:20. 11:30 is after the end time, so it stops.
+    Instant next = trigger.nextExecution(triggerContext);
+    assertNotNull(next);
+    assertEquals(next.toString(), "2024-01-03T11:00:00Z");
 
-        // Construct a cron string and expression
-        final Recurrence recurrence = schedule.getRecurrence();
-        if (recurrence.getPattern() instanceof final DailyRecurrencePattern dailyRecurrencePattern) {
-            // Recurrence is to issue a notification every number of days.
-            recurType = RecurTypes.DAYS;
-            recurCount = dailyRecurrencePattern.getDays();
-        } else if (recurrence.getPattern() instanceof final MinutesRecurrencePattern minutesRecurrencePattern) {
-            // Recurrence is to issue a notification every N minutes.                       // CHANGED (comment)
-            // No cron is used: cron steps reset every hour, so e.g. "every 7 minutes"     // NEW
-            // can't be expressed. Fixed-interval handling is used instead, like DAYS.     // NEW
-            final Integer minutes = minutesRecurrencePattern.getMinutes();                  // NEW
-            if (minutes == null || minutes < 1) {                                            // NEW
-                throw new IllegalArgumentException("Minutes recurrence must be at least 1"); // NEW
-            }                                                                                // NEW
-            recurType = RecurTypes.MINUTES;
-            recurCount = minutes;                                                            // CHANGED
-        } else if (recurrence.getPattern() instanceof final WeeklyRecurrencePattern weeklyRecurrencePattern) {
-            cronString = createWeeklyPattern(weeklyRecurrencePattern, schedule.getStartUTC());
-        } else if (recurrence.getPattern() instanceof final MonthlyRecurrencePattern monthlyRecurrencePattern) {
-            cronString = createMonthlyPattern(monthlyRecurrencePattern, schedule.getStartUTC());
-        } else if (recurrence.getPattern() instanceof final YearlyRecurrencePattern yearlyRecurrencePattern) {
-            cronString = createYearlyPattern(yearlyRecurrencePattern, schedule.getStartUTC());
-        }
+    trigger.setClock(Clock.fixed(next, ZoneId.of("UTC")));
+    next = trigger.nextExecution(triggerContext);
+    assertNotNull(next);
+    assertEquals(next.toString(), "2024-01-03T11:10:00Z");
 
-        if (cronString != null) {
-            cronExpression = CronExpression.parse(cronString);
-        }
-    }
+    trigger.setClock(Clock.fixed(next, ZoneId.of("UTC")));
+    next = trigger.nextExecution(triggerContext);
+    assertNotNull(next);
+    assertEquals(next.toString(), "2024-01-03T11:20:00Z");
 
-    /**
-     * Create the weekly cron expression from the weekly recurrence pattern and start date-time.
-     *
-     * @param weeklyRecurrencePattern Contains the days of the week to be notified.
-     * @param startDateTime           Contains the minute and hour of the days of the week to be notified.
-     * @return The cron expression on success or null if no days of the week were specified.
-     */
-    String createWeeklyPattern(
-            final WeeklyRecurrencePattern weeklyRecurrencePattern, final OffsetDateTime startDateTime) {
-        this.recurType = RecurTypes.WEEKS;
-        this.recurCount = weeklyRecurrencePattern.getWeeks();
-        final List<CronDayOfWeek> dayList = new ArrayList<>();
-        if (Boolean.TRUE.equals(weeklyRecurrencePattern.getDays().getMon())) dayList.add(CronDayOfWeek.MONDAY);
-        if (Boolean.TRUE.equals(weeklyRecurrencePattern.getDays().getTue())) dayList.add(CronDayOfWeek.TUESDAY);
-        if (Boolean.TRUE.equals(weeklyRecurrencePattern.getDays().getWed())) dayList.add(CronDayOfWeek.WEDNESDAY);
-        if (Boolean.TRUE.equals(weeklyRecurrencePattern.getDays().getThu())) dayList.add(CronDayOfWeek.THURSDAY);
-        if (Boolean.TRUE.equals(weeklyRecurrencePattern.getDays().getFri())) dayList.add(CronDayOfWeek.FRIDAY);
-        if (Boolean.TRUE.equals(weeklyRecurrencePattern.getDays().getSat())) dayList.add(CronDayOfWeek.SATURDAY);
-        if (Boolean.TRUE.equals(weeklyRecurrencePattern.getDays().getSun())) dayList.add(CronDayOfWeek.SUNDAY);
+    trigger.setClock(Clock.fixed(next, ZoneId.of("UTC")));
+    next = trigger.nextExecution(triggerContext);
+    assertNull(next);
+}
 
-        if (dayList.size() == 0) {
-            return null;
-        }
+// Only include this test if you kept the minutes guard in setupCronExpression.
+@Test
+@DisplayName("Test notification trigger rejects a minute reminder of 0 minutes.")
+void testMinutesRemindersZeroMinutesRejected() {
+    final DateTimeFormatter formatter = DateTimeFormatter.ISO_DATE_TIME;
+    final Instant currentTime = Instant.from(formatter.parse("2024-01-03T10:15:00.00Z"));
 
-        final String dayListString =
-                dayList.stream().map(CronDayOfWeek::valueOf).collect(Collectors.joining(","));
+    final NotificationTrigger trigger = new NotificationTrigger();
+    trigger.setClock(Clock.fixed(currentTime, ZoneId.of("UTC")));
 
-        return String.format("0 %d %d ? * %s", startDateTime.getMinute(), startDateTime.getHour(), dayListString);
-    }
+    final Reminder reminder = createReminder("2024-01-03T09:00:00.00Z");
 
-    /**
-     * Create the monthly cron expression from the monthly recurrence pattern and start date-time.
-     *
-     * @param monthlyRecurrencePattern Contains the day of month information.
-     * @param startDateTime            Contains the minute and hour of the day of month to be notified.
-     * @return The cron expression on success or null if no monthly information was provided.
-     */
-    String createMonthlyPattern(
-            final MonthlyRecurrencePattern monthlyRecurrencePattern, final OffsetDateTime startDateTime) {
-        this.recurType = RecurTypes.MONTHS;
-        this.recurCount = monthlyRecurrencePattern.getMonths();
+    final MinutesRecurrencePattern minutesRecurrencePattern = new MinutesRecurrencePattern("minute", 0);
 
-        if (monthlyRecurrencePattern.getOnDay() != null) {
-            final MonthlyRecurrencePatternOnDay onDay = monthlyRecurrencePattern.getOnDay();
-            final String dayType = dayInstanceMap.get(onDay.getDayInstance());
-            final int dayOfWeek = dayOfWeekMap.get(onDay.getDay());
+    final Recurrence recurrence = new Recurrence(minutesRecurrencePattern, new RecurrenceRange());
+    reminder.getSchedule().setRecurrence(recurrence);
 
-            return String.format(
-                    "0 %d %d ? * %d%s", startDateTime.getMinute(), startDateTime.getHour(), dayOfWeek, dayType);
-        }
-
-        final MonthlyRecurrencePatternOnDate onDate = monthlyRecurrencePattern.getOnDate();
-        if (onDate == null) {
-            return null;
-        }
-
-        return String.format("0 %d %d %d * ?", startDateTime.getMinute(), startDateTime.getHour(), onDate.getDate());
-    }
-
-    /**
-     * Create the yearly cron expression from the yearly recurrence pattern and start date-time.
-     *
-     * @param yearlyRecurrencePattern Contains the day of year to be notified.
-     * @param startDateTime           Contains the minute and hour of the day of the year to be notified.
-     * @return The cron expression on success or null if no yearly information was provided.
-     */
-    String createYearlyPattern(
-            final YearlyRecurrencePattern yearlyRecurrencePattern, final OffsetDateTime startDateTime) {
-        this.recurType = RecurTypes.YEARS;
-        this.recurCount = yearlyRecurrencePattern.getYears();
-
-        if (yearlyRecurrencePattern.getOnDay() != null) {
-            final YearlyRecurrencePatternOnDay onDay = yearlyRecurrencePattern.getOnDay();
-            final int dayOfWeek = dayOfWeekMap.get(onDay.getDay());
-            final String dayType = dayInstanceMap.get(onDay.getDayInstance());
-            final int monthOfYear = onDay.getMonth();
-
-            return String.format(
-                    "0 %d %d ? %d %d%s",
-                    startDateTime.getMinute(), startDateTime.getHour(), monthOfYear, dayOfWeek, dayType);
-        }
-
-        final YearlyRecurrencePatternOnDate onDate = yearlyRecurrencePattern.getOnDate();
-        if (onDate == null) {
-            return null;
-        }
-        final int dayOfMonth = onDate.getDate();
-        final int monthOfYear = onDate.getMonth();
-
-        return String.format(
-                "0 %d %d %d %d ?", startDateTime.getMinute(), startDateTime.getHour(), dayOfMonth, monthOfYear);
-    }
-
-    /**
-     * Set up a custom trigger using the instructions defined in the given reminder.
-     *
-     * @param reminder Contains instructions for when to fire the trigger. Allows for recurring
-     *                 reminders starting from a specified start date-time along with other custom scheduling
-     *                 for minute-based, daily, weekly, monthly and yearly recurrences.      // CHANGED (doc)
-     */
-    public void setupTrigger(@NotNull final Reminder reminder) {   // <-- keep your real method name here
-        final Instant now = Instant.now(clock);
-
-        setupCronExpression(reminder);
-
-        if (recurType == RecurTypes.NONE) {
-            // Once off reminder is just triggered once at start date/time.
-            // If start date/time is in the past, then don't do a reminder.
-            occurrencesRemaining = duration.isNegative() ? 0 : 1;
-            cronExpression = null;
-            nextOccurrence = startDateTime;
-        } else {
-            // If start date is in the past then calculate the next suitable point in time.
-            if (duration.isNegative()) {
-                Instant nextTime;
-                LocalDateTime next;
-
-                switch (recurType) {
-                    case MINUTES -> {                                                    // NEW
-                        // Every N minutes from the start date/time.                     // NEW
-                        // e.g. start 09:07, every 15, now 10:00 -> next is 10:07.       // NEW
-                        nextTime = startDateTime;                                        // NEW
-                        while (nextTime.isBefore(now)) {                                 // NEW
-                            nextTime = nextTime.plus(recurCount, ChronoUnit.MINUTES);    // NEW
-                        }                                                                // NEW
-                        duration = Duration.between(now, nextTime);                      // NEW
-                    }                                                                    // NEW
-                    case HOURS -> {
-                        // Offset by the minutes in the start date/time. So if start time is 12:17,
-                        // this is an hourly task, and it is currently 4:30pm, then the next reminder
-                        // will be at 5:17pm. The time to wait is the difference between now and the
-                        // next reminder time.
-                        next = cronExpression.next(LocalDateTime.now(clock));
-                        final int minutes = startDateTime.atZone(ZoneOffset.UTC).getMinute();
-                        next = Objects.requireNonNull(next).plusMinutes(minutes);
-                        duration = Duration.between(LocalDateTime.now(clock), next);
-                        // If current time is 5:00, then cron next will return 6:00 so bring the
-                        // time back within the hour.
-                        if (duration.toSeconds() > TimeUnit.HOURS.toSeconds(1)) {
-                            duration = duration.minusSeconds(TimeUnit.HOURS.toSeconds(1));
-                        }
-                    }
-                    case DAYS -> {
-                        if (cronExpression != null) {
-                            final LocalDateTime nextFromNow =
-                                    cronExpression.next(LocalDateTime.ofInstant(now, ZoneOffset.UTC));
-                            duration = Duration.between(LocalDateTime.now(clock), nextFromNow);
-                        } else {
-                            // Recur every N days from start date/time.
-                            nextTime = startDateTime;
-                            while (nextTime.isBefore(now)) {
-                                nextTime = nextTime.plus(recurCount, ChronoUnit.DAYS);
-                            }
-                            duration = Duration.between(now, nextTime);
-                        }
-                    }
-                    case WEEKS -> {
-                        if (recurCount > 1) {
-                            // Get the first day of the week in startDateTime. If it is the 12/12/23
-                            // then we want Sun 9/12/23 at time 0:00:00.
-                            final TemporalField field =
-                                    WeekFields.of(Locale.getDefault()).dayOfWeek();
-                            final LocalDateTime localStart = LocalDateTime.ofInstant(startDateTime, ZoneOffset.UTC)
-                                    .with(field, 1)
-                                    .with(LocalTime.MIDNIGHT);
-
-                            nextTime = localStart.toInstant(ZoneOffset.UTC);
-                            while (nextTime.isBefore(now)) {
-                                nextTime = nextTime.plus(recurCount * 7L, ChronoUnit.DAYS);
-                            }
-                        } else {
-                            nextTime = now;
-                        }
-                        final LocalDateTime nextFromNow =
-                                cronExpression.next(LocalDateTime.ofInstant(nextTime, ZoneOffset.UTC));
-                        duration = Duration.between(LocalDateTime.now(clock), nextFromNow);
-                    }
-                    case MONTHS -> {
-                        if (recurCount > 1) {
-                            // Get the first day of the month in startDateTime. If it is the 12/12/23
-                            // then we want Fri 1/12/23 at time 0:00:00.
-                            final LocalDateTime localStart = LocalDateTime.ofInstant(startDateTime, ZoneOffset.UTC)
-                                    .with(TemporalAdjusters.firstDayOfMonth())
-                                    .with(LocalTime.MIDNIGHT);
-
-                            nextTime = localStart.toInstant(ZoneOffset.UTC);
-                            while (nextTime.isBefore(now)) {
-                                nextTime = nextTime.atOffset(ZoneOffset.UTC)
-                                        .plus(recurCount, ChronoUnit.MONTHS)
-                                        .toInstant();
-                            }
-                        } else {
-                            nextTime = now;
-                        }
-                        next = cronExpression.next(LocalDateTime.ofInstant(nextTime, ZoneOffset.UTC));
-                        duration = Duration.between(LocalDateTime.now(clock), next);
-                    }
-                    case YEARS -> {
-                        if (recurCount > 1) {
-                            // Get the first day of the year in startDateTime. If it is the 12/12/23
-                            // then we want 1/1/23 at time 0:00:00.
-                            final LocalDateTime localStart = LocalDateTime.ofInstant(startDateTime, ZoneOffset.UTC)
-                                    .with(TemporalAdjusters.firstDayOfYear())
-                                    .with(LocalTime.MIDNIGHT);
-
-                            nextTime = localStart.toInstant(ZoneOffset.UTC);
-                            while (nextTime.isBefore(now)) {
-                                nextTime = nextTime.atOffset(ZoneOffset.UTC)
-                                        .plus(recurCount, ChronoUnit.YEARS)
-                                        .toInstant();
-                            }
-                        } else {
-                            nextTime = now;
-                        }
-                        next = cronExpression.next(LocalDateTime.ofInstant(nextTime, ZoneOffset.UTC));
-                        duration = Duration.between(LocalDateTime.now(clock), next);
-                    }
-                    default -> {
-                        // Evaluate all other types as cron expressions.
-                        next = cronExpression.next(LocalDateTime.ofInstant(now, ZoneOffset.UTC));
-                        duration = Duration.between(LocalDateTime.now(clock), next);
-                    }
-                }
-            }
-
-            // Save the occurrences remaining. If there is no specified number of
-            // occurrences set, then simplify the logic by setting this to INT_MAX,
-            // which should be large enough to effectively be infinite.
-            occurrencesRemaining = 0;
-            assert reminder.getSchedule().getRecurrence() != null;
-            if (reminder.getSchedule().getRecurrence().getRange().getEndAfter() != null) {
-                occurrencesRemaining =
-                        reminder.getSchedule().getRecurrence().getRange().getEndAfter();
-            }
-            if (occurrencesRemaining == 0) {
-                occurrencesRemaining = Integer.MAX_VALUE;
-            }
-
-            recurring = recurType != RecurTypes.NONE;
-            nextOccurrence = now.plus(duration);
-        }
-
-        reminder.getSchedule().setNextExecutionUTC(nextOccurrence.atOffset(ZoneOffset.UTC));
-    }
-
-    /**
-     * Calculate and return the next time to execute the associated scheduled task.
-     *
-     * @param triggerContext Context encapsulating last execution times. Not used.
-     * @return The next execution time as calculated by the trigger. Return null when the trigger is
-     *         no longer going to fire.
-     */
-    @Override
-    @Nullable
-    public Instant nextExecution(final TriggerContext triggerContext) {
-
-        if (occurrencesRemaining <= 0) {
-            if (onCompleted != null) {
-                onCompleted.run();
-            }
-            return null;
-        }
-        occurrencesRemaining -= 1;
-
-        final Instant next = Instant.now(clock).plus(duration);
-        if (endDateTime != null && next.isAfter(endDateTime)) {
-            // Completed since the next notification will be after
-            // the specified end date/time
-            if (onCompleted != null) {
-                onCompleted.run();
-            }
-            return null;
-        }
-
-        // Adjust duration for recurring executions.
-        if (occurrencesRemaining > 0) {
-            if (recurType == RecurTypes.MINUTES) {                                   // NEW
-                // Fixed interval: fire again in N minutes.                         // NEW
-                duration = Duration.ofMinutes(recurCount);                           // NEW
-            } else if (recurType == RecurTypes.HOURS) {                              // CHANGED ("if" -> "else if")
-                duration = Duration.ofSeconds(TimeUnit.HOURS.toSeconds(1));
-            } else if (recurType == RecurTypes.DAYS) {
-                if (cronExpression != null) {
-                    final LocalDateTime nextExecution =
-                            cronExpression.next(LocalDateTime.now(clock).plus(duration));
-                    duration = Duration.between(LocalDateTime.ofInstant(next, ZoneOffset.UTC), nextExecution);
-                } else {
-                    duration = Duration.ofDays(recurCount);
-                }
-            } else if (recurType == RecurTypes.WEEKS) {
-                LocalDateTime nextExecution =
-                        cronExpression.next(LocalDateTime.now(clock).plus(duration));
-
-                if (recurCount > 1) {
-                    // Get the first day of the week for "next".
-                    final TemporalField field =
-                            WeekFields.of(Locale.getDefault()).dayOfWeek();
-                    final LocalDateTime firstDayWeekNext = LocalDateTime.ofInstant(next, ZoneOffset.UTC)
-                            .with(field, 1)
-                            .with(LocalTime.MIDNIGHT);
-
-                    // Get the first day of the week for "nextExecution".
-                    assert nextExecution != null;
-                    final LocalDateTime firstDayWeekNextExec =
-                            nextExecution.with(field, 1).with(LocalTime.MIDNIGHT);
-
-                    // If next exec has moved to the next week then add another (n-1) more weeks.
-                    if (!firstDayWeekNext.isEqual(firstDayWeekNextExec)) {
-                        nextExecution = nextExecution.plusWeeks(recurCount - 1);
-                    }
-                }
-
-                duration = Duration.between(LocalDateTime.ofInstant(next, ZoneOffset.UTC), nextExecution);
-            } else if (recurType == RecurTypes.MONTHS) {
-                LocalDateTime nextExecution =
-                        cronExpression.next(LocalDateTime.now(clock).plus(duration));
-
-                if (recurCount > 1) {
-                    // Get the first day of the month for "next".
-                    final LocalDateTime firstDayMonthNext = LocalDateTime.ofInstant(next, ZoneOffset.UTC)
-                            .with(TemporalAdjusters.firstDayOfMonth())
-                            .with(LocalTime.MIDNIGHT);
-
-                    // Get the first day of the month for "nextExecution".
-                    assert nextExecution != null;
-                    final LocalDateTime firstDayMonthNextExec = nextExecution
-                            .with(TemporalAdjusters.firstDayOfMonth())
-                            .with(LocalTime.MIDNIGHT);
-
-                    // If next exec has moved to the next month then add another (n-1) more months.
-                    if (!firstDayMonthNext.isEqual(firstDayMonthNextExec)) {
-                        nextExecution = cronExpression.next(firstDayMonthNextExec.plusMonths(recurCount - 1));
-                    }
-                }
-
-                duration = Duration.between(LocalDateTime.ofInstant(next, ZoneOffset.UTC), nextExecution);
-            } else if (recurType == RecurTypes.YEARS) {
-                LocalDateTime nextExecution =
-                        cronExpression.next(LocalDateTime.now(clock).plus(duration));
-
-                if (recurCount > 1) {
-                    // Get the first day of the year for "next".
-                    final LocalDateTime firstDayYearNext = LocalDateTime.ofInstant(next, ZoneOffset.UTC)
-                            .with(TemporalAdjusters.firstDayOfYear())
-                            .with(LocalTime.MIDNIGHT);
-
-                    // Get the first day of the year for "nextExecution".
-                    assert nextExecution != null;
-                    final LocalDateTime firstDayYearNextExec = nextExecution
-                            .with(TemporalAdjusters.firstDayOfYear())
-                            .with(LocalTime.MIDNIGHT);
-
-                    // If next exec has moved to the next year then add another (n-1) more years.
-                    if (!firstDayYearNext.isEqual(firstDayYearNextExec)) {
-                        nextExecution = cronExpression.next(firstDayYearNextExec.plusYears(recurCount - 1));
-                    }
-                }
-
-                duration = Duration.between(LocalDateTime.ofInstant(next, ZoneOffset.UTC), nextExecution);
-            } else {
-                // Calculate next time from the cron expression.
-                final LocalDateTime nextExecution =
-                        cronExpression.next(LocalDateTime.now(clock).plus(duration));
-                duration = Duration.between(LocalDateTime.ofInstant(next, ZoneOffset.UTC), nextExecution);
-            }
-        }
-
-        if (recurring) {
-            nextOccurrence = next.plus(duration);
-        }
-
-        return next;
-    }
+    assertThrows(IllegalArgumentException.class, () -> trigger.setReminderTask(reminder));
 }
