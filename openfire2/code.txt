@@ -1,0 +1,10 @@
+@ExceptionHandler(MethodArgumentNotValidException.class)
+public ResponseEntity<Object> handleValidation(MethodArgumentNotValidException e) {
+    String msg = e.getBindingResult().getFieldErrors().stream()
+        .map(f -> f.getField() + ": " + f.getDefaultMessage())
+        .collect(Collectors.joining(", "));
+    log.warn(msg);
+    return ResponseEntity.badRequest()
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(Map.of("message", msg));
+}
