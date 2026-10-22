@@ -1,10 +1,96 @@
-@ExceptionHandler(MethodArgumentNotValidException.class)
-public ResponseEntity<Object> handleValidation(MethodArgumentNotValidException e) {
-    String msg = e.getBindingResult().getFieldErrors().stream()
-        .map(f -> f.getField() + ": " + f.getDefaultMessage())
-        .collect(Collectors.joining(", "));
-    log.warn(msg);
-    return ResponseEntity.badRequest()
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(Map.of("message", msg));
+import type {
+  CircuitFragmentTemplate,
+  CircuitOperation,
+  CircuitTemplate,
+} from '@/api/generated/circuit-manager'
+
+/**
+ * Dynamic fragments and their circuit operations.
+ *
+ * Template (read-only, never modified here):
+ *   fragmentTemplates: [ { id: 'enmf', dynamicFragment: true, buildSteps, teardownSteps, … }, … ]
+ *   circuitOperations:
+ *     add-operator:    { fragmentOperations: { enmf: { … } } }   ← dynamic (create)
+ *     delete-operator: { fragmentOperations: { enmf: { … } } }   ← dynamic (delete)
+ */
+
+export type DynamicOperationKind = 'create' | 'delete'
+
+export interface DynamicFragmentOperation {
+  /** circuit operation id, e.g. 'add-operator' */
+  id: string
+  name: string
+  description: string
+  /** dynamic fragment it acts on, e.g. 'enmf' (sent as FragmentRequest.name) */
+  fragmentId: string
+  /** create = in the fragment's buildSteps, delete = in its teardownSteps */
+  kind: DynamicOperationKind
+  fragmentOperations: Record<string, any>
+}
+
+/** A fragment template is dynamic when the template says `dynamicFragment: true`. */
+export function isDynamicFragment(fragment?: CircuitFragmentTemplate): boolean {
+  return (fragment as any)?.dynamicFragment === true
+}
+
+/** ids of dynamic fragment templates (e.g. ['enmf']). */
+export function getDynamicFragmentIds(template?: CircuitTemplate): Set<string> {
+  const fragments = (template as any)?.fragmentTemplates ?? []
+  return new Set(
+    fragments
+      .filter((f: CircuitFragmentTemplate) => f.id && isDynamicFragment(f))
+      .map((f: CircuitFragmentTemplate) => f.id as string),
+  )
+}
+
+/** True if the circuit operation runs against a dynamic fragment. */
+export function isDynamicFragmentOperation(
+  operation: CircuitOperation | undefined,
+  dynamicFragmentIds: Set<string>,
+): boolean {
+  // keys of fragmentOperations are fragment ids (e.g. 'enmf')
+  return Object.keys((operation as any)?.fragmentOperations ?? {}).some((fragmentId) =>
+    dynamicFragmentIds.has(fragmentId),
+  )
+}
+
+/** Show the Fragment Operations section only if at least one operation is dynamic. */
+export function hasDynamicFragmentOperations(template?: CircuitTemplate): boolean {
+  const ids = getDynamicFragmentIds(template)
+  if (!ids.size) return false
+  const ops = (template as any)?.circuitOperations ?? {}
+  return Object.values(ops).some((op) => isDynamicFragmentOperation(op as CircuitOperation, ids))
+}
+
+/**
+ * Circuit operations that act on a dynamic fragment. kind comes from the fragment
+ * template: listed in teardownSteps → delete, otherwise → create.
+ */
+export function getDynamicFragmentOperations(
+  template?: CircuitTemplate,
+): DynamicFragmentOperation[] {
+  const t = template as any
+  const fragments: CircuitFragmentTemplate[] = (t?.fragmentTemplates ?? []).filter(
+    (f: CircuitFragmentTemplate) => f.id && isDynamicFragment(f),
+  )
+  const byId = new Map(fragments.map((f) => [f.id as string, f as any]))
+
+  return Object.entries(t?.circuitOperations ?? {}).flatMap(([id, op]: [string, any]) => {
+    const fragmentId = Object.keys(op?.fragmentOperations ?? {}).find((k) => byId.has(k))
+    if (!fragmentId) return []
+
+    const fragment = byId.get(fragmentId)
+    const isTeardown = (fragment?.teardownSteps ?? []).some((s: any) => s.operationId === id)
+
+    return [
+      {
+        id,
+        name: op.name || id,
+        description: op.description || '',
+        fragmentId,
+        kind: isTeardown ? 'delete' : 'create',
+        fragmentOperations: op.fragmentOperations ?? {},
+      } as DynamicFragmentOperation,
+    ]
+  })
 }
