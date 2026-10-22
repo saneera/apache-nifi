@@ -94,3 +94,15 @@ export function getDynamicFragmentOperations(
     ]
   })
 }
+
+
+
+/** Required unless the template marks the property optional (the API sends "optional": false). */
+const participantRules = computed(() => {
+  if ((props.property as any)?.optional) return []
+  return [
+    (v: string[] | string | null) =>
+      (Array.isArray(v) ? v.length > 0 : !!v) ||
+      `Select at least one ${props.property.name ?? 'participant'}`,
+  ]
+})
