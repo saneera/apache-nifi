@@ -542,3 +542,37 @@ export function formatLimits(group: Pick<DynamicFragmentGroup, 'min' | 'max'>): 
   const max = group.max == null || group.max === -1 ? 'no max' : `max ${group.max}`
   return `min ${group.min} · ${max}`
 }
+
+===========
+
+
+function getTableItems() {
+  const items: CircuitOperationTableItem[] = []
+  if (!props.template.circuitOperations) {
+    return items
+  }
+
+  // NEW: ids of fragments with dynamicFragment: true (e.g. 'enmf')
+  const dynamicFragmentIds = getDynamicFragmentIds(props.template)
+
+  Object.entries(props.template.circuitOperations).forEach(
+    ([circuitOperationId, circuitOperation]) => {
+      if (circuitOperationId.match(/^on-/)) return
+
+      // NEW: add-operator / delete-operator act on 'enmf', so they belong in Fragment Operations
+      if (isDynamicFragmentOperation(circuitOperation, dynamicFragmentIds)) return
+
+      items.push({
+        id: circuitOperationId,
+        name: circuitOperation.name || circuitOperationId,
+        description: circuitOperation.description || '',
+        fragmentOperations: circuitOperation.fragmentOperations || {},
+        isConfigurable: isConfigurable(circuitOperation),
+        result: OperationResult.NOT_RUN,
+        loading: false,
+      })
+    },
+  )
+
+  return items
+}
