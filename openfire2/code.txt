@@ -8,24 +8,41 @@ import type {
  * Dynamic fragments and their circuit operations.
  *
  * Template (read-only, never modified here):
- *   fragmentTemplates: [ { id: 'enmf', dynamicFragment: true, buildSteps, teardownSteps, … }, … ]
+ *   fragmentTemplates: [ { id: 'enmf', dynamicFragment: true, multiplicity: { min, max },
+ *                          buildSteps: [{ operationId: 'add-operator' }],
+ *                          teardownSteps: [{ operationId: 'delete-operator' }], … }, … ]
  *   circuitOperations:
- *     add-operator:    { fragmentOperations: { enmf: { … } } }   ← dynamic (create)
- *     delete-operator: { fragmentOperations: { enmf: { … } } }   ← dynamic (delete)
+ *     add-operator:    { fragmentOperations: { enmf: { … } } }   ← create
+ *     delete-operator: { fragmentOperations: { enmf: { … } } }   ← delete
  */
 
-export type DynamicOperationKind = 'create' | 'delete'
+/**
+ * create  = listed in the fragment's buildSteps    → adds a new instance (no instance picker)
+ * delete  = listed in the fragment's teardownSteps → removes an existing instance
+ * operate = targets the fragment but is neither    → acts on an existing instance
+ */
+export type DynamicOperationKind = 'create' | 'delete' | 'operate'
 
 export interface DynamicFragmentOperation {
   /** circuit operation id, e.g. 'add-operator' */
   id: string
   name: string
   description: string
-  /** dynamic fragment it acts on, e.g. 'enmf' (sent as FragmentRequest.name) */
+  /** dynamic fragment template it acts on, e.g. 'enmf' */
   fragmentId: string
-  /** create = in the fragment's buildSteps, delete = in its teardownSteps */
   kind: DynamicOperationKind
   fragmentOperations: Record<string, any>
+}
+
+export interface DynamicFragmentGroup {
+  /** fragment template id, e.g. 'enmf' */
+  fragmentId: string
+  /** display name, e.g. 'ENMF' */
+  name: string
+  min: number
+  /** undefined or -1 = no maximum */
+  max?: number
+  operations: DynamicFragmentOperation[]
 }
 
 /** A fragment template is dynamic when the template says `dynamicFragment: true`. */
@@ -33,14 +50,15 @@ export function isDynamicFragment(fragment?: CircuitFragmentTemplate): boolean {
   return (fragment as any)?.dynamicFragment === true
 }
 
+function dynamicFragmentTemplates(template?: CircuitTemplate): any[] {
+  return ((template as any)?.fragmentTemplates ?? []).filter(
+    (f: CircuitFragmentTemplate) => f.id && isDynamicFragment(f),
+  )
+}
+
 /** ids of dynamic fragment templates (e.g. ['enmf']). */
 export function getDynamicFragmentIds(template?: CircuitTemplate): Set<string> {
-  const fragments = (template as any)?.fragmentTemplates ?? []
-  return new Set(
-    fragments
-      .filter((f: CircuitFragmentTemplate) => f.id && isDynamicFragment(f))
-      .map((f: CircuitFragmentTemplate) => f.id as string),
-  )
+  return new Set(dynamicFragmentTemplates(template).map((f) => f.id as string))
 }
 
 /** True if the circuit operation runs against a dynamic fragment. */
@@ -48,7 +66,7 @@ export function isDynamicFragmentOperation(
   operation: CircuitOperation | undefined,
   dynamicFragmentIds: Set<string>,
 ): boolean {
-  // keys of fragmentOperations are fragment ids (e.g. 'enmf')
+  // keys of fragmentOperations are fragment template ids (e.g. 'enmf')
   return Object.keys((operation as any)?.fragmentOperations ?? {}).some((fragmentId) =>
     dynamicFragmentIds.has(fragmentId),
   )
@@ -56,53 +74,485 @@ export function isDynamicFragmentOperation(
 
 /** Show the Fragment Operations section only if at least one operation is dynamic. */
 export function hasDynamicFragmentOperations(template?: CircuitTemplate): boolean {
-  const ids = getDynamicFragmentIds(template)
-  if (!ids.size) return false
-  const ops = (template as any)?.circuitOperations ?? {}
-  return Object.values(ops).some((op) => isDynamicFragmentOperation(op as CircuitOperation, ids))
+  return getDynamicFragmentGroups(template).some((g) => g.operations.length > 0)
 }
 
 /**
- * Circuit operations that act on a dynamic fragment. kind comes from the fragment
- * template: listed in teardownSteps → delete, otherwise → create.
+ * One group per dynamic fragment, with the operations that act on it.
+ *
+ * Ownership: an operation belongs to the dynamic fragment whose buildSteps / teardownSteps
+ * name it. If no steps name it, it falls back to the first dynamic fragment in its
+ * fragmentOperations (kind 'operate'). Each operation appears in exactly one group.
  */
+export function getDynamicFragmentGroups(template?: CircuitTemplate): DynamicFragmentGroup[] {
+  const fragments = dynamicFragmentTemplates(template)
+  const ops: Record<string, any> = (template as any)?.circuitOperations ?? {}
+  const byId = new Map(fragments.map((f) => [f.id as string, f]))
+  const groups = new Map<string, DynamicFragmentGroup>(
+    fragments.map((f) => [
+      f.id as string,
+      {
+        fragmentId: f.id as string,
+        name: f.name || f.id,
+        min: f.multiplicity?.min ?? 0,
+        max: f.multiplicity?.max ?? undefined,
+        operations: [],
+      },
+    ]),
+  )
+
+  const stepOwner = (operationId: string, steps: 'buildSteps' | 'teardownSteps') =>
+    fragments.find((f) => (f[steps] ?? []).some((s: any) => s.operationId === operationId))
+
+  Object.entries(ops).forEach(([id, op]) => {
+    const builder = stepOwner(id, 'buildSteps')
+    const tearer = stepOwner(id, 'teardownSteps')
+
+    let fragmentId: string | undefined
+    let kind: DynamicOperationKind
+    if (builder) {
+      fragmentId = builder.id
+      kind = 'create'
+    } else if (tearer) {
+      fragmentId = tearer.id
+      kind = 'delete'
+    } else {
+      fragmentId = Object.keys(op?.fragmentOperations ?? {}).find((k) => byId.has(k))
+      kind = 'operate'
+    }
+    if (!fragmentId) return
+
+    groups.get(fragmentId)!.operations.push({
+      id,
+      name: op.name || id,
+      description: op.description || '',
+      fragmentId,
+      kind,
+      fragmentOperations: op.fragmentOperations ?? {},
+    })
+  })
+
+  // create first, then operate, then delete, so Add sits above Remove
+  const order: Record<DynamicOperationKind, number> = { create: 0, operate: 1, delete: 2 }
+  groups.forEach((g) => g.operations.sort((a, b) => order[a.kind] - order[b.kind]))
+
+  return [...groups.values()].filter((g) => g.operations.length > 0)
+}
+
+/** Flat list of all dynamic fragment operations (kept for existing callers). */
 export function getDynamicFragmentOperations(
   template?: CircuitTemplate,
 ): DynamicFragmentOperation[] {
-  const t = template as any
-  const fragments: CircuitFragmentTemplate[] = (t?.fragmentTemplates ?? []).filter(
-    (f: CircuitFragmentTemplate) => f.id && isDynamicFragment(f),
-  )
-  const byId = new Map(fragments.map((f) => [f.id as string, f as any]))
+  return getDynamicFragmentGroups(template).flatMap((g) => g.operations)
+}
 
-  return Object.entries(t?.circuitOperations ?? {}).flatMap(([id, op]: [string, any]) => {
-    const fragmentId = Object.keys(op?.fragmentOperations ?? {}).find((k) => byId.has(k))
-    if (!fragmentId) return []
+// ---------- fragment instances on the circuit ----------
 
-    const fragment = byId.get(fragmentId)
-    const isTeardown = (fragment?.teardownSteps ?? []).some((s: any) => s.operationId === id)
+export interface FragmentInstance {
+  /** id of the fragment instance on the circuit (sent to delete / operate) */
+  id: string
+  /** label shown in the instance dropdown */
+  label: string
+}
 
-    return [
-      {
-        id,
-        name: op.name || id,
-        description: op.description || '',
-        fragmentId,
-        kind: isTeardown ? 'delete' : 'create',
-        fragmentOperations: op.fragmentOperations ?? {},
-      } as DynamicFragmentOperation,
-    ]
-  })
+/**
+ * Template id of a fragment instance on the circuit.
+ * TODO: confirm the field name on the generated `Fragment` type
+ * (backend uses getFragmentByTemplateId, so it's likely `templateId` or `fragmentTemplateId`).
+ */
+export function getInstanceTemplateId(fragment: any): string | undefined {
+  return fragment?.templateId ?? fragment?.fragmentTemplateId ?? fragment?.template
+}
+
+/** Instances of one dynamic fragment template currently on the circuit. */
+export function getFragmentInstances(
+  circuitFragments: any[] | undefined,
+  group: Pick<DynamicFragmentGroup, 'fragmentId' | 'name'>,
+): FragmentInstance[] {
+  return (circuitFragments ?? [])
+    .filter((f) => getInstanceTemplateId(f) === group.fragmentId)
+    .map((f, i) => ({
+      id: f.id,
+      label: f.name ? `${f.name}` : `${group.name} #${i + 1}`,
+    }))
+}
+
+/** Whether an operation can run given the current instance count, and why not. */
+export function getOperationAvailability(
+  kind: DynamicOperationKind,
+  group: Pick<DynamicFragmentGroup, 'min' | 'max'>,
+  instanceCount: number,
+): { allowed: boolean; reason?: string } {
+  const hasMax = group.max != null && group.max !== -1
+
+  if (kind === 'create' && hasMax && instanceCount >= (group.max as number)) {
+    return { allowed: false, reason: `Can't add: already at maximum (${group.max})` }
+  }
+  if (kind === 'delete' && instanceCount === 0) {
+    return { allowed: false, reason: 'Nothing to remove yet' }
+  }
+  if (kind === 'delete' && instanceCount <= group.min) {
+    return { allowed: false, reason: `Can't remove: already at minimum (${group.min})` }
+  }
+  if (kind === 'operate' && instanceCount === 0) {
+    return { allowed: false, reason: 'No instances yet' }
+  }
+  return { allowed: true }
+}
+
+/** "min 0 · no max" */
+export function formatLimits(group: Pick<DynamicFragmentGroup, 'min' | 'max'>): string {
+  const max = group.max == null || group.max === -1 ? 'no max' : `max ${group.max}`
+  return `min ${group.min} · ${max}`
 }
 
 
 
-/** Required unless the template marks the property optional (the API sends "optional": false). */
-const participantRules = computed(() => {
-  if ((props.property as any)?.optional) return []
-  return [
-    (v: string[] | string | null) =>
-      (Array.isArray(v) ? v.length > 0 : !!v) ||
-      `Select at least one ${props.property.name ?? 'participant'}`,
-  ]
-})
+============
+
+
+<!--
+  Fragment Operations: circuit operations on dynamic fragments (dynamicFragment: true),
+  grouped per fragment.
+
+    create  (fragment buildSteps)    → createFragment(circuitId, fragmentTemplateId, request)
+    delete  (fragment teardownSteps) → deleteFragment(circuitId, fragmentInstanceId, request)
+    operate (neither)                → not wired yet (TODO)
+
+  Each group shows how many instances the circuit has and the template's min/max.
+  Add is disabled at max; Remove is disabled at min / when there are none.
+  Delete and operate ask which instance first.
+-->
+<template>
+  <div id="dynamic-fragment-operations">
+    <div v-for="group in groups" :key="group.fragmentId" class="mb-4">
+      <!-- group header -->
+      <div class="fragment-group-header d-flex align-center px-3 py-2">
+        <span class="font-weight-bold">{{ group.name }}</span>
+        <v-spacer />
+        <v-chip size="small" color="primary" variant="flat" class="mr-2">
+          {{ instanceCount(group) }} {{ instanceCount(group) === 1 ? 'instance' : 'instances' }}
+        </v-chip>
+        <v-chip size="small" variant="outlined">{{ formatLimits(group) }}</v-chip>
+      </div>
+
+      <v-data-table-virtual
+        :id="`dynamic-fragment-operations-table-${group.fragmentId}`"
+        v-model:expanded="expandedRows"
+        :headers="headers"
+        :items="rowsFor(group)"
+        item-value="key"
+        density="compact"
+      >
+        <template #item.data-table-expand="{ item }">
+          <div class="py-1">
+            <v-btn
+              :id="`dynamic-fragment-operations-configure-${item.key}`"
+              size="small"
+              variant="tonal"
+              prepend-icon="mdi-cog"
+              :disabled="!availability(item).allowed"
+              @click="toggleExpandedRow(item.key)"
+            >
+              Configure
+            </v-btn>
+            <div v-if="!availability(item).allowed" class="availability-reason mt-1">
+              <v-icon icon="mdi-information-outline" size="x-small" />
+              {{ availability(item).reason }}
+            </div>
+          </div>
+        </template>
+
+        <template #item.result="{ item }">
+          <v-progress-circular v-if="item.loading" indeterminate size="20" />
+          <v-chip
+            v-else
+            :color="getResultColor(item.result)"
+            :prepend-icon="getResultIcon(item.result)"
+            size="small"
+          >
+            {{ item.result }}
+          </v-chip>
+        </template>
+
+        <template #expanded-row="{ columns, item }">
+          <tr>
+            <td :colspan="columns.length">
+              <v-form
+                :ref="(el) => (forms[item.key] = el)"
+                class="py-2"
+                @submit.prevent="run(item, group)"
+              >
+                <!-- which instance (delete / operate only) -->
+                <v-select
+                  v-if="item.kind !== 'create'"
+                  :id="`dynamic-fragment-operations-instance-${item.key}`"
+                  v-model="selectedInstance[item.key]"
+                  :items="instancesFor(group)"
+                  item-title="label"
+                  item-value="id"
+                  label="Instance"
+                  :hint="`Choose which ${group.name} to ${item.kind === 'delete' ? 'remove' : 'use'}`"
+                  persistent-hint
+                  :rules="[(v: string) => !!v || 'Select an instance']"
+                  variant="solo"
+                  density="compact"
+                  class="mb-2"
+                />
+
+                <template
+                  v-for="(elements, fragmentId) in item.fragmentOperations"
+                  :key="fragmentId"
+                >
+                  <template v-for="(statements, elementId) in elements" :key="elementId">
+                    <v-row class="ml-1 mr-2 mt-2 mb-1" align="center">
+                      {{ elementId }}
+                      <v-chip class="ml-2" size="x-small">{{ fragmentId }}</v-chip>
+                    </v-row>
+
+                    <template v-for="(statement, i) in statements" :key="i">
+                      <PropertyFormInput
+                        v-if="'property' in statement && circuitProperties[statement.property]"
+                        v-model="formData[item.key][`${elementId}.${statement.property}`]"
+                        :property="circuitProperties[statement.property].args"
+                        participant-picker
+                      />
+                      <PropertyFormInput
+                        v-if="'command' in statement && circuitProperties[statement.command]"
+                        v-model="formData[item.key][`${elementId}.${statement.command}`]"
+                        :property="circuitProperties[statement.command].args"
+                        participant-picker
+                      />
+                    </template>
+                  </template>
+                </template>
+
+                <v-row class="mt-2 mb-1 mr-1">
+                  <v-spacer />
+                  <v-btn
+                    :id="`dynamic-fragment-operations-cancel-${item.key}`"
+                    size="small"
+                    variant="flat"
+                    color="grey"
+                    prepend-icon="mdi-close"
+                    class="mr-2"
+                    @click="toggleExpandedRow(item.key)"
+                  >
+                    Cancel
+                  </v-btn>
+                  <v-btn
+                    :id="`dynamic-fragment-operations-run-${item.key}`"
+                    size="small"
+                    color="primary"
+                    prepend-icon="mdi-play"
+                    type="submit"
+                    :loading="item.loading"
+                  >
+                    Run
+                  </v-btn>
+                </v-row>
+              </v-form>
+            </td>
+          </tr>
+        </template>
+      </v-data-table-virtual>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { useNotificationStore } from '@babcock/common-components'
+import { computed, ref, toRaw, watch } from 'vue'
+
+import { FormData } from '@/types/FormData'
+import { createFragment, deleteFragment } from '../../api/requests'
+import { OperationResult } from '../../types/OperationResult'
+import { createCircuitOperationRequest } from '../../utils/CircuitOperationRequest'
+import {
+  DynamicFragmentGroup,
+  DynamicFragmentOperation,
+  formatLimits,
+  getDynamicFragmentGroups,
+  getFragmentInstances,
+  getOperationAvailability,
+} from '../../utils/templateFragments'
+import PropertyFormInput from '../common/PropertyFormInput.vue'
+
+const props = withDefaults(
+  defineProps<{
+    circuitId: string
+    template: any // CircuitTemplate (fragmentTemplates / dynamicFragment may not be in the generated type)
+    /** NEW: the circuit's current fragment instances (circuit.fragments) */
+    fragments?: any[]
+  }>(),
+  { fragments: () => [] },
+)
+
+const emit = defineEmits<{ updated: [] }>()
+
+interface Row extends DynamicFragmentOperation {
+  /** unique per table row: `${fragmentId}:${operationId}` */
+  key: string
+  result: OperationResult
+  loading: boolean
+}
+
+const notificationStore = useNotificationStore()
+
+const headers = [
+  { title: 'Operation name', key: 'name' },
+  { title: 'Description', key: 'description' },
+  { title: 'Actions', key: 'data-table-expand', width: '280px' },
+  { title: 'Result', key: 'result' },
+]
+
+const circuitProperties = computed<Record<string, any>>(
+  () => props.template?.circuitProperties ?? {},
+)
+
+const groups = ref<DynamicFragmentGroup[]>([])
+const rows = ref<Record<string, Row>>({})
+const formData = ref<Record<string, FormData>>({})
+const forms = ref<Record<string, any>>({})
+const expandedRows = ref<string[]>([])
+const selectedInstance = ref<Record<string, string | undefined>>({})
+
+// Rebuild when the template's fragments / operations change (including after it loads).
+watch(
+  () => getDynamicFragmentGroups(props.template),
+  (newGroups) => {
+    groups.value = newGroups
+    const newRows: Record<string, Row> = {}
+    const newForm: Record<string, FormData> = {}
+    newGroups.forEach((g) =>
+      g.operations.forEach((op) => {
+        const key = `${g.fragmentId}:${op.id}`
+        newRows[key] = { ...op, key, result: OperationResult.NOT_RUN, loading: false }
+        newForm[key] = initialFormData(op.fragmentOperations)
+      }),
+    )
+    rows.value = newRows
+    formData.value = newForm
+  },
+  { immediate: true },
+)
+
+function rowsFor(group: DynamicFragmentGroup): Row[] {
+  return group.operations.map((op) => rows.value[`${group.fragmentId}:${op.id}`]).filter(Boolean)
+}
+
+function instancesFor(group: DynamicFragmentGroup) {
+  return getFragmentInstances(props.fragments, group)
+}
+
+function instanceCount(group: DynamicFragmentGroup): number {
+  return instancesFor(group).length
+}
+
+function availability(item: Row) {
+  const group = groups.value.find((g) => g.fragmentId === item.fragmentId)
+  if (!group) return { allowed: false, reason: 'Unknown fragment' }
+  if (item.kind === 'operate') {
+    return { allowed: false, reason: 'Instance operations are not supported yet' }
+  }
+  return getOperationAvailability(item.kind, group, instanceCount(group))
+}
+
+/** Start each field from the template's values, keyed `${elementId}.${property|command}`. */
+function initialFormData(fragmentOperations: Record<string, any>): FormData {
+  const data: FormData = {}
+  Object.values(fragmentOperations).forEach((elements: any) => {
+    Object.entries(elements ?? {}).forEach(([elementId, statements]: [string, any]) => {
+      ;(statements ?? []).forEach((statement: any) => {
+        if ('property' in statement) {
+          data[`${elementId}.${statement.property}`] = clone(statement.value)
+        } else if ('command' in statement) {
+          data[`${elementId}.${statement.command}`] = clone(statement.parameters)
+        }
+      })
+    })
+  })
+  return data
+}
+
+/** Plain copy of template values (structuredClone throws on Vue reactive proxies). */
+function clone<T>(value: T): T {
+  return value === undefined ? value : JSON.parse(JSON.stringify(toRaw(value)))
+}
+
+function toggleExpandedRow(key: string) {
+  expandedRows.value = expandedRows.value.includes(key)
+    ? expandedRows.value.filter((r) => r !== key)
+    : [...expandedRows.value, key]
+}
+
+async function run(item: Row, group: DynamicFragmentGroup) {
+  if (!availability(item).allowed) return
+
+  const { valid } = (await forms.value[item.key]?.validate()) ?? { valid: true }
+  if (!valid) return
+
+  item.loading = true
+  try {
+    // { fragment: { element: { … } } }, same shape as circuit operations
+    const request = createCircuitOperationRequest(item.fragmentOperations, formData.value[item.key])
+
+    let status: number
+    if (item.kind === 'create') {
+      status = await createFragment(props.circuitId, group.fragmentId, request)
+    } else {
+      const instanceId = selectedInstance.value[item.key]
+      if (!instanceId) return
+      status = await deleteFragment(props.circuitId, instanceId, request)
+    }
+
+    item.result = status >= 200 && status < 300 ? OperationResult.SUCCESS : OperationResult.FAILURE
+
+    if (item.result === OperationResult.SUCCESS) {
+      toggleExpandedRow(item.key)
+      selectedInstance.value[item.key] = undefined
+      emit('updated') // CircuitDetails reloads the circuit → fragments / counts refresh
+    }
+  } catch (error: any) {
+    item.result = OperationResult.FAILURE
+    notificationStore.error(`${item.name} failed: ${error.message}`)
+    console.error(error)
+  } finally {
+    item.loading = false
+  }
+}
+
+// Same chip look as CircuitOperations.vue. Swap for its helpers if they're exported.
+function getResultColor(result: OperationResult): string {
+  switch (result) {
+    case OperationResult.SUCCESS:
+      return 'success'
+    case OperationResult.FAILURE:
+      return 'error'
+    default:
+      return ''
+  }
+}
+
+function getResultIcon(result: OperationResult): string {
+  switch (result) {
+    case OperationResult.SUCCESS:
+      return 'mdi-check-circle'
+    case OperationResult.FAILURE:
+      return 'mdi-close-circle'
+    default:
+      return ''
+  }
+}
+</script>
+
+<style scoped>
+.fragment-group-header {
+  background: rgba(0, 0, 0, 0.04);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+}
+.availability-reason {
+  font-size: 12px;
+  color: rgb(var(--v-theme-warning));
+}
+</style>
