@@ -1,0 +1,14 @@
+# application.yml: real data by default
+circuitmanager:
+  features:
+    conflicts:
+      pre-canned: false
+
+# application-local.yml (or dev / ui-dev profile): turn on sample data
+# circuitmanager:
+#   features:
+#     conflicts:
+#       pre-canned: true
+#
+# Or for a single run:  --circuitmanager.features.conflicts.pre-canned=true
+#   env var:            CIRCUITMANAGER_FEATURES_CONFLICTS_PRECANNED=true
