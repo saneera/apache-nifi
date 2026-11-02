@@ -1,117 +1,158 @@
 <template>
-  <v-data-table
-    :headers="headers"
-    :items="rows"
-    :sort-by="[{ key: 'circuitId', order: 'asc' }]"
-    :loading="loading"
-    :search="search"
-    item-value="key"
-    density="compact"
-    class="circuit-conflicts-table"
-  >
-    <template #item.circuitId="{ item }">
-      <span class="font-weight-medium" :title="item.circuitId">{{ circuitLabel(item.circuitId) }}</span>
-    </template>
-
-    <template #item.reason="{ item }">
-      <v-chip :color="reasonColour(item.reason)" size="small" variant="tonal">
-        {{ formatReason(item.reason) }}
-      </v-chip>
-    </template>
-
-    <template #item.conflictingCircuits="{ item }">
-      <v-chip
-        v-for="id in item.conflictingCircuits"
-        :key="id"
-        size="small"
-        class="mr-1 my-1"
+  <v-card flat width="100%">
+    <template #subtitle>
+      <v-text-field
+        id="circuit-conflicts-table-search"
+        v-model="search"
+        label="Search"
+        prepend-inner-icon="mdi-magnify"
         variant="outlined"
-        :title="id"
-        @click="emit('select-circuit', id)"
+        hide-details
+        single-line
+        density="compact"
+      />
+    </template>
+
+    <template #text>
+      <v-alert
+        v-if="notAvailable"
+        id="circuit-conflicts-table-not-available"
+        type="info"
+        variant="tonal"
+        class="mb-4"
+        text="Circuit conflict data is not available yet."
+      />
+
+      <v-data-table
+        id="circuit-conflicts-table"
+        class="border-sm elevation-2"
+        :headers="headers"
+        :items="rows"
+        :search="search"
+        :loading="loading"
+        items-per-page="5"
+        :row-props="rowProps"
+        @click:row="selectRow"
       >
-        {{ circuitLabel(id) }}
-      </v-chip>
-    </template>
+        <template #item.circuitId="{ item }">
+          <span :title="item.circuitId">{{ shortId(item.circuitId) }}</span>
+        </template>
 
-    <template #item.resolutionStatus="{ item }">
-      <span v-if="item.resolutionStatus">{{ item.resolutionStatus }}</span>
-      <span v-else class="text-medium-emphasis">-</span>
-    </template>
+        <template #item.reasons="{ item }">
+          <v-chip
+            v-for="reason in item.reasons"
+            :key="reason"
+            :color="reasonColour(reason)"
+            size="small"
+            class="mr-1"
+          >
+            {{ formatReason(reason) }}
+          </v-chip>
+        </template>
 
-    <template #no-data>
-      <div class="pa-4 text-medium-emphasis">
-        <v-icon icon="mdi-check-circle-outline" color="success" class="mr-1" />
-        No conflicts
-      </div>
+        <template #item.resolutionStatus="{ item }">
+          <v-chip v-if="item.resolutionStatus" color="blue-darken-2" size="small">
+            {{ item.resolutionStatus }}
+          </v-chip>
+        </template>
+
+        <template #no-data>No circuit conflicts</template>
+      </v-data-table>
     </template>
-  </v-data-table>
+  </v-card>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import type { CircuitConflicts } from '../api/generated/circuit-manager'
-import { formatReason, reasonColour } from '../utils/conflictFormat'
+import { computed, onMounted, ref } from 'vue'
 
-const props = withDefaults(
-  defineProps<{
-    conflicts: CircuitConflicts[]
-    loading?: boolean
-    search?: string
-    /** Show the Circuit column. Turn off when showing a single circuit (e.g. circuit detail view). */
-    showCircuitColumn?: boolean
-    /** Optional id -> name lookup so circuits show by name instead of UUID. */
-    circuitNames?: Record<string, string>
-  }>(),
-  { loading: false, search: '', showCircuitColumn: true, circuitNames: () => ({}) },
-)
+import { CircuitConflicts } from '../api/generated/circuit-manager'
+// TODO: use the same import path as the other components (e.g. CircuitTemplatesTable.vue)
+import { getConflictsList } from '../api/circuit-manager-api'
+import { useNotificationStore } from '../stores/notification'
+import { formatReason, reasonColour, shortId } from '../utils/conflictFormat'
 
 const emit = defineEmits<{
-  (e: 'select-circuit', circuitId: string): void
+  (e: 'selected', conflict: CircuitConflicts | undefined): void
 }>()
 
-/** One table row per conflicting element. */
+const notificationStore = useNotificationStore()
+
+const headers = [
+  { title: 'Circuit', key: 'circuitId' },
+  { title: 'Fragments', key: 'fragmentCount' },
+  { title: 'Element conflicts', key: 'elementCount' },
+  { title: 'Reasons', key: 'reasons', sortable: false },
+  { title: 'Conflicting circuits', key: 'conflictingCircuitCount' },
+  { title: 'Resolution', key: 'resolutionStatus' },
+]
+
 interface ConflictRow {
-  key: string
   circuitId: string
-  fragmentId: string
-  elementId: string
-  reason: string
-  conflictingCircuits: string[]
+  fragmentCount: number
+  elementCount: number
+  reasons: string[]
+  conflictingCircuitCount: number
   resolutionStatus?: string
 }
 
+const conflicts = ref<CircuitConflicts[]>([])
+const loading = ref(false)
+const notAvailable = ref(false)
+const search = ref('')
+const selectedCircuitId = ref<string | undefined>(undefined)
+
+/** One summary row per circuit in conflict. */
 const rows = computed<ConflictRow[]>(() =>
-  props.conflicts.flatMap((circuit) =>
-    (circuit.fragments ?? []).flatMap((fragment) =>
-      (fragment.elements ?? []).map((element) => ({
-        key: `${circuit.circuitId}/${fragment.id}/${element.id}`,
-        circuitId: circuit.circuitId,
-        fragmentId: fragment.id,
-        elementId: element.id,
-        reason: String(element.reason ?? ''),
-        conflictingCircuits: element.conflictingCircuits ?? [],
-        resolutionStatus: (circuit.resolution as Record<string, unknown> | undefined)?.status as
-          | string
-          | undefined,
-      })),
-    ),
-  ),
+  conflicts.value.map((conflict) => {
+    const elements = (conflict.fragments ?? []).flatMap((f) => f.elements ?? [])
+    return {
+      circuitId: conflict.circuitId,
+      fragmentCount: (conflict.fragments ?? []).length,
+      elementCount: elements.length,
+      reasons: [...new Set(elements.map((e) => String(e.reason)))],
+      conflictingCircuitCount: new Set(elements.flatMap((e) => e.conflictingCircuits ?? [])).size,
+      resolutionStatus: conflict.resolution?.status as string | undefined,
+    }
+  }),
 )
 
-const headers = computed(() => [
-  ...(props.showCircuitColumn ? [{ title: 'Circuit', key: 'circuitId' }] : []),
-  { title: 'Fragment', key: 'fragmentId' },
-  { title: 'Element', key: 'elementId' },
-  { title: 'Reason', key: 'reason' },
-  { title: 'Conflicting circuits', key: 'conflictingCircuits', sortable: false },
-  { title: 'Resolution', key: 'resolutionStatus' },
-])
+onMounted(loadConflicts)
 
-function circuitLabel(id: string): string {
-  return props.circuitNames[id] ?? shortId(id)
+async function loadConflicts() {
+  loading.value = true
+  notAvailable.value = false
+  try {
+    conflicts.value = await getConflictsList()
+  } catch (error: any) {
+    conflicts.value = []
+    if (error?.status === 501) {
+      notAvailable.value = true
+    } else {
+      notificationStore.error(`Failed to load circuit conflicts: ${error?.message ?? error}`)
+    }
+  } finally {
+    loading.value = false
+  }
 }
 
-function shortId(id: string): string {
-  return id?.length > 8 ? id.slice(0, 8) : id
+function rowProps(value: { item: ConflictRow }) {
+  if (value.item.circuitId === selectedCircuitId.value) {
+    return { style: 'background-color: lightgray' }
+  }
+}
+
+function selectRow(_: PointerEvent, value: { item: ConflictRow }) {
+  if (value.item.circuitId === selectedCircuitId.value) {
+    selectedCircuitId.value = undefined
+    emit('selected', undefined)
+    return
+  }
+
+  selectedCircuitId.value = value.item.circuitId
+  emit('selected', getConflict(selectedCircuitId.value))
+}
+
+function getConflict(circuitId: string) {
+  return conflicts.value.find((c) => c.circuitId === circuitId)
 }
 </script>

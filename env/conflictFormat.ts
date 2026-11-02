@@ -14,3 +14,9 @@ export function reasonColour(reason: string): string {
   if (r.includes('asset') || r.includes('hardware') || r.includes('resource')) return 'error'
   return 'info'
 }
+
+/** Short form of a UUID for display; show the full id in a title/tooltip. */
+export function shortId(id: string | undefined): string {
+  if (!id) return ''
+  return id.length > 8 ? id.slice(0, 8) : id
+}
