@@ -1,0 +1,68 @@
+server:
+  port: 8080
+  shutdown: graceful            # finish in-flight HTTP; running deployments are on their own threads
+
+spring:
+  application:
+    name: flow-deployer
+  lifecycle:
+    timeout-per-shutdown-phase: 60s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+# ---------------------------------------------------------------------------
+# Override with a mounted file (SPRING_CONFIG_ADDITIONAL_LOCATION) — see k8s/deployer.yaml.
+# Credentials come from env vars populated by the NiFi credentials Secret.
+# ---------------------------------------------------------------------------
+deployer:
+  flows:
+    dir: ${FLOWS_DIR:/flows}
+
+  deploy:
+    position-step: 400                 # POSITION_STEP
+    poll-interval-seconds: 3
+    controller-service-polls: 30       # same limit as the script
+    fail-on-disabled-services: true    # script returned 1 when services stuck DISABLED
+    update-request-timeout-seconds: 600
+    sync-parameters: true              # push non-sensitive values from the flow file into NiFi
+    transmit-remote-groups: true       # start RPG transmission when starting a flow
+    stop-on-failure: true              # like `set -e`
+
+  audit:
+    file: ${AUDIT_FILE:/data/audit.jsonl}
+    history: 50
+
+  security:
+    user-header: X-Forwarded-User      # set by oauth2-proxy / ingress auth in front of the app
+
+  environments:
+    - id: black
+      name: Black NiFi
+      description: Black-side cluster · single pod
+      cluster: k8s-black / nifi-0
+      nifi-url: ${BLACK_NIFI_URL:https://nifi-black:8443}
+      registry-url: ${BLACK_REGISTRY_URL:https://registry-black:18443}
+      rpg-url: ${BLACK_RPG_URL:https://nifi-red:8443/nifi}
+      username: ${BLACK_NIFI_USERNAME:}
+      password: ${BLACK_NIFI_PASSWORD:}
+      credentials-ref: secret/nifi-black-single-user
+      default-bucket: hfc2-black-flows
+      color: "#9BA8B8"
+      insecure-skip-tls-verify: ${BLACK_INSECURE:false}
+    - id: red
+      name: Red NiFi
+      description: Red-side cluster · single pod
+      cluster: k8s-red / nifi-0
+      nifi-url: ${RED_NIFI_URL:https://nifi-red:8443}
+      registry-url: ${RED_REGISTRY_URL:https://registry-red:18443}
+      rpg-url: ${RED_RPG_URL:https://nifi-black:8443/nifi}
+      username: ${RED_NIFI_USERNAME:}
+      password: ${RED_NIFI_PASSWORD:}
+      credentials-ref: secret/nifi-red-single-user
+      default-bucket: hfc2-red-flows
+      color: "#FF6B6B"
+      insecure-skip-tls-verify: ${RED_INSECURE:false}

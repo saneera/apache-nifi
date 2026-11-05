@@ -1,0 +1,131 @@
+# Flow Deployer — talks to NiFi and NiFi Registry over their REST APIs.
+# It needs NO Kubernetes API permissions (no ServiceAccount/RBAC).
+# Adjust names, image, namespace, URLs and the flows volume to match your cluster.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: flow-deployer-config
+  namespace: hfc2-nifi
+data:
+  # Overrides the defaults in backend/src/main/resources/application.yml
+  application.yml: |
+    deployer:
+      flows:
+        dir: /flows
+      audit:
+        file: /data/audit.jsonl
+      environments:
+        - id: black
+          name: Black NiFi
+          description: Black-side cluster · single pod
+          cluster: k8s-black / nifi-0
+          nifi-url: https://nifi-black.hfc2-nifi.svc:8443
+          registry-url: https://registry-black.hfc2-nifi.svc:18443
+          rpg-url: https://nifi-red.hfc2-nifi.svc:8443/nifi
+          username: ${BLACK_NIFI_USERNAME}
+          password: ${BLACK_NIFI_PASSWORD}
+          credentials-ref: secret/nifi-single-user
+          default-bucket: hfc2-black-flows
+          color: "#9BA8B8"
+        - id: red
+          name: Red NiFi
+          description: Red-side cluster · single pod
+          cluster: k8s-red / nifi-0
+          nifi-url: https://nifi-red.hfc2-nifi.svc:8443
+          registry-url: https://registry-red.hfc2-nifi.svc:18443
+          rpg-url: https://nifi-black.hfc2-nifi.svc:8443/nifi
+          username: ${RED_NIFI_USERNAME}
+          password: ${RED_NIFI_PASSWORD}
+          credentials-ref: secret/nifi-single-user
+          default-bucket: hfc2-red-flows
+          color: "#FF6B6B"
+---
+# Audit trail survives restarts.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: flow-deployer-audit
+  namespace: hfc2-nifi
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flow-deployer
+  namespace: hfc2-nifi
+spec:
+  replicas: 1                  # keep at 1: running deployments and the per-environment lock live in memory
+  strategy:
+    type: Recreate             # never two instances at once (and the audit PVC is RWO)
+  selector:
+    matchLabels: { app: flow-deployer }
+  template:
+    metadata:
+      labels: { app: flow-deployer }
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 120
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      containers:
+        - name: app
+          image: your-registry.local/flow-deployer:1.0.0
+          ports:
+            - containerPort: 8080
+          env:
+            - name: SPRING_CONFIG_ADDITIONAL_LOCATION
+              value: /config/application.yml
+            - name: BLACK_NIFI_USERNAME
+              valueFrom: { secretKeyRef: { name: nifi-single-user, key: username } }
+            - name: BLACK_NIFI_PASSWORD
+              valueFrom: { secretKeyRef: { name: nifi-single-user, key: password } }
+            - name: RED_NIFI_USERNAME
+              valueFrom: { secretKeyRef: { name: nifi-single-user, key: username } }
+            - name: RED_NIFI_PASSWORD
+              valueFrom: { secretKeyRef: { name: nifi-single-user, key: password } }
+            # Trust the cluster CA instead of skipping TLS verification:
+            # - name: JAVA_TOOL_OPTIONS
+            #   value: -Djavax.net.ssl.trustStore=/certs/truststore.jks -Djavax.net.ssl.trustStorePassword=changeit
+          readinessProbe:
+            httpGet: { path: /actuator/health, port: 8080 }
+            initialDelaySeconds: 10
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: config, mountPath: /config, readOnly: true }
+            - { name: flows, mountPath: /flows, readOnly: true }
+            - { name: audit, mountPath: /data }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: config
+          configMap: { name: flow-deployer-config }
+        - name: flows
+          persistentVolumeClaim: { claimName: nifi-flows }   # <- wherever your flow JSON files live
+        - name: audit
+          persistentVolumeClaim: { claimName: flow-deployer-audit }
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flow-deployer
+  namespace: hfc2-nifi
+spec:
+  selector: { app: flow-deployer }
+  ports:
+    - port: 80
+      targetPort: 8080
+# Expose via your Ingress/Route WITH authentication in front (oauth2-proxy / OIDC / mTLS) that sets
+# X-Forwarded-User — that name is what the audit log records. The app itself has no login.
