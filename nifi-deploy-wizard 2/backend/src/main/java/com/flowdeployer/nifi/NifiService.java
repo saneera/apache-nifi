@@ -144,15 +144,24 @@ public class NifiService {
     }
 
     /** GET /nifi-api/controller/registry-clients */
+    /** GET /nifi-api/controller/registry-clients — only NiFi Registry clients (skips GitHub/GitLab/Azure DevOps/Bitbucket). */
     public List<RegistryClient> registryClients(Environment env) {
         JsonNode body = get(env, "/nifi-api/controller/registry-clients");
-        List<RegistryClient> out = new ArrayList<>();
+        List<RegistryClient> valid = new ArrayList<>();
+        List<RegistryClient> invalid = new ArrayList<>();
         if (body != null) {
             for (JsonNode r : body.path("registries")) {
-                out.add(new RegistryClient(r.path("id").asText(), r.path("component").path("name").asText()));
+                JsonNode c = r.path("component");
+                if (!c.path("type").asText("").endsWith("NifiRegistryFlowRegistryClient")) continue;
+                JsonNode errors = c.path("validationErrors");
+                boolean ok = !errors.isArray() || errors.isEmpty();
+                String url = c.path("properties").path("url").asText("");
+                String label = c.path("name").asText() + (url.isBlank() ? "" : " → " + url) + (ok ? "" : " [INVALID]");
+                (ok ? valid : invalid).add(new RegistryClient(r.path("id").asText(), label));
             }
         }
-        return out;
+        valid.addAll(invalid); // valid ones first, so the preselected client is a working one
+        return valid;
     }
 
     // ------------------------------------------------------------------ process groups
