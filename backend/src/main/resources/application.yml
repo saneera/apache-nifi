@@ -1,0 +1,55 @@
+server:
+  port: 8080
+  shutdown: graceful
+
+spring:
+  application:
+    name: flow-deployer
+  # SSE log streams use SseEmitter(0) = no timeout, so they stay open for the whole job.
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+# ---------------------------------------------------------------------------
+# Override this whole block with a mounted ConfigMap (see k8s/deployer.yaml).
+# Credentials come from env vars populated by the NiFi credentials Secret.
+# ---------------------------------------------------------------------------
+deployer:
+  flows:
+    dir: ${FLOWS_DIR:/flows}
+  kubernetes:
+    namespace: ${JOB_NAMESPACE:hfc2-nifi}
+    job-template: ${JOB_TEMPLATE:/config/job-template.yaml}
+    job-name-prefix: nifi-deploy
+    ttl-seconds-after-finished: 86400
+    pod-start-timeout-seconds: 300
+  environments:
+    - id: black
+      name: Black NiFi
+      description: Black-side cluster · single pod
+      cluster: k8s-black / nifi-0
+      nifi-url: ${BLACK_NIFI_URL:https://nifi-black:8443}
+      registry-url: ${BLACK_REGISTRY_URL:https://registry-black:18443}
+      rpg-url: ${BLACK_RPG_URL:https://nifi-red:8443/nifi}
+      username: ${BLACK_NIFI_USERNAME:}
+      password: ${BLACK_NIFI_PASSWORD:}
+      credentials-ref: secret/nifi-black-single-user
+      default-bucket: hfc2-black-flows
+      color: "#9BA8B8"
+      insecure-skip-tls-verify: ${BLACK_INSECURE:false}
+    - id: red
+      name: Red NiFi
+      description: Red-side cluster · single pod
+      cluster: k8s-red / nifi-0
+      nifi-url: ${RED_NIFI_URL:https://nifi-red:8443}
+      registry-url: ${RED_REGISTRY_URL:https://registry-red:18443}
+      rpg-url: ${RED_RPG_URL:https://nifi-black:8443/nifi}
+      username: ${RED_NIFI_USERNAME:}
+      password: ${RED_NIFI_PASSWORD:}
+      credentials-ref: secret/nifi-red-single-user
+      default-bucket: hfc2-red-flows
+      color: "#FF6B6B"
+      insecure-skip-tls-verify: ${RED_INSECURE:false}
