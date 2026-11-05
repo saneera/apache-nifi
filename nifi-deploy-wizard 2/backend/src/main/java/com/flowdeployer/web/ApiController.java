@@ -68,6 +68,12 @@ public class ApiController {
         return nifi.registryClients(env(envId));
     }
 
+    /** Creates a NiFi Registry client on the target NiFi when it has none. */
+    @PostMapping("/environments/{envId}/registry-clients")
+    public RegistryClient createRegistryClient(@PathVariable String envId) {
+        return nifi.createRegistryClient(env(envId));
+    }
+
     @GetMapping("/environments/{envId}/buckets")
     public List<Bucket> buckets(@PathVariable String envId) {
         return registry.listBuckets(env(envId), true);

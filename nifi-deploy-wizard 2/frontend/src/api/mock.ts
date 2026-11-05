@@ -69,6 +69,9 @@ const REGISTRY: Record<string, { hash: string; version: number }> = {
   heartbeat: { hash: '6a17d5c3', version: 22 },
 }
 const createdBuckets = new Set<string>()
+const mockClients: Record<string, { id: string; name: string }[]> = {
+  black: [{ id: 'a3f0c2e1-5d4b-4a7e-8c19-6f2b0e8d9b7d', name: 'NiFi Registry → https://registry-black.example.svc:18443' }],
+}
 
 const PARAMS: Record<string, ParameterContext> = {
   'gateway-params': {
@@ -221,9 +224,16 @@ export const mockApi: DeployApi = {
       { key: 'root', label: 'Root process group', ok: true, detail: 'GET /flow/process-groups/root' },
     ]
   },
-  async registryClients() {
+  async registryClients(envId) {
     await sleep(200)
-    return [{ id: 'a3f0c2e1-5d4b-4a7e-8c19-6f2b0e8d9b7d', name: 'hfc2-registry' }]
+    // Mock: Red starts without a registry client so the "Create registry client" path can be tried.
+    return mockClients[envId] ?? []
+  },
+  async createRegistryClient(envId) {
+    await sleep(800)
+    const c = { id: uuid(), name: `NiFi Registry → ${ENVS.find((e) => e.id === envId)?.registryUrl}` }
+    mockClients[envId] = [c]
+    return c
   },
   async buckets(envId) {
     await sleep(250)

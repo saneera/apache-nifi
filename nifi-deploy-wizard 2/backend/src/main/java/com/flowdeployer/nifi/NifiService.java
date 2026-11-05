@@ -22,6 +22,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import org.springframework.util.StringUtils;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
@@ -143,8 +144,10 @@ public class NifiService {
         return out;
     }
 
-    /** GET /nifi-api/controller/registry-clients */
-    /** GET /nifi-api/controller/registry-clients — only NiFi Registry clients (skips GitHub/GitLab/Azure DevOps/Bitbucket). */
+    /**
+     * GET /nifi-api/controller/registry-clients — only NiFi Registry clients (GitHub/GitLab/Azure DevOps/Bitbucket
+     * clients are skipped). Valid ones first, so the preselected client works; each label shows its URL.
+     */
     public List<RegistryClient> registryClients(Environment env) {
         JsonNode body = get(env, "/nifi-api/controller/registry-clients");
         List<RegistryClient> valid = new ArrayList<>();
@@ -160,8 +163,68 @@ public class NifiService {
                 (ok ? valid : invalid).add(new RegistryClient(r.path("id").asText(), label));
             }
         }
-        valid.addAll(invalid); // valid ones first, so the preselected client is a working one
+        valid.addAll(invalid);
         return valid;
+    }
+
+    /**
+     * Creates a NiFi Registry client on this NiFi (controller level):
+     * registry-types → POST registry-clients → read back and check validation.
+     */
+    public RegistryClient createRegistryClient(Environment env) {
+        JsonNode type = null;
+        for (JsonNode t : get(env, "/nifi-api/controller/registry-types").path("flowRegistryClientTypes")) {
+            if (t.path("type").asText().endsWith("NifiRegistryFlowRegistryClient")) {
+                type = t;
+                break;
+            }
+        }
+        if (type == null) {
+            throw new IllegalStateException("This NiFi has no NiFi Registry client type available");
+        }
+
+        String url = RestClients.normalise(StringUtils.hasText(env.registryClientUrl())
+                ? env.registryClientUrl() : env.registryUrl());
+
+        ObjectNode body = JSON.objectNode();
+        body.putObject("revision").put("version", 0);
+        ObjectNode c = body.putObject("component");
+        c.put("name", "NiFi Registry");
+        c.put("type", type.path("type").asText());
+        c.set("bundle", type.path("bundle"));
+        ObjectNode props = c.putObject("properties");
+        props.put("url", url);
+        if (url.startsWith("https")) {
+            String ssl = sslContextServiceId(env);
+            if (ssl == null) {
+                throw new IllegalStateException("The Registry is HTTPS but this NiFi has no controller-level SSL Context "
+                        + "Service. Create one under Controller Settings → Management Controller Services, then retry.");
+            }
+            props.put("ssl-context-service", ssl);
+        }
+
+        JsonNode created = post(env, body, "/nifi-api/controller/registry-clients");
+        String id = created.path("id").asText();
+        log.info("Created NiFi Registry client {} on {} → {}", id, env.id(), url);
+
+        JsonNode errors = get(env, "/nifi-api/controller/registry-clients/{id}", id)
+                .path("component").path("validationErrors");
+        if (errors.isArray() && !errors.isEmpty()) {
+            throw new IllegalStateException("Registry client created (" + id + ") but NiFi reports it invalid: " + errors);
+        }
+        return new RegistryClient(id, "NiFi Registry → " + url);
+    }
+
+    private String sslContextServiceId(Environment env) {
+        if (StringUtils.hasText(env.registryClientSslContextService())) {
+            return env.registryClientSslContextService();
+        }
+        for (JsonNode cs : get(env, "/nifi-api/flow/controller/controller-services").path("controllerServices")) {
+            if (cs.path("component").path("type").asText().contains("SSLContextService")) {
+                return cs.path("id").asText();
+            }
+        }
+        return null;
     }
 
     // ------------------------------------------------------------------ process groups

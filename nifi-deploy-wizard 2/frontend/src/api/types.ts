@@ -156,6 +156,8 @@ export interface DeployApi {
   environments(): Promise<EnvironmentInfo[]>
   check(envId: string): Promise<CheckResult[]>
   registryClients(envId: string): Promise<RegistryClient[]>
+  /** Creates a NiFi Registry client on the target NiFi (when it has none). */
+  createRegistryClient(envId: string): Promise<RegistryClient>
   buckets(envId: string): Promise<Bucket[]>
   resolveBucket(envId: string, name: string): Promise<BucketResolveResult>
   createBucket(envId: string, req: CreateBucketRequest): Promise<CreateBucketResult>

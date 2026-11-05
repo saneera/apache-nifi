@@ -11,6 +11,7 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -28,19 +29,38 @@ public class RestClients {
     private final Map<String, RestClient> cache = new ConcurrentHashMap<>();
 
     public RestClient forUrl(String baseUrl, boolean insecure) {
-        return cache.computeIfAbsent(baseUrl + "|" + insecure, k -> build(baseUrl, insecure));
+        String base = normalise(baseUrl);
+        return cache.computeIfAbsent(base + "|" + insecure, k -> build(base, insecure));
+    }
+
+    /**
+     * The code adds /nifi-api and /nifi-registry-api itself, so a pasted UI URL
+     * (https://host:port/nifi or /nifi-registry) is trimmed back to https://host:port.
+     */
+    static String normalise(String url) {
+        if (url == null) throw new IllegalStateException("NiFi/Registry URL is not configured");
+        return url.trim().replaceAll("/+$", "")
+                .replaceAll("/(nifi-api|nifi|nifi-registry-api|nifi-registry)$", "");
     }
 
     private static RestClient build(String baseUrl, boolean insecure) {
         HttpClient.Builder http = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
-                .followRedirects(HttpClient.Redirect.NORMAL);
+                .followRedirects(HttpClient.Redirect.NEVER); // a redirect means a wrong URL — fail clearly (HTTP 302)
         if (insecure) {
             http.sslContext(trustAllContext());
         }
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(http.build());
         factory.setReadTimeout(Duration.ofSeconds(30));
-        return RestClient.builder().baseUrl(baseUrl).requestFactory(factory).build();
+        return RestClient.builder()
+                .baseUrl(baseUrl)
+                .requestFactory(factory)
+                .defaultStatusHandler(HttpStatusCode::is3xxRedirection, (req, res) -> {
+                    throw new IllegalStateException("HTTP " + res.getStatusCode().value() + " redirect from " + req.getURI()
+                            + " to " + res.getHeaders().getLocation()
+                            + " — check the configured URL (use https://host:port, without /nifi)");
+                })
+                .build();
     }
 
     private static SSLContext trustAllContext() {

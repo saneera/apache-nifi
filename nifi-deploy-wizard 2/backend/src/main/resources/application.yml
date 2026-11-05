@@ -20,7 +20,7 @@ management:
 # ---------------------------------------------------------------------------
 deployer:
   flows:
-    dir: ${FLOWS_DIR:/flows}
+    dir: ${FLOWS_DIR:./flows}          # folder with the flow *.json files (k8s: /flows)
 
   deploy:
     position-step: 400                 # POSITION_STEP
@@ -33,7 +33,7 @@ deployer:
     stop-on-failure: true              # like `set -e`
 
   audit:
-    file: ${AUDIT_FILE:/data/audit.jsonl}
+    file: ${AUDIT_FILE:./data/audit.jsonl}   # k8s: /data/audit.jsonl on a PVC
     history: 50
 
   security:
@@ -44,7 +44,7 @@ deployer:
       name: Black NiFi
       description: Black-side cluster · single pod
       cluster: k8s-black / nifi-0
-      nifi-url: ${BLACK_NIFI_URL:https://nifi-black:8443}
+      nifi-url: ${BLACK_NIFI_URL:https://nifi-black:8443}          # host:port only — no /nifi
       registry-url: ${BLACK_REGISTRY_URL:https://registry-black:18443}
       rpg-url: ${BLACK_RPG_URL:https://nifi-red:8443/nifi}
       username: ${BLACK_NIFI_USERNAME:}
@@ -53,6 +53,9 @@ deployer:
       default-bucket: hfc2-black-flows
       color: "#9BA8B8"
       insecure-skip-tls-verify: ${BLACK_INSECURE:false}
+      # Only needed for "Create registry client" when NiFi reaches the Registry by another address:
+      # registry-client-url: https://nifi-registry.hfc2-nifi.svc:18443
+      # registry-client-ssl-context-service: <id of a controller-level SSL Context Service>
     - id: red
       name: Red NiFi
       description: Red-side cluster · single pod
@@ -66,3 +69,6 @@ deployer:
       default-bucket: hfc2-red-flows
       color: "#FF6B6B"
       insecure-skip-tls-verify: ${RED_INSECURE:false}
+      # Only needed for "Create registry client" when NiFi reaches the Registry by another address:
+      # registry-client-url: https://nifi-registry.hfc2-nifi.svc:18443
+      # registry-client-ssl-context-service: <id of a controller-level SSL Context Service>

@@ -49,6 +49,8 @@ export const httpApi: DeployApi = {
   environments: () => request<EnvironmentInfo[]>('GET', '/api/environments'),
   check: (envId) => request<CheckResult[]>('POST', `/api/environments/${enc(envId)}/check`),
   registryClients: (envId) => request<RegistryClient[]>('GET', `/api/environments/${enc(envId)}/registry-clients`),
+  createRegistryClient: (envId) =>
+    request<RegistryClient>('POST', `/api/environments/${enc(envId)}/registry-clients`),
   buckets: (envId) => request<Bucket[]>('GET', `/api/environments/${enc(envId)}/buckets`),
   resolveBucket: (envId, name) =>
     request<BucketResolveResult>('GET', `/api/environments/${enc(envId)}/buckets/resolve?name=${enc(name)}`),

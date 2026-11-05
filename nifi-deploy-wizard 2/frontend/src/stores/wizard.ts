@@ -27,7 +27,7 @@ export const STEP_DEFS = [
     label: 'Registry & bucket',
     sub: 'Find or create bucket',
     title: 'Registry client and bucket',
-    desc: 'Flows are versioned in NiFi Registry. If the bucket does not exist yet, create it here and its ID is captured for the job.',
+    desc: 'Flows are versioned in NiFi Registry. NiFi pulls versions through its Registry Client. A missing bucket (or Registry Client) can be created here.',
   },
   {
     label: 'Flows',
@@ -55,7 +55,7 @@ export const STEP_DEFS = [
   },
 ] as const
 
-type Loadable = 'envs' | 'check' | 'registry' | 'bucket' | 'flows' | 'params' | 'deploy'
+type Loadable = 'envs' | 'check' | 'registry' | 'registryClient' | 'bucket' | 'flows' | 'params' | 'deploy'
 
 function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
@@ -70,6 +70,7 @@ export const useWizard = defineStore('wizard', () => {
     envs: false,
     check: false,
     registry: false,
+    registryClient: false,
     bucket: false,
     flows: false,
     params: false,
@@ -163,6 +164,14 @@ export const useWizard = defineStore('wizard', () => {
         selectedBucketId.value = list[0]?.id ?? ''
       }
     })
+  }
+
+  async function createRegistryClient() {
+    const c = await guarded('registryClient', () => api.createRegistryClient(envId.value))
+    if (c) {
+      registryClients.value = [c, ...registryClients.value]
+      registryClientId.value = c.id
+    }
   }
 
   async function createBucket() {
@@ -436,6 +445,7 @@ export const useWizard = defineStore('wizard', () => {
       case 0:
         return connectionOk.value ? 'Connection OK' : 'Run the connection check to continue'
       case 1:
+        if (!registryClientId.value) return 'This NiFi needs a NiFi Registry client'
         return bucket.value ? `Bucket ${bucket.value.name}` : 'Create or select a bucket to continue'
       case 2:
         return `${selected.value.length} of ${flows.value.length} flows selected`
@@ -503,7 +513,7 @@ export const useWizard = defineStore('wizard', () => {
     deploymentId, deploymentMeta, phase, logs, progress, stageDetail, summary, finished, percent, cancelling, recent,
     canNext, footerHint,
     // actions
-    init, loadEnvironments, selectEnv, runChecks, loadRegistry, createBucket, loadFlows, toggleFlow,
+    init, loadEnvironments, selectEnv, runChecks, loadRegistry, createRegistryClient, createBucket, loadFlows, toggleFlow,
     paramValue, setParam, next, back, goTo, newDeployment, attach, cancelDeployment, loadRecent,
   }
 })

@@ -33,7 +33,11 @@ public record DeployerProperties(List<Environment> environments, Flows flows, De
             /** Equivalent of curl -k. Prefer adding the cluster CA to the truststore. */
             @DefaultValue("false") boolean insecureSkipTlsVerify,
             /** Optional bearer token for a secured NiFi Registry. Empty = no auth header (matches the script). */
-            String registryToken) {
+            String registryToken,
+            /** Registry URL as NiFi itself reaches it, used when creating a Registry Client (defaults to registry-url). */
+            String registryClientUrl,
+            /** Id of a controller-level SSL Context Service for an HTTPS Registry (auto-detected when empty). */
+            String registryClientSslContextService) {
     }
 
     public record Flows(

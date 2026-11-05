@@ -25,13 +25,38 @@ async function copyId() {
   <div v-if="w.loading.registry" class="muted row"><Icon name="loader" /> Reading registry clients and buckets…</div>
 
   <div v-else class="stack" style="--gap: 22px">
-    <div class="grid-auto">
+    <div v-if="!w.registryClients.length" class="alert alert-warn" role="status">
+      <Icon name="warning" :size="20" style="color: var(--warn-icon); flex-shrink: 0" />
+      <div class="spacer">
+        <strong>This NiFi has no NiFi Registry client</strong>
+        <div style="font-size: 13px; margin-top: 4px">
+          NiFi needs one to import versioned flows. Create it now, or add it under Controller Settings → Registry Clients
+          and click Retry.
+        </div>
+        <div class="row" style="margin-top: 12px; gap: 8px">
+          <button
+            class="btn btn-primary btn-sm"
+            type="button"
+            :disabled="w.loading.registryClient"
+            @click="w.createRegistryClient()"
+          >
+            <Icon v-if="w.loading.registryClient" name="loader" :size="14" />
+            {{ w.loading.registryClient ? 'Creating…' : 'Create registry client' }}
+          </button>
+          <button class="btn btn-sm" type="button" @click="w.loadRegistry()">
+            <Icon name="refresh" :size="14" /> Retry
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div v-else class="grid-auto">
       <div class="field">
         <label for="regClient">Registry client</label>
         <select id="regClient" v-model="w.registryClientId" class="input">
-          <option v-for="c in w.registryClients" :key="c.id" :value="c.id">{{ c.name }} ({{ c.id.slice(0, 8) }}…)</option>
+          <option v-for="c in w.registryClients" :key="c.id" :value="c.id">{{ c.name }}</option>
         </select>
-        <span class="muted small">From /nifi-api/controller/registry-clients</span>
+        <span class="muted small">NiFi Registry clients from /nifi-api/controller/registry-clients</span>
       </div>
     </div>
 

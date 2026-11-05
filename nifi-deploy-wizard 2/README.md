@@ -21,7 +21,7 @@ No Kubernetes Job and no shell script needed.
 | Step | What happens |
 |---|---|
 | 1 Target | Pick Black / Red NiFi and run the connection check. Recent deployments are listed here; click one to view it. |
-| 2 Registry & bucket | Pick the registry client. If the bucket is missing, **create it and capture its ID** (find-or-create). |
+| 2 Registry & bucket | Pick the NiFi Registry client (only NiFi Registry clients are listed, with their URL; invalid ones are flagged). If NiFi has none, **Create registry client** sets one up through the API. If the bucket is missing, **create it and capture its ID** (find-or-create). |
 | 3 Flows | Each `/flows/*.json` is hashed and compared with the Registry (`flow-hash:` in the description) → New / Changed / Unchanged |
 | 4 Parameters | Review or override non-sensitive parameter values |
 | 5 Review | Shows what will happen to each flow |
@@ -92,6 +92,17 @@ cd ../frontend && npm run dev                           # proxies /api → :8080
 docker build -t your-registry.local/flow-deployer:1.0.0 .
 kubectl apply -f k8s/deployer.yaml                      # after editing names/URLs/image/volumes
 ```
+
+## Configuration notes
+
+- **URLs are `https://host:port` only.** The code adds `/nifi-api` and `/nifi-registry-api` itself. A pasted
+  `…/nifi` or `…/nifi-registry` is trimmed automatically, and a redirect is reported as a clear error.
+  `rpg-url` is the exception: it keeps `/nifi`.
+- **Local runs:** `FLOWS_DIR` defaults to `./flows` and `AUDIT_FILE` to `./data/audit.jsonl`
+  (the k8s ConfigMap sets `/flows` and `/data/audit.jsonl`).
+- **Create registry client** uses `registry-client-url` (the Registry as *NiFi* reaches it; defaults to
+  `registry-url`). For an HTTPS Registry, NiFi needs a controller-level SSL Context Service. The first one found
+  is used, or set `registry-client-ssl-context-service` to its id.
 
 ## Before first real use
 
