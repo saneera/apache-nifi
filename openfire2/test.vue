@@ -171,3 +171,19 @@ function formatKey(key: string) {
 }
 </script>
 </script>
+
+
+<!-- ===== In the Circuit Details component (the one with Circuit Information / Channels / Fragments / ... panels) ===== -->
+
+<!-- 1. Add as the last panel inside the existing <v-expansion-panels> -->
+<CircuitConflictsPanel :circuit-id="circuit?.id" />
+<!-- use whatever prop/ref holds the selected circuit there, e.g. props.circuit.id -->
+
+
+<!-- 2. Import -->
+<script setup lang="ts">
+import CircuitConflictsPanel from './CircuitConflictsPanel.vue'
+</script>
+
+
+<!-- 3. API file: getCircuitConflicts is the one we wrote earlier (openapi-fetch, throws on error) -->
