@@ -68,7 +68,8 @@ async function loadConflicts(circuitId: string | undefined) {
 </script>
 
 
-=======
+====
+
 
 
 <template>
@@ -168,4 +169,5 @@ function formatKey(key: string) {
   const words = key.replace(/([A-Z])/g, ' $1').replace(/[_-]+/g, ' ').trim().toLowerCase()
   return words.charAt(0).toUpperCase() + words.slice(1)
 }
+</script>
 </script>
