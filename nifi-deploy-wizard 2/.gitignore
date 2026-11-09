@@ -1,7 +1,0 @@
-node_modules/
-frontend/dist/
-backend/target/
-backend/src/main/resources/static/
-*.log
-.idea/
-.vscode/

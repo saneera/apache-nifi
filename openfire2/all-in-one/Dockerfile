@@ -1,5 +1,0 @@
-FROM ghcr.io/igniterealtime/openfire@sha256:d17733fa763d0a3390bfaaacc169f91e80f34f39d7958911eb9704314614d86c
-
-USER root
-
-USER openfire

@@ -1,3 +1,0 @@
-resources:
-  - zookeeper-deploy.yaml
-  - service.yaml
