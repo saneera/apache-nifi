@@ -49,3 +49,27 @@ async function loadConflicts(circuitId: string | undefined) {
   }
 }
 </script>
+
+
+ech-debt ticket:
+
+Title: Remove unused toolbar config (setToolbarConfig) from views
+
+Type: Tech debt (child of JTTHFC2-2908)
+
+Description:
+Several views call commonComponentsStore.setToolbarConfig(...) in onActivated to set an app bar title and buttons (e.g. CircuitTemplates.vue, CircuitConflicts.vue). The toolbar config doesn’t appear to be rendered anywhere and may be left over from an app bar that was removed. Raised from PR 8660 review.
+
+Tasks:
+
+Confirm nothing reads toolbarConfig (app bar component, layouts, common-components)
+Remove setToolbarConfig calls and the circuitManagerAppBar objects from all views
+Remove setToolbarConfig / toolbarConfig from @babcock/common-components if it has no other consumers
+
+Acceptance criteria:
+
+No views call setToolbarConfig
+No visible change to the UI
+Build, lint and tests pass
+
+Once you’ve created it, swap the real ticket number in for JTTHFC2-XXXX in your reply.
