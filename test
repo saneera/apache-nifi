@@ -1,106 +1,123 @@
-<template>
-  <v-card
-    v-if="props.conflict"
-    :title="props.showTitle ? `Conflicts for circuit ${shortId(props.conflict.circuitId)}` : undefined"
-    :subtitle="props.showTitle ? props.conflict.circuitId : undefined"
-    flat
-    width="100%"
-  >
-    <template #text>
-      <v-data-table
-        id="circuit-conflict-details-elements"
-        class="border-sm elevation-2"
-        :headers="headers"
-        :items="rows"
-        item-value="rowKey"
-        :sort-by="[{ key: 'fragmentId', order: 'asc' }]"
-        items-per-page="-1"
-        density="compact"
-        hide-default-footer
-      >
-        <template #item.reason="{ item }">
-          <v-chip :color="reasonColour(String(item.reason))" size="small">
-            {{ formatReason(String(item.reason)) }}
-          </v-chip>
-        </template>
+mkdir -p /c/certs && cd /c/certs
+export MSYS_NO_PATHCONV=1      # stops Git Bash mangling "/CN=..." into a Windows path
 
-        <template #item.conflictingCircuits="{ item }">
-          <v-chip
-            v-for="id in item.conflictingCircuits"
-            :key="id"
-            :title="id"
-            color="blue-darken-2"
-            size="small"
-            class="mr-1 my-1"
-          >
-            {{ shortId(id) }}
-          </v-chip>
-        </template>
-      </v-data-table>
+# 1a. Your own CA
+openssl req -x509 -newkey rsa:4096 -nodes -sha256 -days 1825 \
+  -keyout ca.key -out ca.crt -subj "/CN=HFC2 Dev CA"
 
-      <div v-if="resolutionEntries.length" id="circuit-conflict-details-resolution" class="mt-4">
-        <div class="text-subtitle-1 mb-2">Resolution</div>
-        <v-table density="compact" class="border-sm">
-          <tbody>
-            <tr v-for="[key, value] in resolutionEntries" :key="key">
-              <td class="font-weight-medium" style="width: 220px">{{ formatKey(key) }}</td>
-              <td>{{ value }}</td>
-            </tr>
-          </tbody>
-        </v-table>
-      </div>
-    </template>
-  </v-card>
-</template>
+# 1b. Openfire key + request
+openssl req -newkey rsa:2048 -nodes -sha256 \
+  -keyout openfire.key -out openfire.csr -subj "/CN=openfire-xmpp-dev1"
 
-<script setup lang="ts">
-import { computed } from 'vue'
+# 1c. What goes in the cert (names the clients will connect with)
+cat > openfire.ext <<'EOF'
+basicConstraints = CA:FALSE
+keyUsage = critical, digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = DNS:openfire-xmpp-dev1, DNS:openfire-service, IP:10.11.253.93
+EOF
 
-import { CircuitConflicts, ElementConflict, FragmentConflict } from '../api/generated/circuit-manager'
-import { formatReason, reasonColour, shortId } from '../utils/conflictFormat'
+# 1d. Sign it with your CA
+openssl x509 -req -in openfire.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
+  -days 825 -sha256 -extfile openfire.ext -out openfire.crt
 
-const props = withDefaults(
-  defineProps<{
-    conflict: CircuitConflicts | undefined
-    /** Hide the card title when embedded somewhere that already names the circuit (e.g. Circuit Details panel). */
-    showTitle?: boolean
-  }>(),
-  { showTitle: true },
-)
+# 1e. Bundle cert + key as PKCS12 (keytool in the pod can import this)
+openssl pkcs12 -export -in openfire.crt -inkey openfire.key -certfile ca.crt \
+  -name openfire -out openfire.p12 -passout pass:changeit
 
-const headers = [
-  { title: 'Fragment', key: 'fragmentId' },
-  { title: 'Element', key: 'id' },
-  { title: 'Reason', key: 'reason' },
-  { title: 'Conflicting circuits', key: 'conflictingCircuits', sortable: false },
-]
 
-/**
- * Generated ElementConflict plus the id of the fragment it belongs to, so fragments can be flattened into one table.
- * Element ids are only unique within a fragment, so rowKey (fragment/element) is the unique row id.
- */
-type ElementRow = ElementConflict & { fragmentId: FragmentConflict['id']; rowKey: string }
+---
 
-/** One row per conflicting element. */
-const rows = computed<ElementRow[]>(() =>
-  (props.conflict?.fragments ?? []).flatMap((fragment) =>
-    (fragment.elements ?? []).map((element) => ({
-      ...element,
-      fragmentId: fragment.id,
-      rowKey: `${fragment.id}/${element.id}`,
-    })),
-  ),
-)
+openssl s_client -connect 10.11.253.93:30522 -starttls xmpp \
+  -servername openfire-xmpp-dev1 -showcerts </dev/null 2>/dev/null \
+  | openssl x509 -outform PEM > openfire.crt
 
-const resolutionEntries = computed(() =>
-  Object.entries(props.conflict?.resolution ?? {}).map(
-    ([key, value]) => [key, typeof value === 'object' ? JSON.stringify(value) : String(value)] as const,
-  ),
-)
 
-/** suggestedAction -> Suggested action */
-function formatKey(key: string) {
-  const words = key.replace(/([A-Z])/g, ' $1').replace(/[_-]+/g, ' ').trim().toLowerCase()
-  return words.charAt(0).toUpperCase() + words.slice(1)
-}
-</script>
+  kubectl exec deploy/openfire -c openfire -- keytool -exportcert -rfc \
+    -alias <OPENFIRE_FQDN> -keystore /var/lib/openfire/conf/security/keystore \
+    -storepass changeit > openfire.crt
+
+    openssl x509 -in openfire.crt -noout -subject -ext subjectAltName
+
+  ---
+          - name: generate-keystore
+            image: openfire-image
+            command: ["sh", "-c"]
+            args:
+              - |
+                set -e
+                SECURITY_DIR="/conf-out/security"
+                DEFAULTS_DIR="/usr/local/openfire/resources/security_org"
+                KEYSTORE="$SECURITY_DIR/keystore"
+                TRUSTSTORE="$SECURITY_DIR/truststore"
+
+                mkdir -p "$SECURITY_DIR"
+
+                # Keep the existing seeding of default files
+                for f in client.truststore java.security; do
+                  if [ ! -f "$SECURITY_DIR/$f" ] && [ -f "$DEFAULTS_DIR/$f" ]; then
+                    cp -f "$DEFAULTS_DIR/$f" "$SECURITY_DIR/$f"
+                    chown openfire:openfire "$SECURITY_DIR/$f"
+                    echo "Seeded default $f"
+                  fi
+                done
+
+                # Always rebuild from the Secret - the Secret is the source of truth
+                rm -f "$KEYSTORE" "$TRUSTSTORE"
+
+                keytool -importkeystore -noprompt \
+                  -srckeystore /tls/openfire.p12 -srcstoretype PKCS12 \
+                  -srcstorepass "$STOREPASS" -srcalias openfire \
+                  -destkeystore "$KEYSTORE" -deststoretype JKS \
+                  -deststorepass "$STOREPASS" -destkeypass "$STOREPASS" \
+                  -destalias "$OPENFIRE_FQDN"
+
+                keytool -importcert -noprompt -alias hfc2-ca -file /tls/ca.crt \
+                  -keystore "$TRUSTSTORE" -storetype JKS -storepass "$STOREPASS"
+
+                chown openfire:openfire "$KEYSTORE" "$TRUSTSTORE"
+                keytool -list -keystore "$KEYSTORE" -storepass "$STOREPASS"
+                echo "Imported TLS certificate for $OPENFIRE_FQDN"
+            env:
+              - name: STOREPASS
+                valueFrom:
+                  secretKeyRef:
+                    name: openfire-tls
+                    key: storepass
+            envFrom:
+              - configMapRef:
+                  name: openfire-env
+            volumeMounts:
+              - name: openfire-config
+                mountPath: /conf-out
+              - name: openfire-tls
+                mountPath: /tls
+                readOnly: true
+
+
+
+
+
+
+  ---
+  chat-gateway:
+    openfire:
+      trustCertPath: "C:/certs/ca.crt"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: openfire-tls
+  namespace: <openfire-ns>
+type: Opaque
+data:
+  openfire.p12: <base64 of openfire.p12>
+  ca.crt: <base64 of ca.crt>
+stringData:
+  storepass: changeit
+
+
+
+  base64 -w0 openfire.p12
+  base64 -w0 ca.crt
