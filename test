@@ -121,3 +121,4 @@ stringData:
 
   base64 -w0 openfire.p12
   base64 -w0 ca.crt
+

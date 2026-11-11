@@ -1,0 +1,66 @@
+chat-gateway:
+  openfire:
+    # ...existing host, port, domain etc.
+    tls:
+      enabled: true
+      trustCert: classpath:openfire.crt     # later in K8s: file:/etc/openfire-certs/ca.crt
+
+
+
+
+      private Tls tls = new Tls();
+
+      @Getter @Setter
+      public static class Tls {
+          private boolean enabled = false;
+          private Resource trustCert;   // org.springframework.core.io.Resource
+      }
+
+
+
+      private SSLContext buildSslContext() {
+          Resource certResource = chatGatewayProperties.getTls().getTrustCert();
+          try (InputStream in = certResource.getInputStream()) {
+              X509Certificate cert = (X509Certificate) CertificateFactory.getInstance("X.509")
+                      .generateCertificate(in);
+              log.info("Trusting Openfire certificate: subject={}, expires={}",
+                      cert.getSubjectX500Principal(), cert.getNotAfter());
+
+              KeyStore trustStore = KeyStore.getInstance(KeyStore.getDefaultType());
+              trustStore.load(null, null);
+              trustStore.setCertificateEntry("openfire", cert);
+
+              TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+              tmf.init(trustStore);
+
+              SSLContext ctx = SSLContext.getInstance("TLS");
+              ctx.init(null, tmf.getTrustManagers(), null);
+              return ctx;
+          } catch (Exception e) {
+              throw new IllegalStateException("Failed to load Openfire certificate from " + certResource, e);
+          }
+      }
+
+      private XMPPTCPConnectionConfiguration buildConfig() {
+          try {
+              XMPPTCPConnectionConfiguration.Builder builder = XMPPTCPConnectionConfiguration.builder()
+                      .setHost(chatGatewayProperties.getHost())
+                      .setPort(chatGatewayProperties.getPort())
+                      .setXmppDomain(chatGatewayProperties.getDomain());
+
+              if (chatGatewayProperties.getTls().isEnabled()) {
+                  builder.setSecurityMode(ConnectionConfiguration.SecurityMode.required)
+                         .setCustomSSLContext(buildSslContext());
+              } else {
+                  log.warn("XMPP TLS is DISABLED");
+                  builder.setSecurityMode(ConnectionConfiguration.SecurityMode.disabled);
+              }
+              return builder.build();
+          } catch (XmppStringprepException e) {
+              throw new RuntimeException(e);
+          }
+      }
+
+
+      log.info("Connected to Openfire: secure={}, authenticated={}",
+              systemConnection.isSecureConnection(), systemConnection.isAuthenticated());
