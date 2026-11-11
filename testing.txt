@@ -64,3 +64,30 @@ chat-gateway:
 
       log.info("Connected to Openfire: secure={}, authenticated={}",
               systemConnection.isSecureConnection(), systemConnection.isAuthenticated());
+
+
+
+
+
+              -----
+
+
+# Fingerprint of the cert you saved
+openssl x509 -in src/main/resources/openfire.crt -noout -fingerprint -sha256
+
+# Fingerprint of what Openfire actually sends on the XMPP port
+openssl s_client -connect 10.11.253.93:30522 -starttls xmpp -servername openfire-xmpp-dev1 \
+</dev/null 2>/dev/null | openssl x509 -noout -fingerprint -sha256 -subject -issuer
+
+
+openssl s_client -connect 10.11.253.93:30522 -starttls xmpp -servername openfire-xmpp-dev1 \
+</dev/null 2>/dev/null | openssl x509 -outform PEM > src/main/resources/openfire.crt
+
+
+openssl s_client -connect 10.11.253.93:30522 -starttls xmpp -servername openfire-xmpp-dev1 \
+-CAfile src/main/resources/openfire.crt </dev/null 2>/dev/null | grep "Verify return code"
+
+
+
+
+-Djavax.net.debug=ssl:handshake:verbose
