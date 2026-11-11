@@ -121,3 +121,41 @@ openssl s_client -connect 10.11.253.93:30522 -starttls xmpp -noservername \
         // ...TrustManagerFactory / SSLContext unchanged
     }
 
+
+
+
+private X509TrustManager buildTrustManager() {
+    Resource certResource = chatGatewayProperties.getTls().getTrustCert();
+    try (InputStream in = certResource.getInputStream()) {
+        KeyStore trustStore = KeyStore.getInstance(KeyStore.getDefaultType());
+        trustStore.load(null, null);
+
+        int i = 0;
+        for (Certificate c : CertificateFactory.getInstance("X.509").generateCertificates(in)) {
+            X509Certificate x = (X509Certificate) c;
+            log.info("Trusting Openfire certificate: subject={}, expires={}",
+                    x.getSubjectX500Principal(), x.getNotAfter());
+            trustStore.setCertificateEntry("openfire-" + i++, x);
+        }
+
+        TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+        tmf.init(trustStore);
+        for (TrustManager tm : tmf.getTrustManagers()) {
+            if (tm instanceof X509TrustManager x509) {
+                return x509;
+            }
+        }
+        throw new IllegalStateException("No X509TrustManager found");
+    } catch (Exception e) {
+        throw new IllegalStateException("Failed to load Openfire certificate from " + certResource, e);
+    }
+}
+
+
+builder.setSecurityMode(ConnectionConfiguration.SecurityMode.required)
+       .setCustomX509TrustManager(buildTrustManager());
+
+
+
+       keytool -importcert -noprompt -alias openfire -file src/main/resources/openfire.crt \
+         -keystore C:/certs/openfire-trust.p12 -storetype PKCS12 -storepass changeit
