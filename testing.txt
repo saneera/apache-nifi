@@ -159,3 +159,39 @@ builder.setSecurityMode(ConnectionConfiguration.SecurityMode.required)
 
        keytool -importcert -noprompt -alias openfire -file src/main/resources/openfire.crt \
          -keystore C:/certs/openfire-trust.p12 -storetype PKCS12 -storepass changeit
+
+
+
+
+
+openssl s_client -connect 172.27.3.23:30522 -starttls xmpp -servername openfire-xmpp-sil3 \
+  </dev/null 2>/dev/null | openssl x509 -outform PEM > overlays/enmf/openfire.crt
+
+
+  configMapGenerator:
+    - name: chat-traffic-gateway-config
+      literals:
+        # ...existing literals...
+        - chat-gateway.openfire.tls.enabled=true
+        - chat-gateway.openfire.tls.trustCert=file:/etc/openfire-certs/openfire.crt
+
+    - name: openfire-cert
+      files:
+        - openfire.crt
+
+
+
+
+        spec:
+          template:
+            spec:
+              containers:
+                - name: chat-traffic-gateway
+                  volumeMounts:
+                    - name: openfire-cert
+                      mountPath: /etc/openfire-certs
+                      readOnly: true
+              volumes:
+                - name: openfire-cert
+                  configMap:
+                    name: openfire-cert
