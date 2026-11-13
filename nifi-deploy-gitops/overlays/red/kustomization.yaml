@@ -1,0 +1,24 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Red-side cluster
+namespace: hfc2-nifi
+
+resources:
+  - ../../base
+
+# flows/ — one ConfigMap per flow file. Regenerate with:  tools/sync-flows.sh overlays/red
+components:
+  - flows
+
+images:
+  - name: nifi-deploy-runner
+    newName: registry.local/hfc2/nifi-deploy-runner   # CHANGE: your internal registry
+    newTag: "1.0.0"
+
+# Environment for deploy.sh: connection settings + PARAM_ overrides.
+configMapGenerator:
+  - name: nifi-deploy-env
+    envs:
+      - deploy.env
+      - params.env

@@ -1,0 +1,32 @@
+# Argo CD Application — deploys NiFi flows to the BLACK cluster.
+# Apply once into the Argo CD namespace:  kubectl apply -n argocd -f argocd/nifi-deploy-black.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nifi-deploy-black
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default                                            # CHANGE if you use Argo CD projects
+  source:
+    repoURL: https://git.example.local/hfc2/nifi-deploy-gitops.git   # CHANGE: this repo
+    targetRevision: main
+    path: overlays/black
+  destination:
+    # Black cluster as registered in Argo CD (`argocd cluster list`).
+    # Use https://kubernetes.default.svc if Argo CD runs inside the Black cluster itself.
+    server: https://black-cluster-api.example.local:6443      # CHANGE
+    namespace: hfc2-nifi
+  syncPolicy:
+    # Every sync runs the deploy Job (PostSync hook). Start with manual syncs; when you trust it,
+    # enable automated so a merge to main deploys. Keep selfHeal OFF: each self-heal sync would
+    # run the Job again.
+    # automated:
+    #   prune: true
+    #   selfHeal: false
+    syncOptions:
+      - ServerSideApply=true    # flow ConfigMaps can exceed the 256 KB last-applied annotation limit of client-side apply
+      - PruneLast=true          # remove old (hash-suffixed) flow ConfigMaps only after the new ones are in place
+      - CreateNamespace=false
+  revisionHistoryLimit: 10
