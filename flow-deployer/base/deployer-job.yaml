@@ -1,0 +1,55 @@
+# NiFi flow deployer — runs deployer.sh once per Argo CD sync of this (separate) application.
+#
+# PostSync hook: runs after this app's ConfigMaps/Secret (script, flows, settings) are applied.
+# BeforeHookCreation: the previous run's Job and pod log stay until the next sync replaces them.
+#
+# Names here are short; each overlay adds a prefix (e.g. nifi-red-) via namePrefix.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: flow-deploy-job
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 0                 # same as before: a failed deploy fails, no silent retry
+  activeDeadlineSeconds: 1800     # wait_for_nifi loops forever if NiFi is down — stop after 30 min
+  template:
+    metadata:
+      labels:
+        sidecar.istio.io/inject: "false"
+        app.kubernetes.io/name: flow-deployer
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false   # the script only calls NiFi/Registry, never Kubernetes
+      containers:
+        - name: flow-deployer
+          image: nifi-toolkit-image
+          command: ["/bin/bash", "/scripts/deployer.sh"]
+          # Add your GIT_COMMIT env here if you want it (it was folded in the old deployer-job.yaml)
+          envFrom:
+            - configMapRef:
+                name: flow-deploy-env        # env-deploy.properties (URLs, ids, PARAM_*, START_FLOW)
+            - secretRef:
+                name: flow-deploy-auth       # env-auth.properties (NiFi single-user credentials)
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: flows
+              mountPath: /flows
+            - name: script-volume
+              mountPath: /scripts
+      volumes:
+        - name: flows
+          # One ConfigMap per flow file, all projected into /flows.
+          # The sources are set per environment in env/<env>/<side>/flows/kustomization.yaml.
+          projected:
+            sources: []
+        - name: script-volume
+          configMap:
+            name: flow-deploy-script
+            defaultMode: 0755

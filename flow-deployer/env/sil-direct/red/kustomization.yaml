@@ -1,0 +1,28 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# sil-direct / RED — flow deployer only (separate Argo CD app; not part of the NiFi deployment)
+namespace: inspire-silrelease
+namePrefix: nifi-red-          # → nifi-red-flow-deploy-job, nifi-red-flow-deploy-env, ...
+
+resources:
+  - ../../../base
+
+# flows/ — one ConfigMap per flow file. After adding/changing/removing a flow file run:
+#   flow-deployer/tools/sync-flows.sh flow-deployer/env/sil-direct/red
+components:
+  - flows
+
+configMapGenerator:
+  - name: flow-deploy-env
+    envs:
+      - env-deploy.properties
+
+# Credentials as a Secret (not a ConfigMap). Same keys as before.
+secretGenerator:
+  - name: flow-deploy-auth
+    envs:
+      - env-auth.properties
+
+generatorOptions:
+  disableNameSuffixHash: true

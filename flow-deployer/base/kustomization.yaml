@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - deployer-job.yaml
+
+images:
+  - name: nifi-toolkit-image
+    newName: docker-group.sil-nexus-repo:9042/apache/nifi-toolkit
+    newTag: 2.7.0
+
+# The deploy script is the same for every environment.
+configMapGenerator:
+  - name: flow-deploy-script
+    files:
+      - deployer.sh
+
+# Same convention as the NiFi manifests: fixed names (the Job is recreated on every sync anyway).
+generatorOptions:
+  disableNameSuffixHash: true
