@@ -1,363 +1,96 @@
-# Openfire TLS with a common CA (Kustomize + Argo CD)
+# flow-deployer — NiFi flow deployment as its own Argo CD app
 
-One **HFC2 non-prod CA** is stored in git. On every start, each Openfire's init container creates its own certificate and **signs it with that CA**, using that environment's domain and IP. The chat traffic gateway trusts only the CA, so the same `ca.crt` works in every environment.
-
-- No per-environment certificate files to create or rotate.
-- No kubectl, vault or extra cluster tools: everything goes through git, Kustomize and Argo CD.
-- A new environment only needs its domain and node IP in its overlay.
-
-> **Non-prod only.** With the CA key in git, anyone with read access to the repo can create certificates the gateway will trust. Use a separate CA, held outside git, for production.
-
-## Contents
-
-1. [How it works](#how-it-works)
-2. [Step 1: Create the CA (once)](#step-1-create-the-ca-once)
-3. [Step 2: Openfire base](#step-2-openfire-base)
-4. [Step 3: Openfire overlays](#step-3-openfire-overlays)
-5. [Step 4: Gateway base and overlays](#step-4-gateway-base-and-overlays)
-6. [Step 5: Gateway code and local runs](#step-5-gateway-code-and-local-runs)
-7. [Step 6: Roll out with Argo](#step-6-roll-out-with-argo)
-8. [Step 7: Verify, enforce and capture evidence](#step-7-verify-enforce-and-capture-evidence)
-9. [Troubleshooting](#troubleshooting)
-10. [Adding a new environment](#adding-a-new-environment)
-
----
-
-## How it works
+Drop these two folders into the root of **HFC2-Deploy**, next to `env/` and `argocd/`:
 
 ```
-                  HFC2 Non-Prod CA  (ca.p12 + ca.crt in the Openfire repo base)
-                          │ signs, inside each pod, on every start
-          ┌───────────────┴────────────────┐
-          ▼                                ▼
-  Openfire dev-1                     Openfire enmf
-  CN/SAN openfire-xmpp-dev1          CN/SAN openfire-xmpp-sil3
-  IP 10.11.253.93                    IP 172.27.3.23
-          ▲                                ▲
-          │ TLS (STARTTLS on 5222)         │
-  chat-traffic-gateway dev-1         chat-traffic-gateway enmf
-  trusts ca.crt                      trusts ca.crt   (same file, gateway repo base)
+HFC2-Deploy/
+├── flow-deployer/
+│   ├── base/
+│   │   ├── kustomization.yaml          Job + script ConfigMap + nifi-toolkit image (Nexus)
+│   │   ├── deployer-job.yaml           PostSync hook Job (same behaviour as your current one)
+│   │   └── deployer.sh                 the updated deploy script
+│   ├── env/sil-direct/
+│   │   ├── red/
+│   │   │   ├── kustomization.yaml      namespace inspire-silrelease, namePrefix nifi-red-
+│   │   │   ├── env-deploy.properties   ← copy your values (URLs, ids, PARAM_*, START_FLOW)
+│   │   │   ├── env-auth.properties     ← copy the 2 credential values (becomes a Secret)
+│   │   │   └── flows/                  ← copy the *.json flow files; kustomization.yaml is generated
+│   │   └── black/                      same layout
+│   └── tools/sync-flows.sh             one ConfigMap per flow file
+└── argocd/
+    ├── flow-deployer-sil-direct-red.yaml
+    └── flow-deployer-sil-direct-black.yaml
 ```
 
-| File | Repo | Location | Used by |
-| --- | --- | --- | --- |
-| `ca.p12` (CA cert + key) | Openfire | base | Openfire init container, to sign |
-| `ca.crt` | Openfire | base | Openfire truststore |
-| `ca.crt` | Gateway | `base-manifests` | Gateway trust |
-| `ca.key` | none | keep a copy outside git (team share) | Only to rebuild `ca.p12` |
+## What it creates (RED)
 
----
+| Resource | Name |
+|---|---|
+| Job (PostSync hook) | `nifi-red-flow-deploy-job` |
+| Script ConfigMap | `nifi-red-flow-deploy-script` (from `base/deployer.sh`) |
+| Settings ConfigMap | `nifi-red-flow-deploy-env` (from `env-deploy.properties`) |
+| Credentials **Secret** | `nifi-red-flow-deploy-auth` (from `env-auth.properties`) |
+| One ConfigMap per flow | `nifi-red-flow-deploy-flow-circuit-manager`, `nifi-red-flow-deploy-flow-property-service-publisher` |
 
-## Step 1: Create the CA (once)
+The flow ConfigMaps are named per flow **without the version**, so `Circuit-Manager-version-2.json` replaces
+version 1 under the same name. All of them are projected into `/flows`, so the pod sees exactly the same files
+as today. None of the names clash with the current deployer resources in the NiFi app.
 
-In Git Bash, outside both repos:
+## Set it up (RED; BLACK is the same)
 
 ```bash
-mkdir -p /c/hfc2-pki && cd /c/hfc2-pki
-export MSYS_NO_PATHCONV=1   # stops Git Bash turning "/C=AU..." into a Windows path
+# 1. your files into the new app
+# (base/deployer.sh is already the updated script; nothing to copy)
+cp env/sil-direct/red/flows/*.json                    flow-deployer/env/sil-direct/red/flows/
+#    env-deploy.properties: copy your values over the CHANGE-ME lines
+#    env-auth.properties:   copy SINGLE_USER_CREDENTIALS_USERNAME / _PASSWORD only
 
-# 1. CA certificate + key (valid 10 years)
-openssl req -x509 -newkey rsa:4096 -nodes -sha256 -days 3650 \
-  -keyout ca.key -out ca.crt \
-  -subj "/C=AU/ST=SA/L=Adelaide/O=Babcock/OU=IT/CN=HFC2 Non-Prod CA" \
-  -addext "basicConstraints=critical,CA:TRUE" \
-  -addext "keyUsage=critical,keyCertSign,cRLSign"
+# 2. generate the per-flow ConfigMaps
+flow-deployer/tools/sync-flows.sh flow-deployer/env/sil-direct/red
 
-# 2. Bundle for keytool in the Openfire pod (alias must be hfc2-ca)
-openssl pkcs12 -export -in ca.crt -inkey ca.key -name hfc2-ca \
-  -out ca.p12 -passout pass:changeit
+# 3. check it builds
+kubectl kustomize flow-deployer/env/sil-direct/red
 
-# 3. Check
-openssl x509 -in ca.crt -noout -subject -dates
+# 4. Argo CD app (edit repoURL / destination.server first)
+kubectl apply -n argocd -f argocd/flow-deployer-sil-direct-red.yaml
 ```
 
-You now have `ca.crt` and `ca.p12` to commit, and `ca.key` to keep safe outside the repos.
+## Take the deployer out of the NiFi app
 
-If `keytool` in the Openfire image later fails to read `ca.p12` (older Java), rebuild it with `-legacy` added to the `openssl pkcs12` command.
-
----
-
-## Step 2: Openfire base
-
-### 2a. Add the CA files
-
-Copy `ca.p12` and `ca.crt` into the Openfire base folder and add to the base `kustomization.yaml`:
+So that only the new app runs deployments, remove from `env/sil-direct/red/kustomization.yaml`:
 
 ```yaml
-secretGenerator:
-  - name: openfire-ca
-    files:
-      - ca.p12
-      - ca.crt
-    literals:
-      - capass=changeit      # password used for ca.p12 in Step 1
-      - storepass=changeit   # Openfire keystore password (Openfire default)
-```
+resources:
+  - deployer-job.yaml                        # remove
 
-Kustomize adds a hash to the Secret name and updates every reference in the Deployment automatically.
-
-### 2b. Replace the `generate-keystore` init container in `openfire-deployment.yaml`
-
-```yaml
-        - name: generate-keystore
-          image: openfire-image
-          command: ["sh", "-c"]
-          args:
-            - |
-              set -e
-              SECURITY_DIR="/conf-out/security"
-              DEFAULTS_DIR="/usr/local/openfire/resources/security_org"
-              KEYSTORE="$SECURITY_DIR/keystore"
-              TRUSTSTORE="$SECURITY_DIR/truststore"
-              CA_DIR="/ca"
-              mkdir -p "$SECURITY_DIR"
-
-              # Keep the existing seeding of default files
-              for f in client.truststore java.security; do
-                if [ ! -f "$SECURITY_DIR/$f" ] && [ -f "$DEFAULTS_DIR/$f" ]; then
-                  cp -f "$DEFAULTS_DIR/$f" "$SECURITY_DIR/$f"
-                  chown openfire:openfire "$SECURITY_DIR/$f"
-                  echo "Seeded default $f"
-                fi
-              done
-
-              # Fresh CA-signed certificate on every start
-              rm -f "$KEYSTORE" "$TRUSTSTORE" /tmp/openfire.csr /tmp/openfire.crt
-
-              # 1. New key pair for this environment
-              keytool -genkeypair -noprompt -alias "$OPENFIRE_FQDN" \
-                -keyalg RSA -keysize 2048 -validity 825 \
-                -dname "CN=$OPENFIRE_FQDN, OU=IT, O=Babcock, L=Adelaide, ST=SA, C=AU" \
-                -keystore "$KEYSTORE" -storetype JKS \
-                -storepass "$STOREPASS" -keypass "$STOREPASS"
-
-              # 2. Certificate request
-              keytool -certreq -alias "$OPENFIRE_FQDN" \
-                -keystore "$KEYSTORE" -storepass "$STOREPASS" -file /tmp/openfire.csr
-
-              # 3. Sign it with the common CA, with this environment's names and IP
-              keytool -gencert -rfc -alias hfc2-ca \
-                -keystore "$CA_DIR/ca.p12" -storetype PKCS12 -storepass "$CA_PASS" \
-                -infile /tmp/openfire.csr -outfile /tmp/openfire.crt -validity 825 \
-                -ext "SAN=dns:$OPENFIRE_FQDN,dns:openfire-service,dns:openfire-service.$POD_NAMESPACE.svc.cluster.local,ip:$OPENFIRE_NODE_IP" \
-                -ext "KU=digitalSignature,keyEncipherment" \
-                -ext "EKU=serverAuth" \
-                -ext "BC=ca:false"
-
-              # 4. Install the signed cert (CA first so the chain links up)
-              keytool -importcert -noprompt -alias hfc2-ca -file "$CA_DIR/ca.crt" \
-                -keystore "$KEYSTORE" -storepass "$STOREPASS"
-              keytool -importcert -noprompt -alias "$OPENFIRE_FQDN" -file /tmp/openfire.crt \
-                -keystore "$KEYSTORE" -storepass "$STOREPASS"
-              keytool -delete -alias hfc2-ca -keystore "$KEYSTORE" -storepass "$STOREPASS"
-
-              # 5. Truststore trusts the CA
-              keytool -importcert -noprompt -alias hfc2-ca -file "$CA_DIR/ca.crt" \
-                -keystore "$TRUSTSTORE" -storetype JKS -storepass "$STOREPASS"
-
-              chown openfire:openfire "$KEYSTORE" "$TRUSTSTORE"
-              rm -f /tmp/openfire.csr /tmp/openfire.crt
-              echo "Issued CA-signed certificate for $OPENFIRE_FQDN ($OPENFIRE_NODE_IP)"
-          env:
-            - name: STOREPASS
-              valueFrom:
-                secretKeyRef:
-                  name: openfire-ca
-                  key: storepass
-            - name: CA_PASS
-              valueFrom:
-                secretKeyRef:
-                  name: openfire-ca
-                  key: capass
-            - name: POD_NAMESPACE
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.namespace
-          envFrom:
-            - configMapRef:
-                name: openfire-env
-          volumeMounts:
-            - name: openfire-config
-              mountPath: /conf-out
-            - name: openfire-ca
-              mountPath: /ca
-              readOnly: true
-```
-
-### 2c. Add the volume
-
-Under the Deployment's `volumes:`, next to `openfire-config`:
-
-```yaml
-        - name: openfire-ca
-          secret:
-            secretName: openfire-ca
-```
-
-Only the init container mounts the CA. The Openfire container itself never sees the CA key.
-
----
-
-## Step 3: Openfire overlays
-
-Each environment only sets its own name and IP in its `openfire-env` ConfigMap:
-
-| Overlay | `OPENFIRE_FQDN` | `OPENFIRE_NODE_IP` |
-| --- | --- | --- |
-| dev-1 | `openfire-xmpp-dev1` | `10.11.253.93` |
-| enmf | `openfire-xmpp-sil3` | `172.27.3.23` |
-
-```yaml
-OPENFIRE_FQDN: "openfire-xmpp-dev1"     # must equal the XMPP domain
-OPENFIRE_NODE_IP: "10.11.253.93"        # the IP clients connect to
-```
-
-Check each overlay before committing:
-
-```bash
-kustomize build overlays/dev-1 | grep -nE "openfire-ca|OPENFIRE_FQDN|OPENFIRE_NODE_IP"
-```
-
----
-
-## Step 4: Gateway base and overlays
-
-### 4a. Base
-
-Copy `ca.crt` (**not** `ca.p12`) to `base-manifests/ca.crt` and add to `base-manifests/kustomization.yaml`:
-
-```yaml
 configMapGenerator:
-  - name: openfire-ca
-    files:
-      - ca.crt
+  - name: nifi-red-flow-deployer-config      # remove (env-deploy.properties + env-auth.properties)
+  - name: nifi-red-deploy-script             # remove (deployer.sh)
+  - name: nifi-red-flow-config               # remove (flows/*.json)
 ```
 
-In the base `chat-traffic-gateway` Deployment:
+Before removing them, check that `nifi-statefulset.yaml` and the base manifests don't reference those ConfigMaps
+(they are deployer-only in what I saw, but `env-auth.properties` also contains `NIFI_SENSITIVE_PROPS_KEY`).
+Then sync the NiFi app (with prune) and the old Job and ConfigMaps go away. Order: create and test the new app
+first, then remove the old deployer. The names don't clash, so both can exist for a while; just don't sync
+both at the same time.
 
-```yaml
-spec:
-  template:
-    spec:
-      containers:
-        - name: chat-traffic-gateway
-          volumeMounts:
-            - name: openfire-ca
-              mountPath: /etc/openfire-certs
-              readOnly: true
-      volumes:
-        - name: openfire-ca
-          configMap:
-            name: openfire-ca
-```
+## Day to day
 
-### 4b. Each overlay
+- **New or changed flow**: put the `.json` in `env/sil-direct/<side>/flows/`, run `tools/sync-flows.sh`, commit,
+  then sync `flow-deployer-sil-direct-<side>`.
+- **Changed parameters or URLs**: edit `env-deploy.properties`, commit, sync.
+- **Logs**: `kubectl -n inspire-silrelease logs -f job/nifi-red-flow-deploy-job`, or the Job in the Argo CD UI.
+- Syncing the NiFi app no longer deploys flows, and syncing this app never restarts NiFi.
 
-Add two literals to `chat-traffic-gateway-config`:
+## Notes
 
-```yaml
-      - chat-gateway.openfire.tls.enabled=true
-      - chat-gateway.openfire.tls.trustCert=file:/etc/openfire-certs/ca.crt
-```
-
-Also remove any per-overlay `openfire.crt` / `openfire-cert` generator added earlier, and `-Djavax.net.debug=ssl:handshake:verbose` from `jvmOptions` in dev-1.
-
-```bash
-kustomize build overlays/enmf | grep -nE "openfire-ca|tls\."
-```
-
----
-
-## Step 5: Gateway code and local runs
-
-No Java changes. `buildTrustManager()` loads every certificate in the `trustCert` file, and trusting a CA works the same as trusting one cert:
-
-```java
-builder.setSecurityMode(ConnectionConfiguration.SecurityMode.required)
-       .setCustomX509TrustManager(buildTrustManager());
-```
-
-> Use `setCustomX509TrustManager`, **not** `setCustomSSLContext`. With Smack 4.4.8 the custom SSLContext was ignored and the JVM default truststore was used, causing `PKIX path building failed`.
-
-Local runs in IntelliJ:
-
-1. Replace `src/main/resources/openfire.crt` with `ca.crt`.
-2. In `application.yaml`:
-   ```yaml
-   chat-gateway:
-     openfire:
-       tls:
-         enabled: true
-         trustCert: "classpath:ca.crt"   # quoted, no space after "classpath:"
-   ```
-
-The overlays override this with the `file:` path in the cluster.
-
----
-
-## Step 6: Roll out with Argo
-
-Three merges, in this order, so the gateway never loses its connection:
-
-1. **Gateway, transition trust.** Trust the CA *and* every environment's current self-signed Openfire cert, then merge Step 4:
-   ```bash
-   cat /c/hfc2-pki/ca.crt <dev-1 openfire.crt> <enmf openfire.crt> > base-manifests/ca.crt
-   ```
-   After the sync, the gateway still connects to the old certs.
-2. **Openfire base + overlays.** Merge Steps 2 and 3 together. Argo restarts Openfire in each environment, which now serves a CA-signed cert. The gateway reconnects using the CA in its bundle.
-3. **Gateway, final trust.** Once Step 7 passes everywhere, set `base-manifests/ca.crt` back to the CA alone and merge.
-
-In dev, if a few minutes of downtime is fine, skip the bundle in merge 1 and use `ca.crt` alone.
-
----
-
-## Step 7: Verify, enforce and capture evidence
-
-Per environment, after merge 2:
-
-- [ ] Init container log ends with `Issued CA-signed certificate for <domain> (<ip>)` (Argo UI → pod logs → `generate-keystore`).
-- [ ] Openfire serves the CA-signed cert:
-  ```bash
-  openssl s_client -connect 10.11.253.93:30522 -starttls xmpp -servername openfire-xmpp-dev1 \
-    -CAfile /c/hfc2-pki/ca.crt </dev/null 2>/dev/null | grep "Verify return code"
-  # expected: Verify return code: 0 (ok)
-  ```
-- [ ] Gateway log shows `Connected to Openfire: secure=true, authenticated=true`.
-- [ ] A normal flow through Bruno (create room, send message) works.
-- [ ] Openfire admin console: *Server Settings → Client Connections → Advanced → STARTTLS* = **Required** (stored in MySQL, survives restarts).
-- [ ] Negative test: a client with `tls.enabled=false` is rejected.
-- [ ] Negative test: `trustCert` pointing at a different cert fails with `PKIX path building failed`.
-- [ ] Screenshots attached to the story.
-
-Gajim users get a warning after each Openfire restart (the cert is reissued each start). Install `ca.crt` as a trusted root on their machines to stop it.
-
----
-
-## Troubleshooting
-
-| Symptom | Cause | Fix |
-| --- | --- | --- |
-| Init container fails at `-gencert` with "alias does not exist" | `ca.p12` built without `-name hfc2-ca` | Rebuild `ca.p12` as in Step 1 |
-| Init container can't read `ca.p12` | Older Java in the Openfire image | Rebuild `ca.p12` with `-legacy` |
-| Init container: `OPENFIRE_NODE_IP` empty / SAN error | Missing in that overlay's `openfire-env` | Add it (Step 3) |
-| Gateway: `PKIX path building failed` | Gateway doesn't trust the CA | `trustCert` must point at `ca.crt`; use `setCustomX509TrustManager` |
-| Gateway: `No subject alternative names matching ...` | `OPENFIRE_FQDN` ≠ gateway `domain` | Make them equal |
-| YAML error "block composed value at the same line as key" | Space after `classpath:` | Use `"classpath:ca.crt"` |
-| Need to see what Java receives | — | VM option `-Djavax.net.debug=ssl:handshake:verbose`, look for `Consuming server Certificate` |
-
----
-
-## Adding a new environment
-
-1. Create its Openfire overlay with `OPENFIRE_FQDN` and `OPENFIRE_NODE_IP`.
-2. Add the two TLS literals to its gateway overlay.
-3. Merge. Nothing else: the CA in both bases already covers it.
-
----
-
-## Open questions
-
-- Should plugin calls move from HTTP 30090 to HTTPS 30092 now the cert carries the IP SAN, and should NodePorts 30090 / 30091 be removed?
-- Move the Openfire keystore password off `changeit`? Change it in Openfire and in `storepass` together.
-- Production: which CA, held outside git, will be used?
-- The CA expires in 10 years: note the date in the team's calendar.
+- `base/deployer.sh` is the **updated** script (fixes listed at its top). If you'd rather start with your exact
+  current script, copy yours over it; the overlays work with either.
+- `activeDeadlineSeconds: 1800`: `wait_for_nifi` retries forever, so the Job now gives up after 30 min if NiFi is down.
+- `GIT_COMMIT`: your old Job had a `GIT_COMMIT` env (folded in the editor). Add it back in
+  `base/deployer-job.yaml` if `deployer.sh` uses it.
+- Credentials are now a Secret instead of a ConfigMap. They are still in Git through `env-auth.properties`; moving
+  them to Sealed Secrets or External Secrets would take them out of Git.
+- If a flow file grows past ~256 KB, `ServerSideApply=true` (already set in the Applications) keeps Argo CD
+  syncing it.
