@@ -289,3 +289,95 @@ The call is **request/response**: CC → Red NiFi → Black NiFi → FM, with th
 - **Parameterise** retry and timeout values in a Parameter Context per environment.
 - **Idempotency:** confirm whether FM PUT/POST are safe to repeat after a read timeout (request may already have been processed).
 - Review the `ExecuteScript → InvokeHTTP` branch to confirm whether it also calls FM and needs the same handling.
+
+
+```aiignore
+import groovy.json.JsonOutput
+import java.nio.charset.StandardCharsets
+import java.time.Instant
+import java.util.regex.Pattern
+import org.apache.nifi.processor.io.InputStreamCallback
+import org.apache.nifi.processor.io.OutputStreamCallback
+
+def flowFile = session.get()
+if (!flowFile) return
+
+final int MAX_BODY_CHARS = 8192
+
+final Set<String> EXCLUDE_KEYS = [
+        'invokehttp.status.code', 'invokehttp.tx.id',
+        'invokehttp.response.body', 'invokehttp.status.message',
+        'invokehttp.response.url'
+] as Set
+
+// Never ship credentials/session headers to the log backend
+final Pattern SENSITIVE = Pattern.compile(
+        '(?i)^http\\.headers\\.(authorization|proxy-authorization|cookie|set-cookie|x-api-key)$')
+
+final Map<String, Integer> SEVERITY_NUMBERS =
+        [TRACE: 1, DEBUG: 5, INFO: 9, WARN: 13, ERROR: 17, FATAL: 21]
+
+try {
+    // ---- Read content as UTF-8 ----
+    String content = ''
+    session.read(flowFile, { inputStream ->
+        content = inputStream.getText(StandardCharsets.UTF_8.name())
+    } as InputStreamCallback)
+
+    if (content.length() > MAX_BODY_CHARS) {
+        content = content.substring(0, MAX_BODY_CHARS) + '...[truncated]'
+    }
+
+    // ---- Severity ----
+    String severity = (flowFile.getAttribute('log.severity') ?: 'INFO').toUpperCase()
+    int severityNum = SEVERITY_NUMBERS[severity] ?: 9
+
+    // ---- Body: readable message for errors, content for normal logs ----
+    String dlqReason = flowFile.getAttribute('dlq.reason')
+    String logBody = dlqReason
+            ? "Fragment Manager call failed: ${dlqReason} - ${flowFile.getAttribute('dlq.message') ?: ''}".toString()
+            : content
+
+    // ---- Attributes ----
+    def allAttributes = flowFile.attributes
+            .findAll { k, v -> !EXCLUDE_KEYS.contains(k) && !SENSITIVE.matcher(k).matches() }
+            .collect { k, v -> [key: k, value: [stringValue: v]] }
+
+    String nowNanos = (Instant.now().toEpochMilli() * 1_000_000L).toString()
+
+    // ---- OTLP/JSON payload ----
+    def payload = [
+            resourceLogs: [[
+                    resource : [
+                            attributes: [[
+                                    key  : 'service.name',
+                                    value: [stringValue: flowFile.getAttribute('source.process.group') ?: 'nifi-pipeline']
+                            ]]
+                    ],
+                    scopeLogs: [[
+                            scope     : [name: 'nifi'],
+                            logRecords: [[
+                                    timeUnixNano        : nowNanos,
+                                    observedTimeUnixNano: nowNanos,
+                                    severityNumber      : severityNum,
+                                    severityText        : severity,
+                                    body                : [stringValue: logBody],
+                                    attributes          : allAttributes
+                            ]]
+                    ]]
+            ]]
+    ]
+
+    flowFile = session.write(flowFile, { out ->
+        out.write(JsonOutput.toJson(payload).getBytes(StandardCharsets.UTF_8))
+    } as OutputStreamCallback)
+
+    flowFile = session.putAttribute(flowFile, 'mime.type', 'application/json')
+    session.transfer(flowFile, REL_SUCCESS)
+
+} catch (Exception e) {
+    log.error("Failed to build OTel log record for ${flowFile}: ${e.message}".toString(), e)
+    flowFile = session.putAttribute(flowFile, 'otel.build.error', e.message ?: e.class.name)
+    session.transfer(flowFile, REL_FAILURE)
+}
+```
