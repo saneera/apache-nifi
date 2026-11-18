@@ -15,8 +15,8 @@
 
 **Acceptance criteria**
 - NiFi processor has relationships for success, retry and failure
-   - Identify the processors that need handling (end-service call)
-   - Implement recovery and failure handling
+    - Identify the processors that need handling (end-service call)
+    - Implement recovery and failure handling
 - Demo: restart FM and show that NiFi retries
 - Review whether caller timeout (e.g. CC) and NiFi retry can be synced; otherwise record the finding here
 
@@ -110,18 +110,87 @@ Failed FlowFiles queue in front of the **DLQ** funnel, where they can be inspect
 
 ### 3.4 Operator notification
 
-- **LogMessage** at level `error`:
-  `Circuit Manager call failed: ${dlq.reason} ${dlq.message}`
-- Recommended follow-up: alert on DLQ queue count > 0 using NiFi's Prometheus metrics endpoint (or PutEmail if SMTP is available in the environment).
+Two channels:
+
+1. **NiFi log** – LogMessage at level `error`:
+   `Circuit Manager call failed: ${dlq.reason} ${dlq.message}`
+2. **OpenTelemetry Collector** – error FlowFiles reuse the existing OTel logging path
+   (`ExecuteScript` → `InvokeHTTP POST #{otel-url}`) that already ships success logs.
+
+#### Existing OTel logging path (success)
+
+```
+InvokeHTTP (PUT/POST) ─Response─► UpdateAttribute ─┬─► From Circuit Manager Black (→ Red)
+                                   (log.severity,    │
+                                    http.status.code,└─► ExecuteScript ─► InvokeHTTP POST #{otel-url}
+                                    source.location…)    (builds OTLP JSON)   (OTel Collector)
+```
+
+`ExecuteScript` (Groovy) converts any FlowFile into an OTLP `resourceLogs` record:
+- `service.name` ← `source.process.group`
+- `severityText` ← `log.severity`
+- `body` ← FlowFile content
+- `attributes` ← all FlowFile attributes (excluding raw `invokehttp.*` response fields)
+
+#### Error path into OTel
+
+```
+Set Error Info ─success─┬─► LogMessage ─success─► Funnel "DLQ"   (original request kept for replay)
+                        └─► ExecuteScript ─► InvokeHTTP POST #{otel-url}   (ERROR log record)
+```
+
+NiFi clones the FlowFile when one relationship has two connections, so the DLQ copy keeps the original request content while the OTel copy is converted to OTLP JSON.
+
+Additional attributes on **Set Error Info** so the record is classed as an error:
+
+| Attribute | Value |
+|---|---|
+| `log.severity` | `ERROR` |
+| `http.status.code` | `${invokehttp.status.code:replaceNull('NONE')}` |
+| `source.location` | `Fragment Manager call failed` |
+| `source.process.group` | `Circuit Management Flow - TX Cluster` |
+
+`log.severity` is set explicitly because connection failures have no HTTP status code, so the existing severity expression cannot derive it.
+
+#### ExecuteScript enhancement (optional, recommended)
+
+Adds `severityNumber` (many OTel backends filter on it rather than `severityText`) and a readable body for error records. Insert before `def payload = [`:
+
+```groovy
+def dlqReason   = flowFile.getAttribute('dlq.reason')
+def severity    = flowFile.getAttribute('log.severity') ?: 'INFO'
+def severityNum = [TRACE: 1, DEBUG: 5, INFO: 9, WARN: 13, ERROR: 17, FATAL: 21][severity] ?: 9
+def logBody = dlqReason
+        ? "Fragment Manager call failed: ${dlqReason} - ${flowFile.getAttribute('dlq.message') ?: ''}".toString()
+        : content
+```
+
+and in `logRecords`:
+
+```groovy
+timeUnixNano  : (Instant.now().toEpochMilli() * 1_000_000L).toString(),
+severityNumber: severityNum,
+severityText  : severity,
+body          : [stringValue: logBody],
+attributes    : allAttributes
+```
+
+Success records are unchanged; error records get `severityNumber: 17`, a readable message, and searchable `dlq.*` attributes.
+
+#### Guard rail
+
+The OTel InvokeHTTP's own `Failure` / `Retry` / `No Retry` must **not** be routed into `Set Error Info` – if the OTel Collector is down this would create an infinite error-logging loop. Keep them auto-terminated (or at most 1 retry).
 
 ---
 
 ## 4. Implementation Steps
 
 1. **Stop** both InvokeHTTP processors (PUT and POST).
-2. Add **UpdateAttribute** `Set Error Info` with the attributes in §3.3.
+2. Add **UpdateAttribute** `Set Error Info` with the attributes in §3.3 **and** the OTel attributes in §3.4 (`log.severity`, `http.status.code`, `source.location`, `source.process.group`).
 3. Add **LogMessage** (Log Level = `error`) and connect `Set Error Info` → LogMessage.
-4. Add a **Funnel** labelled `DLQ` and connect LogMessage → Funnel.
+4. Add a **Funnel** labelled `DLQ` and connect LogMessage `success` → Funnel.
+   4a. Connect `Set Error Info` `success` → existing **ExecuteScript** (OTel path) as a second connection.
+   4b. (Optional) Apply the ExecuteScript enhancement in §3.4.
 5. From **each** InvokeHTTP, connect `Failure`, `Retry`, `No Retry` → `Set Error Info`.
 6. On each InvokeHTTP → **Relationships** tab:
 
@@ -146,8 +215,9 @@ Failed FlowFiles queue in front of the **DLQ** funnel, where they can be inspect
 |---|---|---|---|
 | 1 | Happy path | FM running, send PUT and POST | Response → back to Red, nothing in DLQ |
 | 2 | FM restart – recovers | Scale FM to 0, send request, scale FM back up within ~7 s | Provenance shows retries (1 s, 2 s, 4 s), then success |
-| 3 | FM down – exhausted | Scale FM to 0, send request, leave it down | 4 attempts, FlowFile in DLQ, ERROR in NiFi log |
-| 4 | Permanent error | Send request that returns 4xx | No retry, straight to DLQ |
+| 3 | FM down – exhausted | Scale FM to 0, send request, leave it down | 4 attempts, FlowFile in DLQ, ERROR in NiFi log, ERROR record in OTel (`dlq.reason` e.g. `java.net.ConnectException`) |
+| 4 | Permanent error | Send request that returns 4xx | No retry, straight to DLQ, ERROR record in OTel with `http.status.code` 4xx |
+| 5 | OTel Collector down | Stop collector, trigger scenario 3 | DLQ and NiFi log still work; no loop of error logs |
 
 Commands:
 ```bash
@@ -155,7 +225,7 @@ kubectl scale deploy/<fm-deployment> --replicas=0 -n <namespace>
 kubectl scale deploy/<fm-deployment> --replicas=1 -n <namespace>
 ```
 
-Evidence: Data Provenance on each InvokeHTTP (event times show back-off), DLQ queue listing, NiFi app log.
+Evidence: Data Provenance on each InvokeHTTP (event times show back-off), DLQ queue listing, NiFi app log, OTel log backend query for `severityText = ERROR` / `source.location = "Fragment Manager call failed"`.
 
 ---
 
@@ -215,7 +285,7 @@ The call is **request/response**: CC → Red NiFi → Black NiFi → FM, with th
 - **Jitter:** replace built-in retry with a retry loop (UpdateAttribute computes `retry.next.at = now + backoff + random()`, RouteOnAttribute releases when due) to avoid all queued requests retrying at the same instant after FM recovers.
 - **Error response to Red:** route DLQ FlowFiles (with e.g. `http.status = 503`) to the `From Circuit Manager Black` output port so CC receives a fast, clean error instead of timing out. Needs confirmation of how Red builds its HTTP response.
 - **Persistent DLQ:** PutFile / dedicated store so failed messages survive pod restarts, with a replay path.
-- **Alerting:** Prometheus/Grafana alert on DLQ queue depth.
+- **Alerting:** alert rule in the OTel backend on `severityText = ERROR` from Circuit Manager, and/or Prometheus/Grafana alert on DLQ queue depth.
 - **Parameterise** retry and timeout values in a Parameter Context per environment.
 - **Idempotency:** confirm whether FM PUT/POST are safe to repeat after a read timeout (request may already have been processed).
 - Review the `ExecuteScript → InvokeHTTP` branch to confirm whether it also calls FM and needs the same handling.
