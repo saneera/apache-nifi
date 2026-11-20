@@ -48,6 +48,11 @@ private X509TrustManager loggingTrustManager(X509TrustManager delegate) {
  *         the outcome of server certificate validation
  */
 
+ TLS handshake OK - server=CN=openfire-xmpp-dev1,OU=IT,O=Babcock,..., issuer=CN=HFC2 Non-Prod CA,..., expires=...
+ Connected to Openfire: secure=true, authenticated=true
+
+ TLS handshake FAILED - server=CN=..., issuer=CN=..., reason=PKIX path building failed: ...
+
 
  /**
   * Builds a trust manager that trusts only the certificate(s) in the file configured
