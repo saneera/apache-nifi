@@ -1,124 +1,31 @@
-mkdir -p /c/certs && cd /c/certs
-export MSYS_NO_PATHCONV=1      # stops Git Bash mangling "/CN=..." into a Windows path
+private X509TrustManager loggingTrustManager(X509TrustManager delegate) {
+    return new X509TrustManager() {
+        @Override
+        public void checkServerTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+            X509Certificate server = chain[0];
+            try {
+                delegate.checkServerTrusted(chain, authType);
+                log.info("TLS handshake OK - server={}, issuer={}, expires={}",
+                        server.getSubjectX500Principal().getName(),
+                        server.getIssuerX500Principal().getName(),
+                        server.getNotAfter());
+            } catch (CertificateException e) {
+                log.error("TLS handshake FAILED - server={}, issuer={}, reason={}",
+                        server.getSubjectX500Principal().getName(),
+                        server.getIssuerX500Principal().getName(),
+                        e.getMessage());
+                throw e;
+            }
+        }
 
-# 1a. Your own CA
-openssl req -x509 -newkey rsa:4096 -nodes -sha256 -days 1825 \
-  -keyout ca.key -out ca.crt -subj "/CN=HFC2 Dev CA"
+        @Override
+        public void checkClientTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+            delegate.checkClientTrusted(chain, authType);
+        }
 
-# 1b. Openfire key + request
-openssl req -newkey rsa:2048 -nodes -sha256 \
-  -keyout openfire.key -out openfire.csr -subj "/CN=openfire-xmpp-dev1"
-
-# 1c. What goes in the cert (names the clients will connect with)
-cat > openfire.ext <<'EOF'
-basicConstraints = CA:FALSE
-keyUsage = critical, digitalSignature, keyEncipherment
-extendedKeyUsage = serverAuth
-subjectAltName = DNS:openfire-xmpp-dev1, DNS:openfire-service, IP:10.11.253.93
-EOF
-
-# 1d. Sign it with your CA
-openssl x509 -req -in openfire.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
-  -days 825 -sha256 -extfile openfire.ext -out openfire.crt
-
-# 1e. Bundle cert + key as PKCS12 (keytool in the pod can import this)
-openssl pkcs12 -export -in openfire.crt -inkey openfire.key -certfile ca.crt \
-  -name openfire -out openfire.p12 -passout pass:changeit
-
-
----
-
-openssl s_client -connect 10.11.253.93:30522 -starttls xmpp \
-  -servername openfire-xmpp-dev1 -showcerts </dev/null 2>/dev/null \
-  | openssl x509 -outform PEM > openfire.crt
-
-
-  kubectl exec deploy/openfire -c openfire -- keytool -exportcert -rfc \
-    -alias <OPENFIRE_FQDN> -keystore /var/lib/openfire/conf/security/keystore \
-    -storepass changeit > openfire.crt
-
-    openssl x509 -in openfire.crt -noout -subject -ext subjectAltName
-
-  ---
-          - name: generate-keystore
-            image: openfire-image
-            command: ["sh", "-c"]
-            args:
-              - |
-                set -e
-                SECURITY_DIR="/conf-out/security"
-                DEFAULTS_DIR="/usr/local/openfire/resources/security_org"
-                KEYSTORE="$SECURITY_DIR/keystore"
-                TRUSTSTORE="$SECURITY_DIR/truststore"
-
-                mkdir -p "$SECURITY_DIR"
-
-                # Keep the existing seeding of default files
-                for f in client.truststore java.security; do
-                  if [ ! -f "$SECURITY_DIR/$f" ] && [ -f "$DEFAULTS_DIR/$f" ]; then
-                    cp -f "$DEFAULTS_DIR/$f" "$SECURITY_DIR/$f"
-                    chown openfire:openfire "$SECURITY_DIR/$f"
-                    echo "Seeded default $f"
-                  fi
-                done
-
-                # Always rebuild from the Secret - the Secret is the source of truth
-                rm -f "$KEYSTORE" "$TRUSTSTORE"
-
-                keytool -importkeystore -noprompt \
-                  -srckeystore /tls/openfire.p12 -srcstoretype PKCS12 \
-                  -srcstorepass "$STOREPASS" -srcalias openfire \
-                  -destkeystore "$KEYSTORE" -deststoretype JKS \
-                  -deststorepass "$STOREPASS" -destkeypass "$STOREPASS" \
-                  -destalias "$OPENFIRE_FQDN"
-
-                keytool -importcert -noprompt -alias hfc2-ca -file /tls/ca.crt \
-                  -keystore "$TRUSTSTORE" -storetype JKS -storepass "$STOREPASS"
-
-                chown openfire:openfire "$KEYSTORE" "$TRUSTSTORE"
-                keytool -list -keystore "$KEYSTORE" -storepass "$STOREPASS"
-                echo "Imported TLS certificate for $OPENFIRE_FQDN"
-            env:
-              - name: STOREPASS
-                valueFrom:
-                  secretKeyRef:
-                    name: openfire-tls
-                    key: storepass
-            envFrom:
-              - configMapRef:
-                  name: openfire-env
-            volumeMounts:
-              - name: openfire-config
-                mountPath: /conf-out
-              - name: openfire-tls
-                mountPath: /tls
-                readOnly: true
-
-
-
-
-
-
-  ---
-  chat-gateway:
-    openfire:
-      trustCertPath: "C:/certs/ca.crt"
-
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: openfire-tls
-  namespace: <openfire-ns>
-type: Opaque
-data:
-  openfire.p12: <base64 of openfire.p12>
-  ca.crt: <base64 of ca.crt>
-stringData:
-  storepass: changeit
-
-
-
-  base64 -w0 openfire.p12
-  base64 -w0 ca.crt
-
+        @Override
+        public X509Certificate[] getAcceptedIssuers() {
+            return delegate.getAcceptedIssuers();
+        }
+    };
+}
