@@ -29,3 +29,48 @@ private X509TrustManager loggingTrustManager(X509TrustManager delegate) {
         }
     };
 }
+
+
+/**
+ * Wraps an {@link X509TrustManager} so that each TLS handshake with Openfire is
+ * logged as a single summary line, instead of relying on {@code -Djavax.net.debug}.
+ * <p>
+ * On success it logs the server certificate's subject, issuer and expiry date at
+ * INFO level. On failure it logs the same details plus the reason at ERROR level,
+ * then rethrows the exception so the connection is still rejected.
+ * <p>
+ * Only certificate trust is checked here. Hostname verification (certificate name
+ * vs. the XMPP domain) is performed afterwards by Smack.
+ *
+ * @param delegate the trust manager that performs the actual certificate validation,
+ *                 typically the one returned by {@link #buildTrustManager()}
+ * @return a trust manager that delegates all checks to {@code delegate} and logs
+ *         the outcome of server certificate validation
+ */
+
+
+ /**
+  * Builds a trust manager that trusts only the certificate(s) in the file configured
+  * by {@code chat-gateway.openfire.tls.trustCert} (e.g. {@code classpath:ca.crt}
+  * locally or {@code file:/etc/openfire-certs/ca.crt} in Kubernetes).
+  * <p>
+  * The file may contain a single certificate or a PEM bundle (for example during a
+  * CA rollover). Every certificate in it is added as a trust anchor. The JVM's
+  * default truststore is not used.
+  *
+  * @return an {@link X509TrustManager} backed by the configured certificate(s)
+  * @throws IllegalStateException if the certificate file cannot be read or parsed
+  */
+
+
+  /**
+   * Creates the Smack connection configuration for the Openfire system connection.
+   * <p>
+   * TLS is mandatory ({@link ConnectionConfiguration.SecurityMode#required}): the
+   * connection is upgraded with STARTTLS before authentication, and Openfire's
+   * certificate must be signed by the configured CA. Plain-text connections are
+   * not possible.
+   *
+   * @return the XMPP TCP connection configuration
+   * @throws RuntimeException if the configured XMPP domain is not a valid domain name
+   */
