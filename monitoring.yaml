@@ -1,67 +1,40 @@
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-metadata:
-  name: nifi
-  labels:
-    release: <prometheus-release-label>          # must match Prometheus serviceMonitorSelector
-  annotations:
-    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
-spec:
-  selector:
-    matchLabels:
-      app: nifi                                   # labels on the NiFi Service (patched per side)
-  endpoints:
-    - port: https                                 # port NAME of 8443 in the NiFi Service
-      scheme: https
-      path: /nifi-api/flow/metrics/prometheus
-      interval: 30s
-      tlsConfig:
-        ca:   { secret: { name: nifi-scrape-tls, key: ca.crt } }
-        cert: { secret: { name: nifi-scrape-tls, key: tls.crt } }
-        keySecret: { name: nifi-scrape-tls, key: tls.key }
-        serverName: nifi.example                  # patched per side
+- job_name: nifi-red
+  scheme: https
+  metrics_path: /nifi-api/flow/metrics/prometheus
+  scrape_interval: 30s
+  tls_config:
+    ca_file:   /etc/prometheus/nifi-tls/ca.crt
+    cert_file: /etc/prometheus/nifi-tls/tls.crt
+    key_file:  /etc/prometheus/nifi-tls/tls.key
+    server_name: nifi-red.inspire-silrelease.svc.cluster.local
+  static_configs:
+    - targets: ['nifi-red.inspire-silrelease.svc.cluster.local:8443']
+      labels: { nifi_instance: nifi-red, domain: red }
 
 
 
 
-
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-metadata:
-  name: nifi
-spec:
-  selector:
-    matchLabels:
-      app: nifi-red                               # real label of the nifi-red Service
-  endpoints:
-    - port: https
-      scheme: https
-      path: /nifi-api/flow/metrics/prometheus
-      interval: 30s
-      tlsConfig:
-        ca:   { secret: { name: nifi-scrape-tls, key: ca.crt } }
-        cert: { secret: { name: nifi-scrape-tls, key: tls.crt } }
-        keySecret: { name: nifi-scrape-tls, key: tls.key }
-        serverName: nifi-red.inspire-silrelease.svc.cluster.local
+  kubectl get deploy -A | grep prometheus
+  kubectl -n <prom-ns> get deploy prometheus -o jsonpath='{.spec.template.spec.containers[*].name}'
 
 
 
 
-resources:
-  - nifi-scrape-tls.yaml
-patches:
-  - path: servicemonitor-patch.yaml
-
-
-
-# 1. Service label and port name (fill into the patch)
-  kubectl -n inspire-silrelease get svc nifi-red -o yaml | grep -A5 -E "labels:|ports:"
-  
-  # 2. Label Prometheus uses to pick ServiceMonitors
-  kubectl get prometheus -A -o jsonpath='{.items[*].spec.serviceMonitorSelector}'
-  
-  # 3. Prometheus is allowed to watch the NiFi namespace ({} = all namespaces)
-  kubectl get prometheus -A -o jsonpath='{.items[*].spec.serviceMonitorNamespaceSelector}'
-  
-  # 4. ServiceMonitor CRD exists on BOTH clusters
-  kubectl get crd servicemonitors.monitoring.coreos.com
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: prometheus
+  spec:
+    template:
+      spec:
+        containers:
+          - name: prometheus              # name from step 1
+            volumeMounts:
+              - name: nifi-tls
+                mountPath: /etc/prometheus/nifi-tls
+                readOnly: true
+        volumes:
+          - name: nifi-tls
+            secret:
+              secretName: nifi-scrape-tls
+              defaultMode: 0440
