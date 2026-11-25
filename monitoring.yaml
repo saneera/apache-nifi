@@ -21,6 +21,10 @@ spec:
 
 
 
+  MSYS_NO_PATHCONV=1 openssl req -new -newkey rsa:2048 -nodes \
+  -keyout prometheus.key -out prometheus.csr \
+  -subj "/CN=prometheus/OU=monitoring"
+
   openssl s_client -connect 10.11.253.93:30084 -showcerts </dev/null 2>/dev/null \
   | openssl x509 -noout -subject -issuer -ext subjectAltName
 
