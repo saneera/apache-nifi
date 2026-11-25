@@ -1,0 +1,36 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: nifi
+  namespace: <NIFI_NS>
+  labels:
+    release: <prometheus-release-name>          # match your Prometheus serviceMonitorSelector
+spec:
+  selector:
+    matchLabels: <labels on the NiFi Service>
+  endpoints:
+    - port: <port name for 8443>
+      scheme: https
+      path: /nifi-api/flow/metrics/prometheus
+      interval: 30s
+      tlsConfig:
+        ca:   { secret: { name: nifi-scrape-tls, key: ca.crt } }
+        cert: { secret: { name: nifi-scrape-tls, key: tls.crt } }
+        keySecret: { name: nifi-scrape-tls, key: tls.key }
+        serverName: <a SAN from step 1>        # needed if the service DNS isn't in NiFi's cert
+
+
+
+  openssl s_client -connect 10.11.253.93:30084 -showcerts </dev/null 2>/dev/null \
+  | openssl x509 -noout -subject -issuer -ext subjectAltName
+
+  openssl req -new -newkey rsa:2048 -nodes -keyout prometheus.key -out prometheus.csr \
+  -subj "/CN=prometheus/OU=monitoring"
+  
+  printf "extendedKeyUsage=clientAuth\nkeyUsage=digitalSignature,keyEncipherment\n" > ext.cnf
+  openssl x509 -req -in prometheus.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
+  -out prometheus.crt -days 365 -sha256 -extfile ext.cnf
+  
+  
+  
+  curl ... /nifi-api/flow/metrics/prometheus | grep -v '^#' | cut -d'{' -f1 | sort -u
