@@ -20,6 +20,11 @@ spec:
         serverName: <a SAN from step 1>        # needed if the service DNS isn't in NiFi's cert
 
 
+  openssl s_client -connect 10.11.253.93:30084 -showcerts </dev/null 2>/dev/null \
+  | awk '/-----BEGIN CERTIFICATE-----/{n++; f="chain-" n ".crt"} f{print > f} /-----END CERTIFICATE-----/{f=""}'
+
+  for f in chain-*.crt; do echo "== $f"; openssl x509 -in "$f" -noout -subject -issuer; done
+
 
   MSYS_NO_PATHCONV=1 openssl req -new -newkey rsa:2048 -nodes \
   -keyout prometheus.key -out prometheus.csr \
