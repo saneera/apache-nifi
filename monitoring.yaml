@@ -2,14 +2,16 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: nifi
-  namespace: <NIFI_NS>
   labels:
-    release: <prometheus-release-name>          # match your Prometheus serviceMonitorSelector
+    release: <prometheus-release-label>          # must match Prometheus serviceMonitorSelector
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
   selector:
-    matchLabels: <labels on the NiFi Service>
+    matchLabels:
+      app: nifi                                   # labels on the NiFi Service (patched per side)
   endpoints:
-    - port: <port name for 8443>
+    - port: https                                 # port NAME of 8443 in the NiFi Service
       scheme: https
       path: /nifi-api/flow/metrics/prometheus
       interval: 30s
@@ -17,66 +19,49 @@ spec:
         ca:   { secret: { name: nifi-scrape-tls, key: ca.crt } }
         cert: { secret: { name: nifi-scrape-tls, key: tls.crt } }
         keySecret: { name: nifi-scrape-tls, key: tls.key }
-        serverName: <a SAN from step 1>        # needed if the service DNS isn't in NiFi's cert
-
-
-  openssl s_client -connect 10.11.253.93:30084 -showcerts </dev/null 2>/dev/null \
-  | awk '/-----BEGIN CERTIFICATE-----/{n++; f="chain-" n ".crt"} f{print > f} /-----END CERTIFICATE-----/{f=""}'
-
-  for f in chain-*.crt; do echo "== $f"; openssl x509 -in "$f" -noout -subject -issuer; done
-
-
-  MSYS_NO_PATHCONV=1 openssl req -new -newkey rsa:2048 -nodes \
-  -keyout prometheus.key -out prometheus.csr \
-  -subj "/CN=prometheus/OU=monitoring"
-
-  openssl s_client -connect 10.11.253.93:30084 -showcerts </dev/null 2>/dev/null \
-  | openssl x509 -noout -subject -issuer -ext subjectAltName
-
-  openssl req -new -newkey rsa:2048 -nodes -keyout prometheus.key -out prometheus.csr \
-  -subj "/CN=prometheus/OU=monitoring"
-  
-  printf "extendedKeyUsage=clientAuth\nkeyUsage=digitalSignature,keyEncipherment\n" > ext.cnf
-  openssl x509 -req -in prometheus.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
-  -out prometheus.crt -days 365 -sha256 -extfile ext.cnf
-  
-  
-  
-  curl ... /nifi-api/flow/metrics/prometheus | grep -v '^#' | cut -d'{' -f1 | sort -u
+        serverName: nifi.example                  # patched per side
 
 
 
 
 
-# ---- Prometheus client cert (scrapes NiFi metrics, signed by the same Root CA) ----
-  echo "Creating Prometheus client cert..."
-  cat > prometheus-san.conf <<EOF
-  [req]
-  distinguished_name = req_distinguished_name
-  req_extensions = v3_req
-  prompt = no
-  [req_distinguished_name]
-  OU = monitoring
-  CN = prometheus
-  [v3_req]
-  keyUsage = digitalSignature, keyEncipherment
-  extendedKeyUsage = clientAuth
-  EOF
-  
-  openssl req -new -nodes -keyout prometheus.key -out prometheus.csr -config prometheus-san.conf
-  openssl x509 -req -in prometheus.csr -CA root-ca.crt -CAkey root-ca.key -CAcreateserial \
-  -out prometheus.crt -days 825 -extensions v3_req -extfile prometheus-san.conf
-  
-  # Secret for Prometheus ServiceMonitor (same file works for RED and BLACK)
-  cat > nifi-scrape-tls.yaml <<EOF
-apiVersion: v1
-kind: Secret
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
 metadata:
-  name: nifi-scrape-tls
-  namespace: inspire-silrelease
-type: Opaque
-data:
-  ca.crt: $(base64 -w0 root-ca.crt)
-  tls.crt: $(base64 -w0 prometheus.crt)
-  tls.key: $(base64 -w0 prometheus.key)
-  EOF
+  name: nifi
+spec:
+  selector:
+    matchLabels:
+      app: nifi-red                               # real label of the nifi-red Service
+  endpoints:
+    - port: https
+      scheme: https
+      path: /nifi-api/flow/metrics/prometheus
+      interval: 30s
+      tlsConfig:
+        ca:   { secret: { name: nifi-scrape-tls, key: ca.crt } }
+        cert: { secret: { name: nifi-scrape-tls, key: tls.crt } }
+        keySecret: { name: nifi-scrape-tls, key: tls.key }
+        serverName: nifi-red.inspire-silrelease.svc.cluster.local
+
+
+
+
+resources:
+  - nifi-scrape-tls.yaml
+patches:
+  - path: servicemonitor-patch.yaml
+
+
+
+# 1. Service label and port name (fill into the patch)
+  kubectl -n inspire-silrelease get svc nifi-red -o yaml | grep -A5 -E "labels:|ports:"
+  
+  # 2. Label Prometheus uses to pick ServiceMonitors
+  kubectl get prometheus -A -o jsonpath='{.items[*].spec.serviceMonitorSelector}'
+  
+  # 3. Prometheus is allowed to watch the NiFi namespace ({} = all namespaces)
+  kubectl get prometheus -A -o jsonpath='{.items[*].spec.serviceMonitorNamespaceSelector}'
+  
+  # 4. ServiceMonitor CRD exists on BOTH clusters
+  kubectl get crd servicemonitors.monitoring.coreos.com
