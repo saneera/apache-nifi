@@ -43,3 +43,40 @@ spec:
   
   
   curl ... /nifi-api/flow/metrics/prometheus | grep -v '^#' | cut -d'{' -f1 | sort -u
+
+
+
+
+
+# ---- Prometheus client cert (scrapes NiFi metrics, signed by the same Root CA) ----
+  echo "Creating Prometheus client cert..."
+  cat > prometheus-san.conf <<EOF
+  [req]
+  distinguished_name = req_distinguished_name
+  req_extensions = v3_req
+  prompt = no
+  [req_distinguished_name]
+  OU = monitoring
+  CN = prometheus
+  [v3_req]
+  keyUsage = digitalSignature, keyEncipherment
+  extendedKeyUsage = clientAuth
+  EOF
+  
+  openssl req -new -nodes -keyout prometheus.key -out prometheus.csr -config prometheus-san.conf
+  openssl x509 -req -in prometheus.csr -CA root-ca.crt -CAkey root-ca.key -CAcreateserial \
+  -out prometheus.crt -days 825 -extensions v3_req -extfile prometheus-san.conf
+  
+  # Secret for Prometheus ServiceMonitor (same file works for RED and BLACK)
+  cat > nifi-scrape-tls.yaml <<EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: nifi-scrape-tls
+  namespace: inspire-silrelease
+type: Opaque
+data:
+  ca.crt: $(base64 -w0 root-ca.crt)
+  tls.crt: $(base64 -w0 prometheus.crt)
+  tls.key: $(base64 -w0 prometheus.key)
+  EOF
