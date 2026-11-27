@@ -1,0 +1,378 @@
+_id: 5f0b916f-bb50-45c9-9609-abfbfecfd923   # transcribed from blurry video - verify
+_rev: 1-0eed69e477eb5153d095a13dec046347    # transcribed from blurry video - verify
+docType: circuit_template
+id: Voice_Analogue_Clear_FF_Modded
+name: Voice Analogue Clear FF Modded
+description: Voice circuits or conference calls
+accessType: ALE
+trafficType: ANALOGUE_VOICE_TRAFFIC
+trafficSecurity: INSECURE
+communicationsMode: null
+
+fragmentTemplates:
+  # ---------------------------------------------------------------- ENMF
+  - id: enmf
+    name: ENMF
+    dynamicFragment: true
+    nodeType: TRANSMIT_RECEIVE
+    multiplicity:
+      min: 0
+      max: -1
+    networkDomain: OFFICIAL_SENSITIVE
+    buildSteps: []
+    teardownSteps: []
+    displayArea: {x: -250, y: 50, w: 250, h: 100}
+    elements:
+      - id: headset
+        name: Headset
+        description: Headset
+        visualElementType: OPERATOR
+        displayArea: {x: 50, y: 25, w: 50, h: 50}
+        ports:
+          - id: enmf.headset.p0
+            name: Headset Output/Input
+            type: null
+            direction: null
+            meta: {}
+            displayLocation: {x: 50, y: 25}
+        asset: null
+      - id: ois
+        name: OIS
+        description: Operator Isolation Switch
+        visualElementType: SWITCH
+        displayArea: {x: 150, y: 25, w: 50, h: 50}
+        ports:
+          - id: enmf.ois.p0
+            name: From Operator Isolation Switch to Headset
+            type: null
+            direction: null
+            meta: {}
+            displayLocation: {x: 0, y: 25}
+          - id: enmf.ois.p1
+            name: From Operator Isolation Switch to Pbx
+            type: null
+            direction: null
+            meta: {}
+            displayLocation: {x: 50, y: 25}
+        asset: null
+    connections:
+      - from: enmf.headset.p0
+        to: enmf.ois.p0
+        direction: null
+        type: null
+        displayRouting: []
+    ports:
+      - id: enmf.p0
+        elementPort: enmf.ois.p1
+        displayLocation: {x: 250, y: 50}
+
+  # ---------------------------------------------------------------- PBX
+  - id: pbx-enmf
+    name: ENMF
+    dynamicFragment: false
+    nodeType: ASSET
+    multiplicity:
+      min: 1
+      max: 1
+    networkDomain: OFFICIAL_SENSITIVE
+    buildSteps: []
+    teardownSteps: []
+    displayArea: {x: 250, y: 100, w: 150, h: 100}
+    elements:
+      - id: pbx
+        name: PBX
+        description: PBX
+        visualElementType: PBX
+        displayArea: {x: 50, y: 25, w: 50, h: 50}
+        ports:
+          - id: pbx-enmf.pbx.p0
+            name: VOIP
+            type: null
+            direction: null
+            meta: {}
+            displayLocation: {x: 25, y: 50}
+          - id: pbx-enmf.pbx.p1
+            name: VOIP
+            type: null
+            direction: null
+            meta: {}
+            displayLocation: {x: 0, y: 25}
+        asset: null
+    connections: []
+    ports:
+      - id: pbx-enmf.p0
+        elementPort: pbx-enmf.pbx.p0
+        displayLocation: {x: 145, y: 100}
+      - id: pbx-enmf.p1
+        elementPort: pbx-enmf.pbx.p1
+        displayLocation: {x: 0, y: 100}
+
+  # ---------------------------------------------------------------- TX
+  - id: tx
+    name: TX FF Fragment
+    dynamicFragment: false
+    nodeType: TRANSMIT
+    multiplicity:
+      min: 1
+      max: 1
+    networkDomain: OFFICIAL_SENSITIVE
+    buildSteps: []
+    teardownSteps: []
+    displayArea: {x: 500, y: 250, w: 450, h: 100}   # w could be 650 - blurry, verify
+    elements:
+      - id: as
+        name: MA56                                  # MA56 / MA50 - verify
+        description: MA56 New RLPA Antenna
+        visualElementType: antenna-rx
+        displayArea: {x: 40, y: 25, w: 50, h: 50}
+        ports:
+          - id: tx.as.p0
+            name: Audio Switch to Transmitter
+            type: null
+            direction: null
+            meta: {}
+            displayLocation: {x: 50, y: 25}
+          - id: tx.as.p1
+            name: Audio Switch to Pbx
+            type: null
+            direction: null
+            meta: {}
+            displayLocation: {x: 0, y: 25}
+        asset:
+          category: ANTENNA
+          capabilities:
+            - Rotatable log periodic
+            - Long range
+            - Short range
+            - Speed 0.4 RPM
+      - id: rt
+        name: Transmitter
+        description: Transmitter
+        visualElementType: transmitter
+        displayArea: {x: 140, y: 25, w: 50, h: 50}
+        ports:
+          - id: tx.rt.p0
+            name: From Transmitter to Audio Switch
+            type: null
+            direction: null
+            meta: {}
+            displayLocation: {x: 0, y: 25}
+          - id: tx.rt.p1
+            name: From Transmitter to Antenna Receive Matrix
+            type: null
+            direction: null
+            meta: {}
+            displayLocation: {x: 50, y: 25}
+        asset: null
+    connections:
+      - from: tx.as.p0
+        to: tx.rt.p0
+        direction: null
+        type: null
+        displayRouting: []
+    ports:
+      - id: tx.p0
+        elementPort: tx.as.p1
+        displayLocation: {x: 0, y: 50}
+
+  # ---------------------------------------------------------------- RX
+  - id: rx
+    name: RX FF Fragment
+    dynamicFragment: false
+    nodeType: RECEIVE
+    multiplicity:
+      min: 1
+      max: 1
+    networkDomain: OFFICIAL_SENSITIVE
+    buildSteps: []
+    teardownSteps: []
+    displayArea: {x: 500, y: 450, w: 450, h: 100}
+    elements:
+      - id: as
+        name: RM12
+        description: Asset Handler for RapidM RM12 (MODEM/STANAG 5066 Controller)
+        visualElementType: modem
+        displayArea: {x: 40, y: 25, w: 50, h: 50}
+        ports:
+          - id: rx.as.p0
+            name: Audio Switch to Receiver
+            type: null
+            direction: null
+            meta: {}
+            displayLocation: {x: 50, y: 25}
+          - id: rx.as.p1
+            name: Audio Switch to Pbx
+            type: null
+            direction: null
+            meta: {}
+            displayLocation: {x: 0, y: 25}
+        asset:
+          category: MODEM
+          capabilities:
+            - Wideband data and ALE function
+            - ALE-2G
+            - ALE-3G
+            - Split site operation
+      - id: rr
+        name: Receiver
+        description: Receiver
+        visualElementType: receiver
+        displayArea: {x: 140, y: 25, w: 50, h: 50}
+        ports:
+          - id: rx.rr.p0
+            name: From Receiver to Audio Switch
+            type: null
+            direction: null
+            meta: {}
+            displayLocation: {x: 0, y: 25}
+          - id: rx.rr.p1
+            name: From Transmitter to Antenna Transmit Matrix   # as in source
+            type: null
+            direction: null
+            meta: {}
+            displayLocation: {x: 50, y: 25}
+        asset: null
+    connections:
+      - from: rx.as.p0
+        to: rx.rr.p0
+        direction: null
+        type: null
+        displayRouting: []
+    ports:
+      - id: rx.p0
+        elementPort: rx.as.p1
+        displayLocation: {x: 0, y: 50}
+
+connections:
+  - from: enmf.p0
+    to: pbx-enmf.p1
+    direction: null
+    type: null
+    displayRouting: []
+  - from: pbx-enmf.p0
+    to: tx.p0
+    direction: null
+    type: null
+    displayRouting: []
+  - from: pbx-enmf.p0
+    to: rx.p0
+    direction: null
+    type: null
+    displayRouting: []
+
+ports: []
+
+circuitProperties:
+  conference-compose:
+    args:
+      type: object
+      name: Conference compose
+      description: Create a new empty conference
+      optional: false
+      properties:
+        conferenceId:
+          type: string
+          name: conferenceId
+          description: Conference Id
+          optional: false
+          minLength: null
+          maxLength: null
+          regex: null
+          initialValue: null
+        targets:
+          type: array
+          name: targets
+          description: List of address book entry UUIDs
+          optional: false
+          minLength: null
+          maxLength: null
+          uniqueItems: null
+          items:
+            type: string
+            name: target
+            description: An address book entry UUID
+            optional: false
+            minLength: null
+            maxLength: null
+            regex: null
+            initialValue: null
+          initialValue: null
+      initialValue: null
+    result:
+      type: string
+      name: conferenceComposeResult
+      description: UUID of created conference
+      optional: false
+      minLength: null
+      maxLength: null
+      regex: null
+      initialValue: null
+  conference-delete:
+    args:
+      type: object
+      name: conference delete
+      description: Conference delete
+      optional: false
+      properties:
+        conferenceId:
+          type: string
+          name: conferenceId
+          description: Conference ID
+          optional: false
+          minLength: null
+          maxLength: null
+          regex: null
+          initialValue: null
+      initialValue: null
+    result: null
+
+circuitOperations:
+  conference-compose:
+    name: Conference compose
+    description: Create a new empty conference
+    schedule: null
+    fragmentOperations:
+      pbx-enmf:
+        pbx:
+          - port: null
+            command: conference-compose
+            parameters:
+              targets: []
+  conference-delete:
+    name: Delete conference call
+    description: Destroy a conference call
+    schedule: null
+    fragmentOperations:
+      pbx-enmf:
+        pbx:
+          - port: null
+            command: conference-delete
+            parameters:
+              conferenceId: $conference-compose.result.result.body.conferenceId
+  add-operator:
+    name: Add operator to a conference call.
+    description: Add operator to a conference call.
+    schedule: null
+    fragmentOperations:
+      enmf:
+        headset:
+          - port: null
+            command: conference-compose
+            parameters:
+              conferenceId: conference-compose.result.result.body.conferenceId   # no "$" in source
+              targets:
+                - $USER_ADDRESSBOOK_ID
+  delete-operator:
+    name: Remove operator from a conference call.
+    description: Remove operator from a conference call.
+    schedule: null
+    fragmentOperations:
+      enmf:
+        headset:
+          - port: null
+            command: conference-delete
+            parameters:
+              conferenceId: $conference-compose.result.result.body.conferenceId
+
+circuitAlarms: {}
+alarmMapping: {}
